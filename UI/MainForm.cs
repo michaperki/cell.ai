@@ -317,6 +317,8 @@ namespace SpreadsheetApp.UI
                 finally
                 {
                     grid.ResumeLayout();
+                    // Force immediate repaint so the UI reflects the latest step during Test Runner automation
+                    try { grid.Refresh(); } catch { }
                     UpdateStatus();
                 }
             }
@@ -2187,6 +2189,49 @@ namespace SpreadsheetApp.UI
             catch { }
 
             var ctx = BuildPlannerContext();
+            // Ensure planner context strictly reflects the provided location shape (if any)
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(location))
+                {
+                    string loc = location!.Trim();
+                    if (loc.Contains(":", StringComparison.Ordinal))
+                    {
+                        var parts = loc.Split(':');
+                        if (parts.Length == 2 && Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                        {
+                            int rStart = Math.Max(0, Math.Min(r1, r2));
+                            int rEnd = Math.Min(_sheet.Rows - 1, Math.Max(r1, r2));
+                            int cStart = Math.Max(0, Math.Min(c1, c2));
+                            int cEnd = Math.Min(_sheet.Columns - 1, Math.Max(c1, c2));
+                            int rows = rEnd - rStart + 1;
+                            int cols = cEnd - cStart + 1;
+                            ctx.StartRow = rStart;
+                            ctx.StartCol = cStart;
+                            ctx.Rows = rows;
+                            ctx.Cols = cols;
+                            // Title cell directly above top-left
+                            ctx.Title = rStart > 0 ? (_sheet.GetRaw(rStart - 1, cStart) ?? string.Empty) : string.Empty;
+                            // Provide exact selection values snapshot
+                            var sel = new string[rows][];
+                            for (int r = 0; r < rows; r++)
+                            {
+                                sel[r] = new string[cols];
+                                for (int c = 0; c < cols; c++) sel[r][c] = _sheet.GetDisplay(rStart + r, cStart + c);
+                            }
+                            ctx.SelectionValues = sel;
+                        }
+                    }
+                    else if (Core.CellAddress.TryParse(loc, out int rr, out int cc))
+                    {
+                        // Single-cell anchor: keep existing row/col hints from BuildPlannerContext but ensure start position
+                        ctx.StartRow = Math.Max(0, Math.Min(_sheet.Rows - 1, rr));
+                        ctx.StartCol = Math.Max(0, Math.Min(_sheet.Columns - 1, cc));
+                        ctx.Title = ctx.StartRow > 0 ? (_sheet.GetRaw(ctx.StartRow - 1, ctx.StartCol) ?? string.Empty) : string.Empty;
+                    }
+                }
+            }
+            catch { }
             try
             {
                 if (_automationHistory.Count > 0)
@@ -2235,7 +2280,14 @@ namespace SpreadsheetApp.UI
                             try { grid[c, r].Selected = true; } catch { }
                         }
                     }
-                    try { grid.CurrentCell = grid[cStart, rStart]; } catch { }
+                    try
+                    {
+                        grid.CurrentCell = grid[cStart, rStart];
+                        // Ensure the selected region is brought into view
+                        try { grid.FirstDisplayedScrollingRowIndex = Math.Max(0, Math.Min(rStart, grid.RowCount - 1)); } catch { }
+                        try { grid.FirstDisplayedScrollingColumnIndex = Math.Max(0, Math.Min(cStart, grid.ColumnCount - 1)); } catch { }
+                    }
+                    catch { }
                     return;
                 }
             }
@@ -2244,7 +2296,13 @@ namespace SpreadsheetApp.UI
             {
                 rr = Math.Max(0, Math.Min(_sheet.Rows - 1, rr));
                 cc = Math.Max(0, Math.Min(_sheet.Columns - 1, cc));
-                try { grid.CurrentCell = grid[cc, rr]; grid[cc, rr].Selected = true; } catch { }
+                try
+                {
+                    grid.CurrentCell = grid[cc, rr]; grid[cc, rr].Selected = true;
+                    try { grid.FirstDisplayedScrollingRowIndex = Math.Max(0, Math.Min(rr, grid.RowCount - 1)); } catch { }
+                    try { grid.FirstDisplayedScrollingColumnIndex = Math.Max(0, Math.Min(cc, grid.ColumnCount - 1)); } catch { }
+                }
+                catch { }
             }
         }
     }

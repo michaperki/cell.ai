@@ -227,6 +227,13 @@ namespace SpreadsheetApp.Core.AI
                 // Best-effort: assume headers at row r0, data rows next two rows
                 int r0 = context.StartRow; int c0 = context.StartCol;
                 int totalsRow = r0; // if location anchors at total row, use that
+                // Set a label in the Description column if the table follows Date, Description, Amount
+                // We place the label in column B relative to an A-anchored total row (best-effort)
+                try
+                {
+                    plan.Commands.Add(new SetValuesCommand { StartRow = Math.Max(0, totalsRow), StartCol = Math.Max(0, c0 + 1), Values = new[] { new[] { "Total" } } });
+                }
+                catch { }
                 // write formulas in C and D if available
                 var rows = new List<string[]>();
                 rows.Add(new[] { "=SUM(C4:C5)" });

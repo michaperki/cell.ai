@@ -326,3 +326,60 @@ Added a Test Runner form (`UI/TestRunnerForm.cs`) accessible via **Test > Test R
 - **BACKLOG.md** — Restructured with new "Active — AI / Chat UX" section containing the 8 discovered issues. Cleaned up existing items.
 - **Roadmap.md** — Added E2E test suite reference in Quality & Verification section.
 - **tests/TEST_INDEX.md** — New file documenting all 15 test workbooks with usage instructions.
+
+## UI Modernization (2026‑03‑19)
+
+### Problem
+WinForms defaults (3D sunken borders, royal-blue selection, system-drawn headers) made the app look dated. The question was whether C# inherently forces this — it doesn't; the defaults are just old.
+
+### Changes (zero performance cost)
+
+1) **Grid flat styling** (`MainForm.Designer.cs`)
+   - Removed `Fixed3D` border; set `BorderStyle.None`.
+   - Cell borders changed to `Single` with light gray gridlines (`228, 228, 228`).
+   - Background set to white; grid background color matched.
+
+2) **Modern selection colors**
+   - Selection: soft blue (`200, 220, 240`) with dark text (`30, 30, 30`) instead of the default saturated royal blue with white text.
+
+3) **Flat headers**
+   - Disabled `EnableHeadersVisualStyles` to take control of header rendering.
+   - Column and row headers: flat gray background (`240, 240, 240`), dark text, `Single` border style.
+   - Column headers bumped to 28px height and centered.
+
+4) **Font consistency**
+   - Set Segoe UI 9pt as the default cell, column header, and row header font.
+
+5) **Double buffering** (`MainForm.cs`)
+   - Enabled via reflection (`DoubleBuffered = true`) on the DataGridView to eliminate scroll/resize flicker.
+
+6) **Control dock order fix**
+   - Reordered `Controls.Add` calls so the Fill-docked grid is added first (WinForms lays out in reverse add-order). Previously the grid could overlap tabs/headers, hiding column names on startup.
+
+### Iteration
+- Initially included alternating row colors (`245, 247, 250`) and `SingleHorizontal` cell borders, which made the grid look like a list rather than a spreadsheet. Removed alternating colors and switched to `Single` (full grid) based on feedback.
+
+### What was NOT done (noted for future)
+- Menu icons, dark mode toggle, owner-drawn flat tabs.
+- These are tracked in BACKLOG.md under "UI modernization."
+
+## Post‑Testing Fixes (Chat + Runner) — 2026‑03‑19
+
+- Planner context alignment to selection
+  - Change: In the Test Runner path, after `BuildPlannerContext`, we now parse the requested `location` (single cell or range) and overwrite `AIContext.StartRow/StartCol/Rows/Cols/Title/SelectionValues` to exactly match it.
+  - Impact: Prevents over/under‑fills (e.g., stray `D7`) and makes provider outputs align to the visible selection.
+  - File: UI/MainForm.cs (RunChatStepAsync).
+
+- Immediate repaint after incremental updates
+  - Change: After `RefreshDirtyOrFull`’s targeted cell updates, call `grid.Refresh()` to force a repaint and ensure the UI reflects each step instantly during automation.
+  - Also scroll the grid to the selection when the Test Runner sets a range, so the changed region is visible.
+  - File: UI/MainForm.cs.
+
+- Mock totals labeling in multi‑turn (Test 06)
+  - Change: When adding the total row, write "Total" into the Description column on the totals row, and keep totals in C/D.
+  - File: Core/AI/MockChatPlanner.cs.
+
+- Result verification
+  - Step 1: A3:C6 headers + 3 rows.
+  - Step 2: D3:D6 (Tax header + formulas down only data rows).
+  - Step 3: Row 6 totals in C/D with B6 labeled "Total". Snapshots and on‑screen view now match.
