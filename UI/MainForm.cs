@@ -431,6 +431,14 @@ namespace SpreadsheetApp.UI
             {
                 e.Handled = true; e.SuppressKeyPress = true; HideGhostSuggestions(); return;
             }
+            // Clear contents of all selected cells with Delete/Backspace
+            if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
+            {
+                ClearSelectedCells();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
             if (e.KeyCode == Keys.Enter)
             {
                 e.Handled = true;
@@ -500,6 +508,38 @@ namespace SpreadsheetApp.UI
                 HideGhostSuggestions();
                 CancelInlineRequest();
             }
+        }
+
+        private void ClearSelectedCells()
+        {
+            try
+            {
+                var cells = grid.SelectedCells;
+                if (cells == null || cells.Count == 0) return;
+                var seen = new HashSet<(int r, int c)>();
+                var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+                foreach (DataGridViewCell cell in cells)
+                {
+                    if (cell == null) continue;
+                    int r = cell.RowIndex, c = cell.ColumnIndex;
+                    if (!seen.Add((r, c))) continue;
+                    string? oldRaw = _sheet.GetRaw(r, c);
+                    if (!string.IsNullOrEmpty(oldRaw))
+                    {
+                        _sheet.SetRaw(r, c, string.Empty);
+                        edits.Add((r, c, oldRaw, string.Empty));
+                    }
+                }
+                if (edits.Count > 0)
+                {
+                    _undo.RecordBulk(edits);
+                    RefreshGridValues();
+                    grid.Invalidate();
+                    grid.Refresh();
+                    UpdateStatus();
+                }
+            }
+            catch { }
         }
 
         // --- Find / Replace ---

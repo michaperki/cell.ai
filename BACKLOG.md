@@ -23,6 +23,10 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - Async I/O adoption
   - Switch File→Open/Save to call async methods and show a busy indicator (cursor wait) and disable UI until completion.
 
+- Editing UX
+  - Clear contents for multi-cell selections with Delete/Backspace — implement as a single bulk undo action and refresh only affected cells when incremental repaint lands.
+  - Consider a dedicated Edit→Clear Contents menu item mirroring Delete.
+
 - Undo/Redo polish
   - Coalesce rapid edits to the same cell into a single undo action.
   - Extend to multi-cell operations (copy/paste, fill, import) with grouped actions.

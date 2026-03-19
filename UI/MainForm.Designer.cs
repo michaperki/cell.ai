@@ -31,6 +31,7 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem findToolStripMenuItem = null!;
         private ToolStripMenuItem replaceToolStripMenuItem = null!;
         private ToolStripMenuItem recalcToolStripMenuItem = null!;
+        private ToolStripMenuItem clearContentsToolStripMenuItem = null!;
         private ToolStripMenuItem sheetsToolStripMenuItem = null!;
         private ToolStripMenuItem addSheetToolStripMenuItem = null!;
         private ToolStripMenuItem renameSheetToolStripMenuItem = null!;
@@ -73,6 +74,7 @@ namespace SpreadsheetApp.UI
             cutToolStripMenuItem = new ToolStripMenuItem();
             findToolStripMenuItem = new ToolStripMenuItem();
             replaceToolStripMenuItem = new ToolStripMenuItem();
+            clearContentsToolStripMenuItem = new ToolStripMenuItem();
             recalcToolStripMenuItem = new ToolStripMenuItem();
             sheetsToolStripMenuItem = new ToolStripMenuItem();
             addSheetToolStripMenuItem = new ToolStripMenuItem();
@@ -135,7 +137,7 @@ namespace SpreadsheetApp.UI
             // editToolStripMenuItem
             editToolStripMenuItem.Name = "editToolStripMenuItem";
             editToolStripMenuItem.Text = "Edit";
-            editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { undoToolStripMenuItem, redoToolStripMenuItem, new ToolStripSeparator(), copyToolStripMenuItem, pasteToolStripMenuItem, cutToolStripMenuItem, new ToolStripSeparator(), findToolStripMenuItem, replaceToolStripMenuItem, new ToolStripSeparator(), recalcToolStripMenuItem });
+            editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { undoToolStripMenuItem, redoToolStripMenuItem, new ToolStripSeparator(), copyToolStripMenuItem, pasteToolStripMenuItem, cutToolStripMenuItem, new ToolStripSeparator(), findToolStripMenuItem, replaceToolStripMenuItem, new ToolStripSeparator(), clearContentsToolStripMenuItem, recalcToolStripMenuItem });
 
             // undoToolStripMenuItem
             undoToolStripMenuItem.Name = "undoToolStripMenuItem";
@@ -178,6 +180,12 @@ namespace SpreadsheetApp.UI
             replaceToolStripMenuItem.Text = "Replace...";
             replaceToolStripMenuItem.ShortcutKeys = Keys.Control | Keys.H;
             replaceToolStripMenuItem.Click += (_, __) => OpenFindDialog(true);
+
+            // clearContentsToolStripMenuItem
+            clearContentsToolStripMenuItem.Name = "clearContentsToolStripMenuItem";
+            clearContentsToolStripMenuItem.Text = "Clear Contents";
+            clearContentsToolStripMenuItem.ShortcutKeys = Keys.Delete;
+            clearContentsToolStripMenuItem.Click += (_, __) => ClearSelectedCells();
 
             // recalcToolStripMenuItem
             recalcToolStripMenuItem.Name = "recalcToolStripMenuItem";
