@@ -25,7 +25,12 @@ namespace SpreadsheetApp.Core.AI
             {
                 if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"))) provider = "OpenAI";
                 else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY"))) provider = "Anthropic";
-                else return new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
+                else
+                {
+                    var mockPlan = new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
+                    mockPlan.RawJson = string.Empty;
+                    return mockPlan;
+                }
             }
 
             string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it.";
@@ -99,7 +104,9 @@ namespace SpreadsheetApp.Core.AI
             try
             {
                 var doc = JsonDocument.Parse(json);
-                return ParsePlan(doc);
+                var plan = ParsePlan(doc);
+                plan.RawJson = json;
+                return plan;
             }
             catch
             {
@@ -108,7 +115,7 @@ namespace SpreadsheetApp.Core.AI
                 int i2 = json.LastIndexOf('}');
                 if (i1 >= 0 && i2 > i1)
                 {
-                    try { var doc = JsonDocument.Parse(json.Substring(i1, i2 - i1 + 1)); return ParsePlan(doc); }
+                    try { var s = json.Substring(i1, i2 - i1 + 1); var doc = JsonDocument.Parse(s); var plan = ParsePlan(doc); plan.RawJson = s; return plan; }
                     catch { }
                 }
                 return new AIPlan();

@@ -22,6 +22,7 @@ namespace SpreadsheetApp.UI
         private readonly Button _btnLoad = new() { Text = "Load Test", Width = 100, Height = 30 };
         private readonly Button _btnRun = new() { Text = "Run Steps", Width = 100, Height = 30 };
         private readonly CheckBox _chkSnapshots = new() { Text = "Save snapshots", AutoSize = true };
+        private readonly CheckBox _chkDumpPlan = new() { Text = "Dump plan JSON", AutoSize = true };
         private readonly Label _lblStatus = new() { AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         private readonly List<string> _testFiles = new();
         private TestSpecs? _specs;
@@ -136,7 +137,8 @@ namespace SpreadsheetApp.UI
             _btnLoad.Location = new Point(200, 4);
             _btnRun.Location = new Point(320, 4);
             _chkSnapshots.Location = new Point(440, 10);
-            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots });
+            _chkDumpPlan.Location = new Point(560, 10);
+            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots, _chkDumpPlan });
 
             Controls.Add(split);
             Controls.Add(instructionsLabel);
@@ -221,6 +223,22 @@ namespace SpreadsheetApp.UI
                         {
                             foreach (var cmd in plan.Commands) _txtLog.AppendText($"    -> {cmd.Summarize()}\r\n");
                         }
+                        if (_chkDumpPlan.Checked)
+                        {
+                            try
+                            {
+                                Directory.CreateDirectory(Path.Combine("tests", "output"));
+                                string baseName = Path.GetFileNameWithoutExtension(path);
+                                string planPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.plan.json");
+                                string contents = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
+                                File.WriteAllText(planPath, contents);
+                                _txtLog.AppendText($"    -> Plan JSON saved: {planPath}\r\n");
+                            }
+                            catch (Exception ex)
+                            {
+                                _txtLog.AppendText($"    -> Failed to save plan JSON: {ex.Message}\r\n");
+                            }
+                        }
                         if (_chkSnapshots.Checked)
                         {
                             Directory.CreateDirectory(Path.Combine("tests", "output"));
@@ -242,6 +260,91 @@ namespace SpreadsheetApp.UI
                 finally { stepNo++; }
             }
             _txtLog.AppendText("> Done.\r\n");
+        }
+
+        private static string SerializePlan(SpreadsheetApp.Core.AI.AIPlan plan)
+        {
+            try
+            {
+                var root = new System.Collections.Generic.Dictionary<string, object?>();
+                var list = new System.Collections.Generic.List<object?>();
+                foreach (var cmd in plan.Commands)
+                {
+                    if (cmd is SpreadsheetApp.Core.AI.SetValuesCommand sv)
+                    {
+                        list.Add(new
+                        {
+                            type = "set_values",
+                            start = new { row = sv.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(sv.StartCol) },
+                            values = sv.Values
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.SetFormulaCommand sf)
+                    {
+                        list.Add(new
+                        {
+                            type = "set_formula",
+                            start = new { row = sf.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(sf.StartCol) },
+                            formulas = sf.Formulas
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.ClearRangeCommand cr)
+                    {
+                        list.Add(new
+                        {
+                            type = "clear_range",
+                            start = new { row = cr.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(cr.StartCol) },
+                            rows = cr.Rows,
+                            cols = cr.Cols
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.SetTitleCommand st)
+                    {
+                        list.Add(new
+                        {
+                            type = "set_title",
+                            start = new { row = st.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(st.StartCol) },
+                            rows = st.Rows,
+                            cols = st.Cols,
+                            text = st.Text
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.RenameSheetCommand rn)
+                    {
+                        list.Add(new
+                        {
+                            type = "rename_sheet",
+                            index = rn.Index1,
+                            old_name = rn.OldName,
+                            new_name = rn.NewName
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.CreateSheetCommand cs)
+                    {
+                        list.Add(new { type = "create_sheet", name = cs.Name });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.SortRangeCommand sr)
+                    {
+                        list.Add(new
+                        {
+                            type = "sort_range",
+                            start = new { row = sr.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(sr.StartCol) },
+                            rows = sr.Rows,
+                            cols = sr.Cols,
+                            sort_col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(sr.SortCol),
+                            order = sr.Order,
+                            has_header = sr.HasHeader
+                        });
+                    }
+                }
+                root["commands"] = list;
+                var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                return System.Text.Json.JsonSerializer.Serialize(root, opts);
+            }
+            catch
+            {
+                return "{\n  \"commands\": []\n}";
+            }
         }
 
         // --- Specs support ---

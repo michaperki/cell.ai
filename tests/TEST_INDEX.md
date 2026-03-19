@@ -22,7 +22,7 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 
 ## How to use
 
-1. **Test Runner (recommended):** Test menu > Test Runner. Use Next/Prev to navigate. Click "Load Test" to load the workbook. Click "Run Steps" to execute any defined prompts/selections from `TEST_SPECS.json`. Enable "Save snapshots" to write workbook snapshots to `tests/output/` after each step.
+1. **Test Runner (recommended):** Test menu > Test Runner. Use Next/Prev to navigate. Click "Load Test" to load the workbook. Click "Run Steps" to execute prompts/selections from `TEST_SPECS.json`. Optional: enable "Save snapshots" to write workbook snapshots and enable "Dump plan JSON" to save the raw provider plan to `tests/output/` after each step.
 2. **Manual:** File > Open Workbook, navigate to `tests/`, pick a file. You can still perform actions manually; A1 no longer contains instructions.
 3. **AI tests** require an API key configured (OpenAI or Anthropic). Without one, the MockChatPlanner will respond with heuristic-based plans (limited coverage).
 

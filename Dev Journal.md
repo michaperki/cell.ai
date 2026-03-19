@@ -220,6 +220,9 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
      - Provider system prompt tightened: “Only perform requested changes; do not add titles/totals unless asked; align writes to the indicated shape.”
      - Updated `TEST_SPECS.json` for Test 06 to anchor steps with explicit ranges: Step 1 `A3:C6`, Step 2 `D3:D6`, Step 3 `A6:E6`.
 
+5) Plan JSON debug dumps
+   - Added a Test Runner toggle “Dump plan JSON” that saves the raw provider plan (or a serialized fallback) to `tests/output/<test>_stepN.plan.json` alongside workbook snapshots. This aids post‑mortem analysis when model output doesn’t align with expectations.
+
 4) Next steps
    - Add optional plan JSON dump to `tests/output/` for deeper debugging.
    - Enhance header detection in the workbook summary (identify actual header row when row 1 is a title).
