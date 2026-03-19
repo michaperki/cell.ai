@@ -3,10 +3,9 @@
 This file tracks follow-ups and refinements discovered while implementing the enhancement plan. It lives next to `ENHANCEMENT_PLAN.md`.
 
 - Incremental recalc UI integration
-  - After `_sheet.RecalculateDirty(...)`, update only affected cells and invalidate them individually (`grid.InvalidateCell(r, c)`) instead of refreshing the whole grid.
-  - Wrap grid updates in `grid.SuspendLayout()` / `grid.ResumeLayout()` to reduce flicker.
-  - Consider handling `CellValidated` instead of `CellEndEdit`, or call `grid.CommitEdit` explicitly before recalculation to ensure committed values.
-  - Heuristic: if affected set > ~5% of cells, fall back to full-sheet refresh.
+  - Use incremental repaint for bulk ops (paste, clear, replace, AI apply, undo/redo). For direct edits, keep full refresh for now due to DataGridView repaint quirks after commit.
+  - Explore `CellValidated` vs `CellEndEdit`, or explicit `CommitEdit` before recalculation to enable safe incremental edit repaint.
+  - Wrap updates in `SuspendLayout`/`ResumeLayout`; keep 5% threshold fallback.
 
 - Dependency extraction robustness
   - Reuse the existing parser (AST) to collect cell references and ranges for dependency tracking instead of ad‑hoc scanning.

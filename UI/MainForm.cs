@@ -135,8 +135,11 @@ namespace SpreadsheetApp.UI
             }
             try
             {
-                var affected = _sheet.RecalculateDirty(e.RowIndex, e.ColumnIndex);
-                RefreshDirtyOrFull(affected);
+                // Full refresh here for reliability. Incremental repaint risks stale visuals after edits.
+                RefreshGridValues();
+                grid.Invalidate();
+                grid.Refresh();
+                UpdateStatus();
             }
             catch (Exception ex)
             {
