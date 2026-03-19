@@ -222,6 +222,7 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
 
 5) Plan JSON debug dumps
    - Added a Test Runner toggle “Dump plan JSON” that saves the raw provider plan (or a serialized fallback) to `tests/output/<test>_stepN.plan.json` alongside workbook snapshots. This aids post‑mortem analysis when model output doesn’t align with expectations.
+   - Also added “Dump user prompt” to persist the constructed user prompt string (selection + nearby + workbook summary + instruction) per step to `tests/output/<test>_stepN.user.txt` for reproducibility.
 
 4) Next steps
    - Add optional plan JSON dump to `tests/output/` for deeper debugging.

@@ -23,6 +23,7 @@ namespace SpreadsheetApp.UI
         private readonly Button _btnRun = new() { Text = "Run Steps", Width = 100, Height = 30 };
         private readonly CheckBox _chkSnapshots = new() { Text = "Save snapshots", AutoSize = true };
         private readonly CheckBox _chkDumpPlan = new() { Text = "Dump plan JSON", AutoSize = true };
+        private readonly CheckBox _chkDumpPrompt = new() { Text = "Dump user prompt", AutoSize = true };
         private readonly Label _lblStatus = new() { AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         private readonly List<string> _testFiles = new();
         private TestSpecs? _specs;
@@ -138,7 +139,8 @@ namespace SpreadsheetApp.UI
             _btnRun.Location = new Point(320, 4);
             _chkSnapshots.Location = new Point(440, 10);
             _chkDumpPlan.Location = new Point(560, 10);
-            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots, _chkDumpPlan });
+            _chkDumpPrompt.Location = new Point(690, 10);
+            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots, _chkDumpPlan, _chkDumpPrompt });
 
             Controls.Add(split);
             Controls.Add(instructionsLabel);
@@ -222,6 +224,22 @@ namespace SpreadsheetApp.UI
                         else
                         {
                             foreach (var cmd in plan.Commands) _txtLog.AppendText($"    -> {cmd.Summarize()}\r\n");
+                        }
+                        if (_chkDumpPrompt.Checked)
+                        {
+                            try
+                            {
+                                Directory.CreateDirectory(Path.Combine("tests", "output"));
+                                string baseName = Path.GetFileNameWithoutExtension(path);
+                                string promptPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.user.txt");
+                                string contents = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
+                                File.WriteAllText(promptPath, contents);
+                                _txtLog.AppendText($"    -> User prompt saved: {promptPath}\r\n");
+                            }
+                            catch (Exception ex)
+                            {
+                                _txtLog.AppendText($"    -> Failed to save user prompt: {ex.Message}\r\n");
+                            }
                         }
                         if (_chkDumpPlan.Checked)
                         {
