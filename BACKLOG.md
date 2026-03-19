@@ -8,21 +8,18 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ## Active — AI / Chat UX
 
-- **Chat closes on Apply (bug/UX)**
-  - `ChatAssistantForm` calls `Close()` after apply (line 43), killing multi-turn iteration. The user must reopen chat for each follow-up, even though conversation history is maintained.
-  - Fix: keep window open after apply, clear the input, show "Applied" confirmation in the list, let the user continue chatting.
+- **Chat closes on Apply (bug/UX) — DONE**
+  - Chat now stays open after Apply; input clears and an “Applied …” summary is appended so users can continue multi‑turn flows.
 
-- **Planner timeout too short (10s)**
-  - `CancellationTokenSource(TimeSpan.FromSeconds(10))` in `ChatAssistantForm.DoPlanAsync`. Complex plans with large context (workbook summary + nearby + history) regularly exceed this, especially on Claude.
-  - Raise to 20-30s, or make configurable via AppSettings.
+- **Planner timeout too short (10s) — ADDRESSED**
+  - Planning timeout increased to 30s. Consider making configurable if needed per‑provider.
 
 - **Anthropic max_tokens=800 is low**
   - `AnthropicProvider` caps response at 800 tokens. A budget table with formulas can exceed this. OpenAI has no explicit limit, creating asymmetry.
   - Raise to at least 2048. Consider making configurable.
 
-- **No progress indicator during planning**
-  - The UI only disables the Plan button. No visual feedback that work is happening.
-  - Add a "Thinking..." label or a simple progress spinner in the ChatAssistantForm.
+- **No progress indicator during planning — DONE**
+  - Added a lightweight “Thinking…” status label in ChatAssistantForm during planning.
 
 - **No plan revision / rejection UX**
   - Only options are Apply or Close. No way to tell the AI "change the formulas but keep the values" or edit individual commands before applying.
@@ -36,9 +33,8 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - If a formula the AI generates evaluates to `#ERR`, there's no path back. After apply, scan for new `#ERR` cells and auto-prompt: "These cells errored: [list]. Fix?"
   - Lighter lift than the full "error repair" enhancement — directly tied to the AI apply flow.
 
-- **MockChatPlanner doesn't cover full command set**
-  - Keyword heuristics only generate `set_values`, `create_sheet`, `set_title`. Can't produce `set_formula`, `sort_range`, `clear_range`, `rename_sheet` plans.
-  - Expand for better offline development and testing.
+- **MockChatPlanner coverage — PARTIAL DONE**
+  - Expanded to produce `set_formula`, `sort_range`, `clear_range`, `rename_sheet`, plus heuristics for expense tables, tax columns, and bonus columns. Further tuning still welcome.
 
 ---
 

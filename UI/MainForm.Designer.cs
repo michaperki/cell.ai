@@ -306,7 +306,7 @@ namespace SpreadsheetApp.UI
 
             // Modern flat styling
             grid.BorderStyle = BorderStyle.None;
-            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.Single;
             grid.GridColor = Color.FromArgb(228, 228, 228);
             grid.BackgroundColor = Color.White;
 
@@ -317,11 +317,6 @@ namespace SpreadsheetApp.UI
             grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(200, 220, 240);
             grid.DefaultCellStyle.SelectionForeColor = Color.FromArgb(30, 30, 30);
             grid.DefaultCellStyle.Padding = new Padding(2, 0, 2, 0);
-
-            // Alternating row colors
-            grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(245, 247, 250);
-            grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = Color.FromArgb(200, 220, 240);
-            grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = Color.FromArgb(30, 30, 30);
 
             // Flat column headers
             grid.EnableHeadersVisualStyles = false;
@@ -361,9 +356,9 @@ namespace SpreadsheetApp.UI
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new System.Drawing.Size(1000, 700);
-            Controls.Add(statusStrip1);
-            Controls.Add(tabs);
             Controls.Add(grid);
+            Controls.Add(tabs);
+            Controls.Add(statusStrip1);
             Controls.Add(menuStrip1);
             MainMenuStrip = menuStrip1;
             Name = "MainForm";

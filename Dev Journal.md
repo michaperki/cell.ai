@@ -220,9 +220,13 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
      - Provider system prompt tightened: “Only perform requested changes; do not add titles/totals unless asked; align writes to the indicated shape.”
      - Updated `TEST_SPECS.json` for Test 06 to anchor steps with explicit ranges: Step 1 `A3:C6`, Step 2 `D3:D6`, Step 3 `A6:E6`.
 
-5) Plan JSON debug dumps
+5) Plan, prompt, and system debug dumps
    - Added a Test Runner toggle “Dump plan JSON” that saves the raw provider plan (or a serialized fallback) to `tests/output/<test>_stepN.plan.json` alongside workbook snapshots. This aids post‑mortem analysis when model output doesn’t align with expectations.
-   - Also added “Dump user prompt” to persist the constructed user prompt string (selection + nearby + workbook summary + instruction) per step to `tests/output/<test>_stepN.user.txt` for reproducibility.
+   - Added “Dump user prompt” to persist the constructed user prompt string (selection + nearby + workbook summary + instruction) per step to `tests/output/<test>_stepN.user.txt` for reproducibility.
+   - Added “Dump system prompt” to persist the system schema/rules sent to the planner to `tests/output/<test>_stepN.system.txt` for transparency.
+
+6) Before/after cell diffs in Test Runner
+   - The runner now logs a concise diff of cell changes on the active sheet after each applied step (added/changed/cleared), capped at 100 entries per step for readability.
 
 4) Next steps
    - Add optional plan JSON dump to `tests/output/` for deeper debugging.

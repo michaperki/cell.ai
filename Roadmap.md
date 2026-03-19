@@ -113,7 +113,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 ## Quality & Verification
 - Build gate and quick manual checklist per release.
 - Unit tests for parser, functions, I/O, and formatting.
-- **E2E Test Suite**: 15 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Each file's cell A1 contains step-by-step instructions. Accessible via Test > Test Runner menu or File > Open Workbook. See `tests/TEST_INDEX.md`.
+- **E2E Test Suite**: 15 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
 
 ## File Format Versioning
 - Introduced `formatVersion` (1) for workbook JSON; loader auto-detects workbook vs single-sheet for backward compatibility.

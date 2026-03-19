@@ -6,19 +6,8 @@
       "Rows": 100,
       "Columns": 26,
       "Cells": {
-        "A3": "Expense Table",
-        "B3": "Expense Table",
-        "C3": "Expense Table",
-        "A4": "2023-10-01",
-        "B4": "Groceries",
-        "C4": "=B4*0.1",
-        "D4": "=C4*0.1",
-        "A5": "2023-10-02",
-        "B5": "Total",
-        "C5": "=B5*0.1",
-        "D5": "=C5*0.1",
-        "A6": "Total",
-        "C6": "=SUM(C4:C5)"
+        "D3": "Tax",
+        "D4": "=C4*0.1"
       },
       "Formats": null
     }

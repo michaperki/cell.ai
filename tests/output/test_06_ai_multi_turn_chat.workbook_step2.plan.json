@@ -1,0 +1,1 @@
+{"commands":[{"type":"set_title","start":{"row":3,"col":"D"},"rows":1,"cols":1,"text":"Tax"},{"type":"set_formula","start":{"row":4,"col":"D"},"formulas":[["=C4*0.1"]]}]}

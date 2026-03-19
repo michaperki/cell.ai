@@ -1,0 +1,3 @@
+(no RawUser from provider)
+stepPrompt: Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.
+location: A3:C6
