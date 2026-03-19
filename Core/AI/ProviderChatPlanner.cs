@@ -28,7 +28,7 @@ namespace SpreadsheetApp.Core.AI
                 else return new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>}]} with no extra keys, no prose.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"}]} with no extra keys, no prose.";
             string usr = $"Sheet={context.SheetName}; Selection=({context.StartRow+1},{CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}; Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for rectangular fills.";
 
             string json = provider switch
@@ -197,6 +197,15 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("cols", out var c)) st.Cols = SafeInt(c, 1);
                                 if (cmd.TryGetProperty("text", out var tx)) st.Text = tx.GetString() ?? string.Empty;
                                 plan.Commands.Add(st);
+                                break;
+                            }
+                        case "rename_sheet":
+                            {
+                                var rn = new RenameSheetCommand();
+                                if (cmd.TryGetProperty("index", out var idx)) rn.Index1 = SafeInt(idx, 0) > 0 ? SafeInt(idx, 0) : (int?)null;
+                                if (cmd.TryGetProperty("old_name", out var on) && on.ValueKind == JsonValueKind.String) rn.OldName = on.GetString();
+                                if (cmd.TryGetProperty("new_name", out var nn) && nn.ValueKind == JsonValueKind.String) rn.NewName = nn.GetString() ?? rn.NewName;
+                                plan.Commands.Add(rn);
                                 break;
                             }
                         case "create_sheet":

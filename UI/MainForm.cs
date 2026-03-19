@@ -900,6 +900,13 @@ namespace SpreadsheetApp.UI
                 {
                     aiEnableInlineToolStripMenuItem.Checked = false;
                 }
+                // Undo/Redo availability
+                try
+                {
+                    undoToolStripMenuItem.Enabled = _undo.CanUndo;
+                    redoToolStripMenuItem.Enabled = _undo.CanRedo;
+                }
+                catch { }
             }
             catch { }
         }
@@ -1131,6 +1138,23 @@ namespace SpreadsheetApp.UI
                             }
                         }
                     }
+                }
+                else if (cmd is RenameSheetCommand rn)
+                {
+                    int targetIndex = _activeSheetIndex;
+                    if (rn.Index1.HasValue)
+                    {
+                        targetIndex = Math.Max(0, Math.Min(_sheets.Count - 1, rn.Index1.Value - 1));
+                    }
+                    else if (!string.IsNullOrWhiteSpace(rn.OldName))
+                    {
+                        int idx = _sheetNames.FindIndex(n => string.Equals(n, rn.OldName, StringComparison.OrdinalIgnoreCase));
+                        if (idx >= 0) targetIndex = idx;
+                    }
+                    string newName = string.IsNullOrWhiteSpace(rn.NewName) ? _sheetNames[targetIndex] : rn.NewName.Trim();
+                    _sheetNames[targetIndex] = newName;
+                    _activeSheetIndex = targetIndex;
+                    RefreshTabs();
                 }
                 else if (cmd is SetTitleCommand st)
                 {

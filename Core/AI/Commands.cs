@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SpreadsheetApp.Core.AI
 {
-    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange }
+    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange, RenameSheet }
 
     public interface IAICommand
     {
@@ -50,5 +50,15 @@ namespace SpreadsheetApp.Core.AI
         public int Rows { get; set; } = 1;
         public int Cols { get; set; } = 1;
         public string Summarize() => $"Clear {Rows}x{Cols} at {StartRow+1},{StartCol+1}";
+    }
+
+    public sealed class RenameSheetCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.RenameSheet;
+        // One of Index (1-based) or OldName can be provided; if neither, applies to active.
+        public int? Index1 { get; set; }
+        public string? OldName { get; set; }
+        public string NewName { get; set; } = "Sheet";
+        public string Summarize() => $"Rename sheet {(Index1.HasValue ? Index1.ToString() : (OldName ?? "(active)"))} to '{NewName}'";
     }
 }
