@@ -21,7 +21,7 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - For backward compatibility, still accept single‑sheet files. Offer both “Save Sheet” and “Save Workbook”.
 
 - Async I/O adoption
-  - Switch File→Open/Save to call async methods and show a busy indicator (cursor wait) and disable UI until completion.
+  - Open/Save now uses async IO with busy cursor and disables UI. Extend to other long-running operations (CSV import/export, future workbook IO) and add guard flags to avoid reentrancy.
 
 - Editing UX
   - Clear contents for multi-cell selections with Delete/Backspace — implement as a single bulk undo action and refresh only affected cells when incremental repaint lands.
