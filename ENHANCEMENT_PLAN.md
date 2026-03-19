@@ -1,5 +1,7 @@
 # Rustsheet Enhancement Plan
 
+Status: This plan captured v0.1–v0.2 work. Current planning lives in `Roadmap.md` and `BACKLOG.md`. Keep this as historical context.
+
 ## Context
 The spreadsheet app has a solid foundation (~838 lines of C#) with a formula engine, basic file I/O, and a WinForms UI. We're implementing 19 enhancements covering the formula engine, UI, architecture, and I/O.
 
@@ -86,12 +88,12 @@ The spreadsheet app has a solid foundation (~838 lines of C#) with a formula eng
 - Search through `_sheet.GetRaw()` for all cells, highlight/navigate to matches
 - Replace: update raw value and recalculate
 
-### 3E. Multi-sheet (tabs) support — PARTIAL (UI tabs done; workbook I/O pending)
+### 3E. Multi-sheet (tabs) support — DONE (UI tabs + workbook I/O)
 - **Files**: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`, `Core/Spreadsheet.cs`, `IO/SpreadsheetIO.cs`
 - Add `TabControl` below menu, above grid
 - `_sheets` list of `Spreadsheet` objects with names
 - Add/remove/rename sheet tabs via right-click context menu
-- Update IO format to save/load array of sheets
+- Update IO format to save/load array of sheets (added `.workbook.json` with `formatVersion`)
 - Each tab switch swaps the active `Spreadsheet` and refreshes grid
 
 ### 3F. Cell formatting — DONE (basic number format support)
@@ -113,9 +115,9 @@ The spreadsheet app has a solid foundation (~838 lines of C#) with a formula eng
 - Export: iterate rows/columns, write comma-separated values (handle commas in values with quoting)
 - Import: parse CSV, create new Spreadsheet, populate cells
 
-### 4B. Async file I/O — PARTIAL (IO methods added; UI adoption pending)
+### 4B. Async file I/O — DONE (IO methods + UI adoption)
 - **File**: `IO/SpreadsheetIO.cs` — add `SaveToFileAsync` and `LoadFromFileAsync` using `File.WriteAllTextAsync`/`File.ReadAllTextAsync`
-- **File**: `UI/MainForm.cs` — make save/open handlers async, show cursor wait
+- **File**: `UI/MainForm.cs` — save/open handlers async, show cursor wait and disable UI while running
 
 ### 4C. Recent files list — DONE
 - **File**: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`

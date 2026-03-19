@@ -158,3 +158,34 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
   - We now trim any leading repeats of items that already exist above the cursor, then show only new items.
   - If all returned items are repeats, the ghost shows “No suggestions” and disables Apply instead of flashing and disappearing.
   - Accept writes only the new items starting at the current empty cell; existing cells above are never overwritten.
+
+## Additional Updates (Repaint, Workbook I/O, Chat Planner)
+
+1) Incremental repaint strategy and reliability fix
+   - Change: Introduced an incremental repaint helper that updates only affected cells using `_sheet.RecalculateDirty(...)` with a 5% threshold fallback to full refresh.
+   - Applied to: paste, cut, Clear Contents, Replace/Replace All, AI apply, and Undo/Redo.
+   - Edit reliability: After `CellEndEdit`, we restored a full-sheet `RefreshGridValues()` to guarantee dependent cells update immediately (fixes A2→A3 scenario). Incremental-on-edit remains in backlog for later when safe.
+
+2) Multi-cell Clear Contents + safety
+   - New: Edit → Clear Contents (Delete/Backspace) clears multi-selection in a single bulk undo group.
+   - Added confirmation when clearing if any selected cells contain formulas.
+
+3) Async Open/Save in UI
+   - File → Open/Save now use async IO with a wait cursor and disabled UI during operations.
+   - Pattern ready to be reused for CSV and workbook operations.
+
+4) Workbook Save/Open (multi‑sheet) — first pass
+   - Added `.workbook.json` format with `formatVersion = 1`, sheet names, cells, and formats.
+   - Loader auto-detects workbook vs single-sheet JSON; backward compatible.
+   - UI adds “Open Workbook…” / “Save Workbook As…” (async).
+
+5) Chat planner commands extended
+   - `clear_range`: clears a rectangular region; applied with composite undo and incremental repaint.
+   - `rename_sheet`: renames a target sheet by index or name; updates tabs immediately.
+
+6) Undo/Redo menu state
+   - Edit → Undo/Redo enable/disable based on stack contents; stays in sync after operations.
+
+7) Regression fix
+   - Issue: Dependent cells not repainting after edit when we first tried incremental-on-edit.
+   - Fix: Reverted edits to full refresh path; kept incremental for bulk ops.

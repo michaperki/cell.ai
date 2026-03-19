@@ -13,17 +13,19 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 
 ## Release Milestones
 
-### v0.2 — Reliability & Multi‑sheet Parity (near‑term)
-- Workbook Save/Open for multiple named sheets; backward compatible with single‑sheet JSON.
-- Switch UI Open/Save to async; show wait cursor and guard repeated actions.
-- Establish test coverage for parser, functions (incl. VLOOKUP), formatting, and CSV.
- - Generate Fill: respect selection shape (rows x cols) when a range is selected; seed dialog size pickers from selection. Enable grid multi‑select for rectangular ranges.
+### v0.2 — Reliability & Multi‑sheet Parity (shipped, first pass)
+- Workbook Save/Open for multiple named sheets — added `.workbook.json`, names + formats, backward compatible loader.
+- Switch UI Open/Save to async with wait cursor and UI disable.
+- Generate Fill respects selection shape (rows x cols), multi-select enabled, single bulk undo.
+- Inline continuation deduplication and safe apply of only new items.
+- Chat planner extensions: `clear_range`, `rename_sheet` (strict JSON), composite apply.
 
 ### v0.3 — Performance & UX Polish (near‑term)
-- Incremental repaint driven by dependency graph + AST references.
+- Incremental repaint: use RecalculateDirty for bulk ops (done); evaluate safe incremental-on-edit (CellValidated/CommitEdit), with 5% fallback.
 - Copy/paste semantics honoring absolute/relative refs ($A$1 vs A1).
 - Expanded number formatting presets and alignment tweaks.
- - Inline suggestions: filter out duplicates of existing items above; ghost preview shows only new items; accept writes only new items starting at the current empty cell.
+- Undo polish: coalesce rapid edits; grouped actions state reflected in menu enable/disable.
+- Async adoption: extend to CSV import/export and workbook flows; add guard flags and progress affordances.
 
 ### v0.4 — Interop & Distribution (stretch)
 - Evaluate XLSX import/export or a stable interchange path.
@@ -59,12 +61,14 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Only 1D list continuation; respects existing data boundaries; zero writes without explicit accept.
   - Cancelation immediate; UI never blocks; memory/CPU overhead minimal.
 
-### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — MINIMAL LIVE
+### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (minimal)
 - UX: docked side panel with chat; messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step.
 - Command grammar v0 (safe subset):
   - `set_values(range, values2d)`
   - `create_sheet(name)`
   - `set_title(range, text)`
+  - `clear_range(range)`
+  - `rename_sheet(name|index, new_name)`
   - (Defer formatting/sort/insert/delete until v0.4)
 - Context pack:
   - Workbook summary (sheet names, detected titles), active selection snapshot, first header row/column samples, and small stats (row/col counts).
@@ -105,8 +109,8 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 - Unit tests for parser, functions, I/O, and formatting.
 
 ## File Format Versioning
-- Introduce a `formatVersion` field; define migration from single‑sheet to multi‑sheet.
-- Document backward/forward compatibility guarantees.
+- Introduced `formatVersion` (1) for workbook JSON; loader auto-detects workbook vs single-sheet for backward compatibility.
+- Document forward compatibility and migration guidance as formats evolve.
 
 ## Risks & Mitigations
 - UI reentrancy around tabs and async I/O → guards and thorough event handling.
