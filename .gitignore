@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# User/IDE files
+*.user
+*.suo
+*.userprefs
+
+# Environment/config secrets
+.env
+
+# OS cruft
+.DS_Store
+Thumbs.db
