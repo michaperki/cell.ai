@@ -516,6 +516,19 @@ namespace SpreadsheetApp.UI
             {
                 var cells = grid.SelectedCells;
                 if (cells == null || cells.Count == 0) return;
+                // Optional safety: confirm if formulas would be cleared
+                int formulaCount = 0;
+                foreach (DataGridViewCell cell in cells)
+                {
+                    if (cell == null) continue;
+                    var raw = _sheet.GetRaw(cell.RowIndex, cell.ColumnIndex) ?? string.Empty;
+                    if (!string.IsNullOrEmpty(raw) && raw.StartsWith("=", StringComparison.Ordinal)) formulaCount++;
+                }
+                if (formulaCount > 0)
+                {
+                    var resp = MessageBox.Show(this, $"Clear contents of {cells.Count} cells, including {formulaCount} formula(s)?", "Clear Contents", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+                    if (resp != DialogResult.OK) return;
+                }
                 var seen = new HashSet<(int r, int c)>();
                 var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
                 foreach (DataGridViewCell cell in cells)
@@ -1047,6 +1060,26 @@ namespace SpreadsheetApp.UI
                         }
                     }
                 }
+                else if (cmd is ClearRangeCommand cr)
+                {
+                    int rows = Math.Max(1, cr.Rows);
+                    int cols = Math.Max(1, cr.Cols);
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = cr.StartRow + r;
+                            int cc = cr.StartCol + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            string? oldRaw = _sheet.GetRaw(rr, cc);
+                            if (!string.IsNullOrEmpty(oldRaw))
+                            {
+                                _sheet.SetRaw(rr, cc, string.Empty);
+                                edits.Add((rr, cc, oldRaw, string.Empty));
+                            }
+                        }
+                    }
+                }
                 else if (cmd is SetTitleCommand st)
                 {
                     for (int r = 0; r < st.Rows; r++)
@@ -1279,6 +1312,30 @@ namespace SpreadsheetApp.UI
 
         private void SaveSheet()
         {
+            // Legacy sync path retained; prefer SaveSheetAsync for UI
+            _ = SaveSheetAsync();
+        }
+
+        private void OpenSheet()
+        {
+            // Legacy sync path retained; prefer OpenSheetAsync for UI
+            _ = OpenSheetAsync();
+        }
+
+        private void SetUiBusy(bool busy)
+        {
+            try
+            {
+                UseWaitCursor = busy;
+                Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+                menuStrip1.Enabled = !busy;
+                grid.Enabled = !busy;
+            }
+            catch { }
+        }
+
+        private async System.Threading.Tasks.Task SaveSheetAsync()
+        {
             using var sfd = new SaveFileDialog
             {
                 Filter = "Spreadsheet JSON (*.sheet.json)|*.sheet.json|All files (*.*)|*.*",
@@ -1286,12 +1343,21 @@ namespace SpreadsheetApp.UI
             };
             if (sfd.ShowDialog(this) == DialogResult.OK)
             {
-                IO.SpreadsheetIO.SaveToFile(_sheet, sfd.FileName);
-                AddRecentFile(sfd.FileName);
+                SetUiBusy(true);
+                try
+                {
+                    await IO.SpreadsheetIO.SaveToFileAsync(_sheet, sfd.FileName).ConfigureAwait(true);
+                    AddRecentFile(sfd.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Save failed: {ex.Message}", "Save", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally { SetUiBusy(false); }
             }
         }
 
-        private void OpenSheet()
+        private async System.Threading.Tasks.Task OpenSheetAsync()
         {
             using var ofd = new OpenFileDialog
             {
@@ -1299,10 +1365,19 @@ namespace SpreadsheetApp.UI
             };
             if (ofd.ShowDialog(this) == DialogResult.OK)
             {
-                var loaded = IO.SpreadsheetIO.LoadFromFile(ofd.FileName);
-                _sheets.Clear(); _sheetNames.Clear(); _undos.Clear();
-                InitializeSheet(loaded);
-                AddRecentFile(ofd.FileName);
+                SetUiBusy(true);
+                try
+                {
+                    var loaded = await IO.SpreadsheetIO.LoadFromFileAsync(ofd.FileName).ConfigureAwait(true);
+                    _sheets.Clear(); _sheetNames.Clear(); _undos.Clear();
+                    InitializeSheet(loaded);
+                    AddRecentFile(ofd.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Open failed: {ex.Message}", "Open", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally { SetUiBusy(false); }
             }
         }
 

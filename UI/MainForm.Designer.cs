@@ -107,13 +107,13 @@ namespace SpreadsheetApp.UI
             openToolStripMenuItem.Name = "openToolStripMenuItem";
             openToolStripMenuItem.Text = "Open...";
             openToolStripMenuItem.ShortcutKeys = Keys.Control | Keys.O;
-            openToolStripMenuItem.Click += (_, __) => OpenSheet();
+            openToolStripMenuItem.Click += async (_, __) => await OpenSheetAsync();
 
             // saveToolStripMenuItem
             saveToolStripMenuItem.Name = "saveToolStripMenuItem";
             saveToolStripMenuItem.Text = "Save As...";
             saveToolStripMenuItem.ShortcutKeys = Keys.Control | Keys.S;
-            saveToolStripMenuItem.Click += (_, __) => SaveSheet();
+            saveToolStripMenuItem.Click += async (_, __) => await SaveSheetAsync();
 
             // importCsvToolStripMenuItem
             importCsvToolStripMenuItem.Name = "importCsvToolStripMenuItem";

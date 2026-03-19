@@ -28,7 +28,7 @@ namespace SpreadsheetApp.Core.AI
                 else return new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"}]} with no extra keys, no prose.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>}]} with no extra keys, no prose.";
             string usr = $"Sheet={context.SheetName}; Selection=({context.StartRow+1},{CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}; Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for rectangular fills.";
 
             string json = provider switch
@@ -168,6 +168,20 @@ namespace SpreadsheetApp.Core.AI
                                     sv.Values = rows.ToArray();
                                 }
                                 plan.Commands.Add(sv);
+                            break;
+                        }
+                        case "clear_range":
+                            {
+                                var cr = new ClearRangeCommand();
+                                if (cmd.TryGetProperty("start", out var start))
+                                {
+                                    int srr, scc;
+                                    ParseStart(start, out srr, out scc);
+                                    cr.StartRow = srr; cr.StartCol = scc;
+                                }
+                                if (cmd.TryGetProperty("rows", out var r)) cr.Rows = SafeInt(r, 1);
+                                if (cmd.TryGetProperty("cols", out var c)) cr.Cols = SafeInt(c, 1);
+                                plan.Commands.Add(cr);
                                 break;
                             }
                         case "set_title":

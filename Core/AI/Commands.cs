@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SpreadsheetApp.Core.AI
 {
-    public enum AICommandType { SetValues, SetTitle, CreateSheet }
+    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange }
 
     public interface IAICommand
     {
@@ -40,5 +40,15 @@ namespace SpreadsheetApp.Core.AI
         public AICommandType Type => AICommandType.CreateSheet;
         public string Name { get; set; } = "New Sheet";
         public string Summarize() => $"Create sheet '{Name}'";
+    }
+
+    public sealed class ClearRangeCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.ClearRange;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public string Summarize() => $"Clear {Rows}x{Cols} at {StartRow+1},{StartCol+1}";
     }
 }
