@@ -135,10 +135,8 @@ namespace SpreadsheetApp.UI
             }
             try
             {
-                RefreshGridValues();
-                grid.Invalidate();
-                grid.Refresh();
-                UpdateStatus();
+                var affected = _sheet.RecalculateDirty(e.RowIndex, e.ColumnIndex);
+                RefreshDirtyOrFull(affected);
             }
             catch (Exception ex)
             {
@@ -156,18 +154,23 @@ namespace SpreadsheetApp.UI
                 if (editsComp.Count > 0)
                 {
                     _suppressRecord = true;
+                    var affected = new HashSet<(int r, int c)>();
                     try
                     {
                         foreach (var e in editsComp)
+                        {
                             _sheet.SetRaw(e.Row, e.Col, e.OldRaw);
+                            foreach (var ac in _sheet.RecalculateDirty(e.Row, e.Col)) affected.Add(ac);
+                        }
                     }
                     finally { _suppressRecord = false; }
+                    try { RefreshDirtyOrFull(affected); } catch { }
                 }
                 if (sheetAddComp.HasValue)
                 {
                     RemoveSheetAt(sheetAddComp.Value.index);
                 }
-                try { RefreshGridValues(); } catch { }
+                // Removing a sheet triggers full re-init of grid
             }
             else if (_undo.TryUndoSheetAdd(out int sheetIndex, out string sheetName))
             {
@@ -176,15 +179,17 @@ namespace SpreadsheetApp.UI
             else if (_undo.TryUndoBulk(out var edits))
             {
                 _suppressRecord = true;
+                var affected = new HashSet<(int r, int c)>();
                 try
                 {
                     foreach (var e in edits)
                     {
                         _sheet.SetRaw(e.row, e.col, e.raw);
+                        foreach (var ac in _sheet.RecalculateDirty(e.row, e.col)) affected.Add(ac);
                     }
                 }
                 finally { _suppressRecord = false; }
-                try { RefreshGridValues(); } catch { }
+                try { RefreshDirtyOrFull(affected); } catch { }
                 if (edits.Count > 0)
                 {
                     var (rr, cc, _) = edits[0];
@@ -196,7 +201,7 @@ namespace SpreadsheetApp.UI
             {
                 _suppressRecord = true;
                 _sheet.SetRaw(r, c, raw);
-                try { RefreshGridValues(); } finally { _suppressRecord = false; }
+                try { var aff = _sheet.RecalculateDirty(r, c); RefreshDirtyOrFull(aff); } finally { _suppressRecord = false; }
                 if (r >= 0 && r < grid.RowCount && c >= 0 && c < grid.ColumnCount)
                 {
                     grid.CurrentCell = grid[c, r];
@@ -216,14 +221,18 @@ namespace SpreadsheetApp.UI
                 if (editsComp.Count > 0)
                 {
                     _suppressRecord = true;
+                    var affected = new HashSet<(int r, int c)>();
                     try
                     {
                         foreach (var e in editsComp)
+                        {
                             _sheet.SetRaw(e.Row, e.Col, e.NewRaw);
+                            foreach (var ac in _sheet.RecalculateDirty(e.Row, e.Col)) affected.Add(ac);
+                        }
                     }
                     finally { _suppressRecord = false; }
+                    try { RefreshDirtyOrFull(affected); } catch { }
                 }
-                try { RefreshGridValues(); } catch { }
             }
             else if (_undo.TryRedoSheetAdd(out int sheetIndex, out string sheetName))
             {
@@ -232,15 +241,17 @@ namespace SpreadsheetApp.UI
             else if (_undo.TryRedoBulk(out var edits))
             {
                 _suppressRecord = true;
+                var affected = new HashSet<(int r, int c)>();
                 try
                 {
                     foreach (var e in edits)
                     {
                         _sheet.SetRaw(e.row, e.col, e.raw);
+                        foreach (var ac in _sheet.RecalculateDirty(e.row, e.col)) affected.Add(ac);
                     }
                 }
                 finally { _suppressRecord = false; }
-                try { RefreshGridValues(); } catch { }
+                try { RefreshDirtyOrFull(affected); } catch { }
                 if (edits.Count > 0)
                 {
                     var (rr, cc, _) = edits[0];
@@ -252,7 +263,7 @@ namespace SpreadsheetApp.UI
             {
                 _suppressRecord = true;
                 _sheet.SetRaw(r, c, raw);
-                try { RefreshGridValues(); } finally { _suppressRecord = false; }
+                try { var aff = _sheet.RecalculateDirty(r, c); RefreshDirtyOrFull(aff); } finally { _suppressRecord = false; }
                 if (r >= 0 && r < grid.RowCount && c >= 0 && c < grid.ColumnCount)
                 {
                     grid.CurrentCell = grid[c, r];
@@ -264,6 +275,43 @@ namespace SpreadsheetApp.UI
         {
             _sheet.Recalculate();
             RefreshGridDisplays();
+        }
+
+        private void RefreshDirtyOrFull(System.Collections.Generic.IReadOnlyCollection<(int r, int c)> affected)
+        {
+            try
+            {
+                int total = _sheet.Rows * _sheet.Columns;
+                if (affected == null || affected.Count == 0 || affected.Count > Math.Max(10, total / 20))
+                {
+                    RefreshGridValues();
+                    grid.Invalidate();
+                    grid.Refresh();
+                    UpdateStatus();
+                    return;
+                }
+                grid.SuspendLayout();
+                try
+                {
+                    foreach (var (r, c) in affected)
+                    {
+                        if (r < 0 || r >= _sheet.Rows || c < 0 || c >= _sheet.Columns) continue;
+                        var cell = grid[c, r];
+                        cell.Value = GetDisplayWithFormat(r, c);
+                        ApplyCellFormat(cell, r, c);
+                        grid.InvalidateCell(c, r);
+                    }
+                }
+                finally
+                {
+                    grid.ResumeLayout();
+                    UpdateStatus();
+                }
+            }
+            catch
+            {
+                try { RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus(); } catch { }
+            }
         }
 
         private void RefreshGridDisplays()
@@ -388,10 +436,8 @@ namespace SpreadsheetApp.UI
             _undo.RecordSet(r, c, oldRaw, text);
             try
             {
-                RefreshGridValues();
-                grid.Invalidate();
-                grid.Refresh();
-                UpdateStatus();
+                var affected = _sheet.RecalculateDirty(r, c);
+                RefreshDirtyOrFull(affected);
             }
             catch { }
         }
@@ -409,10 +455,8 @@ namespace SpreadsheetApp.UI
             _undo.RecordSet(r, c, oldRaw, string.Empty);
             try
             {
-                RefreshGridValues();
-                grid.Invalidate();
-                grid.Refresh();
-                UpdateStatus();
+                var affected = _sheet.RecalculateDirty(r, c);
+                RefreshDirtyOrFull(affected);
             }
             catch { }
         }
@@ -531,6 +575,7 @@ namespace SpreadsheetApp.UI
                 }
                 var seen = new HashSet<(int r, int c)>();
                 var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+                var affected = new HashSet<(int r, int c)>();
                 foreach (DataGridViewCell cell in cells)
                 {
                     if (cell == null) continue;
@@ -541,15 +586,13 @@ namespace SpreadsheetApp.UI
                     {
                         _sheet.SetRaw(r, c, string.Empty);
                         edits.Add((r, c, oldRaw, string.Empty));
+                        foreach (var ac in _sheet.RecalculateDirty(r, c)) affected.Add(ac);
                     }
                 }
                 if (edits.Count > 0)
                 {
                     _undo.RecordBulk(edits);
-                    RefreshGridValues();
-                    grid.Invalidate();
-                    grid.Refresh();
-                    UpdateStatus();
+                    RefreshDirtyOrFull(affected);
                 }
             }
             catch { }
@@ -673,7 +716,8 @@ namespace SpreadsheetApp.UI
                 var oldRaw = raw;
                 _suppressRecord = true; try { _sheet.SetRaw(r, c, newRaw); } finally { _suppressRecord = false; }
                 _undo.RecordSet(r, c, oldRaw, newRaw);
-                RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus();
+                var affected = _sheet.RecalculateDirty(r, c);
+                RefreshDirtyOrFull(affected);
 
                 // Move to next
                 _findPosRow = r; _findPosCol = c;
@@ -690,6 +734,7 @@ namespace SpreadsheetApp.UI
             if (string.IsNullOrEmpty(_lastFind)) return;
 
             bool any = false;
+            var affectedAll = new HashSet<(int r, int c)>();
             for (int r = 0; r < _sheet.Rows; r++)
             {
                 for (int c = 0; c < _sheet.Columns; c++)
@@ -703,12 +748,13 @@ namespace SpreadsheetApp.UI
                         var oldRaw = raw;
                         _suppressRecord = true; try { _sheet.SetRaw(r, c, replaced); } finally { _suppressRecord = false; }
                         _undo.RecordSet(r, c, oldRaw, replaced);
+                        foreach (var ac in _sheet.RecalculateDirty(r, c)) affectedAll.Add(ac);
                     }
                 }
             }
             if (any)
             {
-                RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus();
+                RefreshDirtyOrFull(affectedAll);
             }
         }
 
@@ -1037,6 +1083,7 @@ namespace SpreadsheetApp.UI
         private void ApplyPlan(AIPlan plan)
         {
             var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
             int? sheetAddedIndex = null; string? sheetAddedName = null;
             foreach (var cmd in plan.Commands)
             {
@@ -1057,6 +1104,7 @@ namespace SpreadsheetApp.UI
                             string newRaw = set.Values[r][c] ?? string.Empty;
                             _sheet.SetRaw(rr, cc, newRaw);
                             edits.Add((rr, cc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
                         }
                     }
                 }
@@ -1076,6 +1124,7 @@ namespace SpreadsheetApp.UI
                             {
                                 _sheet.SetRaw(rr, cc, string.Empty);
                                 edits.Add((rr, cc, oldRaw, string.Empty));
+                                foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
                             }
                         }
                     }
@@ -1093,6 +1142,7 @@ namespace SpreadsheetApp.UI
                             string newRaw = st.Text;
                             _sheet.SetRaw(rr, cc, newRaw);
                             edits.Add((rr, cc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
                         }
                     }
                 }
@@ -1112,7 +1162,7 @@ namespace SpreadsheetApp.UI
                     ? (sheetAddedIndex.Value, sheetAddedName)
                     : null;
                 _undo.RecordComposite(be, sheetAddArg);
-                try { RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus(); } catch { }
+                try { RefreshDirtyOrFull(affected); } catch { }
             }
         }
 
@@ -1271,6 +1321,7 @@ namespace SpreadsheetApp.UI
             int rows = cells.Length;
             int cols = cells[0].Length;
             var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
             for (int r = 0; r < rows; r++)
             {
                 for (int c = 0; c < cols; c++)
@@ -1282,6 +1333,7 @@ namespace SpreadsheetApp.UI
                     string newRaw = cells[r][c] ?? string.Empty;
                     _sheet.SetRaw(rr, cc, newRaw);
                     edits.Add((rr, cc, oldRaw, newRaw));
+                    foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
                 }
             }
             if (edits.Count > 0)
@@ -1289,7 +1341,7 @@ namespace SpreadsheetApp.UI
                 _undo.RecordBulk(edits);
                 try
                 {
-                    RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus();
+                    RefreshDirtyOrFull(affected);
                 }
                 catch { }
             }
@@ -1376,6 +1428,60 @@ namespace SpreadsheetApp.UI
                 catch (Exception ex)
                 {
                     MessageBox.Show(this, $"Open failed: {ex.Message}", "Open", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally { SetUiBusy(false); }
+            }
+        }
+
+        private async System.Threading.Tasks.Task SaveWorkbookAsync()
+        {
+            using var sfd = new SaveFileDialog
+            {
+                Filter = "Workbook JSON (*.workbook.json)|*.workbook.json|All files (*.*)|*.*",
+                FileName = "workbook.workbook.json"
+            };
+            if (sfd.ShowDialog(this) == DialogResult.OK)
+            {
+                SetUiBusy(true);
+                try
+                {
+                    await IO.SpreadsheetIO.SaveWorkbookToFileAsync(_sheets, _sheetNames, sfd.FileName).ConfigureAwait(true);
+                    AddRecentFile(sfd.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Save workbook failed: {ex.Message}", "Save Workbook", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally { SetUiBusy(false); }
+            }
+        }
+
+        private async System.Threading.Tasks.Task OpenWorkbookAsync()
+        {
+            using var ofd = new OpenFileDialog
+            {
+                Filter = "Workbook JSON (*.workbook.json)|*.workbook.json|All files (*.*)|*.*"
+            };
+            if (ofd.ShowDialog(this) == DialogResult.OK)
+            {
+                SetUiBusy(true);
+                try
+                {
+                    var wb = await IO.SpreadsheetIO.LoadWorkbookFromFileAsync(ofd.FileName).ConfigureAwait(true);
+                    _sheets.Clear(); _sheetNames.Clear(); _undos.Clear();
+                    for (int i = 0; i < wb.Sheets.Count; i++)
+                    {
+                        _sheets.Add(wb.Sheets[i]);
+                        _sheetNames.Add(i < wb.Names.Count ? wb.Names[i] : $"Sheet{i + 1}");
+                        _undos.Add(new UndoManager());
+                    }
+                    _activeSheetIndex = 0;
+                    InitializeSheet(_sheets[0]);
+                    AddRecentFile(ofd.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Open workbook failed: {ex.Message}", "Open Workbook", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 finally { SetUiBusy(false); }
             }

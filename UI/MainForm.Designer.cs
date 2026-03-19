@@ -40,6 +40,8 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem importCsvToolStripMenuItem = null!;
         private ToolStripMenuItem exportCsvToolStripMenuItem = null!;
         private ToolStripMenuItem recentFilesToolStripMenuItem = null!;
+        private ToolStripMenuItem openWorkbookToolStripMenuItem = null!;
+        private ToolStripMenuItem saveWorkbookToolStripMenuItem = null!;
         private DataGridView grid = null!;
 
         protected override void Dispose(bool disposing)
@@ -64,6 +66,8 @@ namespace SpreadsheetApp.UI
             importCsvToolStripMenuItem = new ToolStripMenuItem();
             exportCsvToolStripMenuItem = new ToolStripMenuItem();
             recentFilesToolStripMenuItem = new ToolStripMenuItem();
+            openWorkbookToolStripMenuItem = new ToolStripMenuItem();
+            saveWorkbookToolStripMenuItem = new ToolStripMenuItem();
             exitToolStripMenuItem = new ToolStripMenuItem();
             editToolStripMenuItem = new ToolStripMenuItem();
             formatToolStripMenuItem = new ToolStripMenuItem();
@@ -95,7 +99,7 @@ namespace SpreadsheetApp.UI
             // fileToolStripMenuItem
             fileToolStripMenuItem.Name = "fileToolStripMenuItem";
             fileToolStripMenuItem.Text = "File";
-            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { newToolStripMenuItem, openToolStripMenuItem, saveToolStripMenuItem, new ToolStripSeparator(), importCsvToolStripMenuItem, exportCsvToolStripMenuItem, new ToolStripSeparator(), recentFilesToolStripMenuItem, new ToolStripSeparator(), exitToolStripMenuItem });
+            fileToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { newToolStripMenuItem, openToolStripMenuItem, saveToolStripMenuItem, new ToolStripSeparator(), openWorkbookToolStripMenuItem, saveWorkbookToolStripMenuItem, new ToolStripSeparator(), importCsvToolStripMenuItem, exportCsvToolStripMenuItem, new ToolStripSeparator(), recentFilesToolStripMenuItem, new ToolStripSeparator(), exitToolStripMenuItem });
 
             // newToolStripMenuItem
             newToolStripMenuItem.Name = "newToolStripMenuItem";
@@ -128,6 +132,16 @@ namespace SpreadsheetApp.UI
             // recentFilesToolStripMenuItem
             recentFilesToolStripMenuItem.Name = "recentFilesToolStripMenuItem";
             recentFilesToolStripMenuItem.Text = "Recent Files";
+
+            // openWorkbookToolStripMenuItem
+            openWorkbookToolStripMenuItem.Name = "openWorkbookToolStripMenuItem";
+            openWorkbookToolStripMenuItem.Text = "Open Workbook...";
+            openWorkbookToolStripMenuItem.Click += async (_, __) => await OpenWorkbookAsync();
+
+            // saveWorkbookToolStripMenuItem
+            saveWorkbookToolStripMenuItem.Name = "saveWorkbookToolStripMenuItem";
+            saveWorkbookToolStripMenuItem.Text = "Save Workbook As...";
+            saveWorkbookToolStripMenuItem.Click += async (_, __) => await SaveWorkbookAsync();
 
             // exitToolStripMenuItem
             exitToolStripMenuItem.Name = "exitToolStripMenuItem";
