@@ -46,6 +46,8 @@ namespace SpreadsheetApp.Core.AI
         public string? RawJson { get; set; }
         // Optional constructed user prompt string for debugging
         public string? RawUser { get; set; }
+        // Optional system prompt (schema/rules) for debugging
+        public string? RawSystem { get; set; }
     }
 
     public sealed class CreateSheetCommand : IAICommand

@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace SpreadsheetApp.UI
@@ -300,9 +301,47 @@ namespace SpreadsheetApp.UI
             grid.SelectionMode = DataGridViewSelectionMode.CellSelect;
             grid.EditMode = DataGridViewEditMode.EditOnKeystrokeOrF2;
             grid.TabIndex = 1;
-            grid.BorderStyle = BorderStyle.Fixed3D;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
             grid.AllowUserToResizeColumns = true;
+
+            // Modern flat styling
+            grid.BorderStyle = BorderStyle.None;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.GridColor = Color.FromArgb(228, 228, 228);
+            grid.BackgroundColor = Color.White;
+
+            // Default cell style
+            grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F);
+            grid.DefaultCellStyle.BackColor = Color.White;
+            grid.DefaultCellStyle.ForeColor = Color.FromArgb(30, 30, 30);
+            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(200, 220, 240);
+            grid.DefaultCellStyle.SelectionForeColor = Color.FromArgb(30, 30, 30);
+            grid.DefaultCellStyle.Padding = new Padding(2, 0, 2, 0);
+
+            // Alternating row colors
+            grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(245, 247, 250);
+            grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = Color.FromArgb(200, 220, 240);
+            grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = Color.FromArgb(30, 30, 30);
+
+            // Flat column headers
+            grid.EnableHeadersVisualStyles = false;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240);
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(60, 60, 60);
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F);
+            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(240, 240, 240);
+            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(60, 60, 60);
+            grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+            grid.ColumnHeadersHeight = 28;
+
+            // Flat row headers
+            grid.RowHeadersDefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240);
+            grid.RowHeadersDefaultCellStyle.ForeColor = Color.FromArgb(60, 60, 60);
+            grid.RowHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F);
+            grid.RowHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(240, 240, 240);
+            grid.RowHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(60, 60, 60);
+            grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+
             grid.CellBeginEdit += Grid_CellBeginEdit;
             grid.CellEndEdit += Grid_CellEndEdit;
             grid.SelectionChanged += Grid_SelectionChanged;

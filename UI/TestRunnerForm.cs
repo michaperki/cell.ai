@@ -14,6 +14,7 @@ namespace SpreadsheetApp.UI
         private readonly Action<string> _saveWorkbook;
         private readonly Action<string> _activateSheet;
         private readonly Action _clearChatHistory;
+        private readonly Func<System.Collections.Generic.Dictionary<string, string>> _captureSheetMap;
         private readonly ListBox _lstTests = new();
         private readonly TextBox _txtSpec = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Info, Font = new Font("Segoe UI", 9.5f) };
         private readonly TextBox _txtLog = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window, Font = new Font("Consolas", 9f) };
@@ -24,6 +25,7 @@ namespace SpreadsheetApp.UI
         private readonly CheckBox _chkSnapshots = new() { Text = "Save snapshots", AutoSize = true };
         private readonly CheckBox _chkDumpPlan = new() { Text = "Dump plan JSON", AutoSize = true };
         private readonly CheckBox _chkDumpPrompt = new() { Text = "Dump user prompt", AutoSize = true };
+        private readonly CheckBox _chkDumpSystem = new() { Text = "Dump system prompt", AutoSize = true };
         private readonly Label _lblStatus = new() { AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         private readonly List<string> _testFiles = new();
         private TestSpecs? _specs;
@@ -32,13 +34,15 @@ namespace SpreadsheetApp.UI
                               Func<string, string?, bool, System.Threading.CancellationToken, System.Threading.Tasks.Task<SpreadsheetApp.Core.AI.AIPlan>> runChatStepAsync,
                               Action<string> saveWorkbook,
                               Action<string> activateSheet,
-                              Action clearChatHistory)
+                              Action clearChatHistory,
+                              Func<System.Collections.Generic.Dictionary<string, string>> captureSheetMap)
         {
             _loadWorkbook = loadWorkbook;
             _runChatStepAsync = runChatStepAsync;
             _saveWorkbook = saveWorkbook;
             _activateSheet = activateSheet;
             _clearChatHistory = clearChatHistory;
+            _captureSheetMap = captureSheetMap;
             Text = "Test Runner";
             StartPosition = FormStartPosition.CenterParent;
             Size = new Size(760, 600);
@@ -140,7 +144,8 @@ namespace SpreadsheetApp.UI
             _chkSnapshots.Location = new Point(440, 10);
             _chkDumpPlan.Location = new Point(560, 10);
             _chkDumpPrompt.Location = new Point(690, 10);
-            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots, _chkDumpPlan, _chkDumpPrompt });
+            _chkDumpSystem.Location = new Point(840, 10);
+            btnPanel.Controls.AddRange(new Control[] { _btnPrev, _btnNext, _btnLoad, _btnRun, _chkSnapshots, _chkDumpPlan, _chkDumpPrompt, _chkDumpSystem });
 
             Controls.Add(split);
             Controls.Add(instructionsLabel);
@@ -216,6 +221,7 @@ namespace SpreadsheetApp.UI
                     if (step.Action == "ai_chat")
                     {
                         _txtLog.AppendText($"  - Step {stepNo}: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
+                        var before = _captureSheetMap();
                         var plan = await _runChatStepAsync(step.Prompt ?? string.Empty, step.Location, step.Apply, System.Threading.CancellationToken.None).ConfigureAwait(true);
                         if (plan.Commands.Count == 0)
                         {
@@ -224,6 +230,12 @@ namespace SpreadsheetApp.UI
                         else
                         {
                             foreach (var cmd in plan.Commands) _txtLog.AppendText($"    -> {cmd.Summarize()}\r\n");
+                        }
+                        // Diff (only when apply)
+                        if (step.Apply)
+                        {
+                            var after = _captureSheetMap();
+                            WriteDiffToLog(before, after);
                         }
                         if (_chkDumpPrompt.Checked)
                         {
@@ -255,6 +267,22 @@ namespace SpreadsheetApp.UI
                             catch (Exception ex)
                             {
                                 _txtLog.AppendText($"    -> Failed to save plan JSON: {ex.Message}\r\n");
+                            }
+                        }
+                        if (_chkDumpSystem.Checked)
+                        {
+                            try
+                            {
+                                Directory.CreateDirectory(Path.Combine("tests", "output"));
+                                string baseName = Path.GetFileNameWithoutExtension(path);
+                                string sysPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.system.txt");
+                                string contents = plan.RawSystem ?? "(no system prompt)";
+                                File.WriteAllText(sysPath, contents);
+                                _txtLog.AppendText($"    -> System prompt saved: {sysPath}\r\n");
+                            }
+                            catch (Exception ex)
+                            {
+                                _txtLog.AppendText($"    -> Failed to save system prompt: {ex.Message}\r\n");
                             }
                         }
                         if (_chkSnapshots.Checked)
@@ -363,6 +391,39 @@ namespace SpreadsheetApp.UI
             {
                 return "{\n  \"commands\": []\n}";
             }
+        }
+
+        private void WriteDiffToLog(System.Collections.Generic.Dictionary<string, string> before, System.Collections.Generic.Dictionary<string, string> after)
+        {
+            try
+            {
+                var changed = new System.Collections.Generic.List<string>();
+                var keys = new System.Collections.Generic.HashSet<string>(before.Keys, System.StringComparer.OrdinalIgnoreCase);
+                foreach (var k in after.Keys) keys.Add(k);
+                foreach (var k in keys)
+                {
+                    before.TryGetValue(k, out var b);
+                    after.TryGetValue(k, out var a);
+                    if (string.Equals(b ?? string.Empty, a ?? string.Empty, StringComparison.Ordinal)) continue;
+                    if (b == null)
+                        changed.Add($"      + {k} = {a}");
+                    else if (a == null)
+                        changed.Add($"      - {k} (cleared from '{b}')");
+                    else
+                        changed.Add($"      ~ {k}: '{b}' -> '{a}'");
+                }
+                if (changed.Count == 0)
+                {
+                    _txtLog.AppendText("    -> No cell changes detected.\r\n");
+                    return;
+                }
+                int maxShow = 100;
+                _txtLog.AppendText($"    -> Cell changes ({changed.Count}):\r\n");
+                for (int i = 0; i < Math.Min(maxShow, changed.Count); i++)
+                    _txtLog.AppendText(changed[i] + "\r\n");
+                if (changed.Count > maxShow) _txtLog.AppendText($"      ... ({changed.Count - maxShow} more)\r\n");
+            }
+            catch { }
         }
 
         // --- Specs support ---

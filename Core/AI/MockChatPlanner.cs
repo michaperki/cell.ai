@@ -17,6 +17,7 @@ namespace SpreadsheetApp.Core.AI
             prompt = (prompt ?? string.Empty).Trim().ToLowerInvariant();
             var plan = new AIPlan();
             plan.RawUser = $"Sheet={context.SheetName}; Selection=({context.StartRow+1},{SpreadsheetApp.Core.CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}. Instruction={(prompt)}.";
+            plan.RawSystem = "Mock planner: deterministic heuristics without external provider.";
 
             // If prompt suggests a list, generate a set-values plan similar to Generate Fill
             bool wantsList = prompt.Contains("list") || prompt.Contains("grocery") || prompt.Contains("todo") || prompt.Contains("ingredients") || prompt.Contains("caesar");

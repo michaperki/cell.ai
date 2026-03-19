@@ -26,6 +26,11 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 - Expanded number formatting presets and alignment tweaks.
 - Undo polish: coalesce rapid edits; grouped actions state reflected in menu enable/disable.
 - Async adoption: extend to CSV import/export and workbook flows; add guard flags and progress affordances.
+- **UI modernization (low-cost visual polish):**
+  - Grid: flat borders, modern selection accent, subtle alternating row colors, single-horizontal cell borders.
+  - Headers: flat-styled column/row headers with custom background instead of 3D sunken default.
+  - Double-buffered DataGridView to eliminate scroll/resize flicker.
+  - Consistent default cell font (Segoe UI 9pt).
 
 ### v0.4 — Interop & Distribution (stretch)
 - Evaluate XLSX import/export or a stable interchange path.

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
 using SpreadsheetApp.Core;
 using SpreadsheetApp.Core.AI;
@@ -46,6 +47,10 @@ namespace SpreadsheetApp.UI
         public MainForm()
         {
             InitializeComponent();
+            // Enable double buffering on the grid to eliminate flicker
+            typeof(DataGridView).InvokeMember("DoubleBuffered",
+                BindingFlags.SetProperty | BindingFlags.Instance | BindingFlags.NonPublic,
+                null, grid, new object[] { true });
             try { LoadRecentFiles(); } catch { }
             // Inline AI setup
             _aiInlineTimer.Interval = 200;
@@ -2115,7 +2120,7 @@ namespace SpreadsheetApp.UI
 
         private void OpenTestRunner()
         {
-            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory);
+            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory, CaptureActiveSheetMap);
             runner.ShowDialog(this);
         }
 
@@ -2134,6 +2139,29 @@ namespace SpreadsheetApp.UI
                 IO.SpreadsheetIO.SaveWorkbookToFile(_sheets, _sheetNames, path);
             }
             catch { }
+        }
+
+        public System.Collections.Generic.Dictionary<string, string> CaptureActiveSheetMap()
+        {
+            var map = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var sh = _sheet;
+                for (int r = 0; r < sh.Rows; r++)
+                {
+                    for (int c = 0; c < sh.Columns; c++)
+                    {
+                        var raw = sh.GetRaw(r, c);
+                        if (!string.IsNullOrWhiteSpace(raw))
+                        {
+                            string addr = SpreadsheetApp.Core.CellAddress.ToAddress(r, c);
+                            map[addr] = raw!;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return map;
         }
 
         public void ActivateSheetByName(string name)

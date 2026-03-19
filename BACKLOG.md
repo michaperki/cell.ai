@@ -57,6 +57,14 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Consider DataGridView VirtualMode for very large sheets.
   - Batch UI updates and avoid per-cell painting where possible.
 
+- UI modernization (visual polish, zero perf cost) — DONE (first pass)
+  - Grid: flat borders (`BorderStyle.None`), single-horizontal cell borders, subtle alternating row colors.
+  - Headers: disabled `EnableHeadersVisualStyles`, flat custom-colored column/row headers.
+  - Selection: modern accent color (`Color.FromArgb(200, 220, 240)`) instead of default royal blue, dark text on selection.
+  - Double-buffered DataGridView via reflection to eliminate flicker.
+  - Default cell font set to Segoe UI 9pt for consistency.
+  - Future: menu icons, dark mode toggle, owner-drawn tabs.
+
 - Workbook summary header detection
   - Currently sends row 1 as headers to the AI. If the actual header row is row 2 (common when row 1 is a title), the AI gets wrong context.
   - Implement auto-detect header heuristic (first non-empty row with predominantly text values).

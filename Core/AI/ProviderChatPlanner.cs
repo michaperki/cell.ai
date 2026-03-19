@@ -107,6 +107,7 @@ namespace SpreadsheetApp.Core.AI
                 var plan = ParsePlan(doc);
                 plan.RawJson = json;
                 plan.RawUser = usr;
+                plan.RawSystem = sys;
                 return plan;
             }
             catch
@@ -116,7 +117,7 @@ namespace SpreadsheetApp.Core.AI
                 int i2 = json.LastIndexOf('}');
                 if (i1 >= 0 && i2 > i1)
                 {
-                    try { var s = json.Substring(i1, i2 - i1 + 1); var doc = JsonDocument.Parse(s); var plan = ParsePlan(doc); plan.RawJson = s; plan.RawUser = usr; return plan; }
+                    try { var s = json.Substring(i1, i2 - i1 + 1); var doc = JsonDocument.Parse(s); var plan = ParsePlan(doc); plan.RawJson = s; plan.RawUser = usr; plan.RawSystem = sys; return plan; }
                     catch { }
                 }
                 return new AIPlan();
