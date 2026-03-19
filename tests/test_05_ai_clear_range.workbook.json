@@ -1,0 +1,27 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Test_ClearRange",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "ID",
+        "B2": "Name",
+        "C2": "Notes",
+        "A3": "1",
+        "B3": "Widget",
+        "C3": "Old stock",
+        "A4": "2",
+        "B4": "Gadget",
+        "C4": "Backordered",
+        "A5": "3",
+        "B5": "Doohickey",
+        "C5": "Clearance",
+        "A6": "4",
+        "B6": "Thingamajig",
+        "C6": "Discontinued"
+      }
+    }
+  ]
+}

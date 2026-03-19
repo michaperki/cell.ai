@@ -1,0 +1,30 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Sheet1",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A3": "Product",
+        "B3": "Price",
+        "A4": "Widget",
+        "B4": "19.99",
+        "A5": "Gadget",
+        "B5": "29.99"
+      },
+      "Formats": {
+        "B3": { "Bold": true, "NumberFormat": null, "HAlign": "Left" }
+      }
+    },
+    {
+      "Name": "Sheet2",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Total items",
+        "B2": "2"
+      }
+    }
+  ]
+}

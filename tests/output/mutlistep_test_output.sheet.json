@@ -1,0 +1,19 @@
+{
+  "Rows": 100,
+  "Columns": 26,
+  "Cells": {
+    "A1": "TEST: Multi-turn conversation. Open Chat.",
+    "A3": "Date",
+    "B3": "Description",
+    "D3": "Tax",
+    "A4": "2023-10-01",
+    "B4": "Groceries",
+    "D4": "=C4*0.1",
+    "A5": "2023-10-02",
+    "B5": "Utilities",
+    "D5": "=C5*0.1",
+    "C6": "=SUM(C4:C5)",
+    "D6": "=SUM(D4:D5)"
+  },
+  "Formats": null
+}

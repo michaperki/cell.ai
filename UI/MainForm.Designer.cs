@@ -42,6 +42,8 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem recentFilesToolStripMenuItem = null!;
         private ToolStripMenuItem openWorkbookToolStripMenuItem = null!;
         private ToolStripMenuItem saveWorkbookToolStripMenuItem = null!;
+        private ToolStripMenuItem testToolStripMenuItem = null!;
+        private ToolStripMenuItem testRunnerToolStripMenuItem = null!;
         private DataGridView grid = null!;
 
         protected override void Dispose(bool disposing)
@@ -84,6 +86,8 @@ namespace SpreadsheetApp.UI
             addSheetToolStripMenuItem = new ToolStripMenuItem();
             renameSheetToolStripMenuItem = new ToolStripMenuItem();
             removeSheetToolStripMenuItem = new ToolStripMenuItem();
+            testToolStripMenuItem = new ToolStripMenuItem();
+            testRunnerToolStripMenuItem = new ToolStripMenuItem();
             grid = new DataGridView();
 
             SuspendLayout();
@@ -252,6 +256,15 @@ namespace SpreadsheetApp.UI
             aiSettingsToolStripMenuItem.Click += (_, __) => OpenAiSettings();
             aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
             menuStrip1.Items.Add(aiToolStripMenuItem);
+
+            // testToolStripMenuItem
+            testToolStripMenuItem.Name = "testToolStripMenuItem";
+            testToolStripMenuItem.Text = "Test";
+            testRunnerToolStripMenuItem.Name = "testRunnerToolStripMenuItem";
+            testRunnerToolStripMenuItem.Text = "Test Runner...";
+            testRunnerToolStripMenuItem.Click += (_, __) => OpenTestRunner();
+            testToolStripMenuItem.DropDownItems.Add(testRunnerToolStripMenuItem);
+            menuStrip1.Items.Add(testToolStripMenuItem);
 
             // sheetsToolStripMenuItem
             sheetsToolStripMenuItem.Name = "sheetsToolStripMenuItem";

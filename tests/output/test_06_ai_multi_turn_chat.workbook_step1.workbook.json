@@ -1,0 +1,23 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "MultiTurn",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A3": "Expense Table",
+        "B3": "Expense Table",
+        "C3": "Expense Table",
+        "A4": "Date",
+        "B4": "Description",
+        "A5": "2023-10-01",
+        "B5": "Groceries",
+        "A6": "2023-10-02",
+        "B6": "Total",
+        "C6": "=SUM(C4:C5)"
+      },
+      "Formats": null
+    }
+  ]
+}

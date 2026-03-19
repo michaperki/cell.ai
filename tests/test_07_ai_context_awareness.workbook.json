@@ -1,0 +1,27 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Employees",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Name",
+        "B2": "Department",
+        "C2": "Salary",
+        "A3": "Alice",
+        "B3": "Engineering",
+        "C3": "85000",
+        "A4": "Bob",
+        "B4": "Marketing",
+        "C4": "72000",
+        "A5": "Carol",
+        "B5": "Engineering",
+        "C5": "91000",
+        "A6": "Dave",
+        "B6": "Sales",
+        "C6": "68000"
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "tests": [
+    {
+      "file": "test_01_ai_set_values.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Create a list of 5 US states with capitals in columns A and B starting at row 3.", "location": "A3", "apply": true }
+      ]
+    },
+    {
+      "file": "test_02_ai_set_formula.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Add a SUM formula in B8 that totals B2:B7, and an AVERAGE in B9.", "location": "B8", "apply": true }
+      ]
+    },
+    {
+      "file": "test_03_ai_sort_range.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Sort the selected data by Amount descending. Keep the header row in place.", "location": "A2:B7", "apply": true }
+      ]
+    },
+    {
+      "file": "test_04_ai_create_rename_sheet.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Create a new sheet named Revenue.", "apply": true },
+        { "action": "ai_chat", "prompt": "Rename sheet Revenue to Q1 Revenue.", "apply": true }
+      ]
+    },
+    {
+      "file": "test_05_ai_clear_range.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Clear column C (the Notes column).", "location": "C2:C6", "apply": true }
+      ]
+    },
+    {
+      "file": "test_06_ai_multi_turn_chat.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.", "location": "A3:C6", "apply": true },
+        { "action": "ai_chat", "prompt": "Now add a Tax column in D with 10% of Amount.", "location": "D3:D6", "apply": true },
+        { "action": "ai_chat", "prompt": "Add a total row summing Amount and Tax columns.", "location": "A6:E6", "apply": true }
+      ]
+    },
+    {
+      "file": "test_07_ai_context_awareness.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Add a Bonus column that is 15% of Salary.", "location": "D2", "apply": true }
+      ]
+    },
+    {
+      "file": "test_14_ai_complex_plan.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Create a monthly budget: headers in row 2 (Category, Jan, Feb, Mar, Total), 4 expense categories in A3:A6, sample dollar amounts in B3:D6, and SUM formulas in E3:E6 and B7:E7 for totals.", "location": "A2", "apply": true }
+      ]
+    },
+    {
+      "file": "test_15_ai_workbook_context.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "sheet": "Summary", "prompt": "Fill A2 with the number of products (rows) in the Sales sheet and A3 with the number of items (rows) in the Inventory sheet.", "location": "A2", "apply": true }
+      ]
+    }
+  ]
+}

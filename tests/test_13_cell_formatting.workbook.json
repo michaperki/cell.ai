@@ -1,0 +1,20 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Formatting",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A3": "Revenue",
+        "B3": "1234.5",
+        "A4": "Expenses",
+        "B4": "987.654",
+        "A5": "Profit",
+        "B5": "=B3-B4",
+        "A6": "Tax",
+        "B6": "=B5*0.3"
+      }
+    }
+  ]
+}

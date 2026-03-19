@@ -1,0 +1,24 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Test_SetFormula",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Item",
+        "B2": "Amount",
+        "A3": "Rent",
+        "B3": "50",
+        "A4": "Food",
+        "B4": "30",
+        "A5": "Transport",
+        "B5": "20",
+        "A6": "Utilities",
+        "B6": "40",
+        "A7": "Entertainment",
+        "B7": "70"
+      }
+    }
+  ]
+}

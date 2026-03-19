@@ -1,0 +1,19 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "CopyPaste",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A3": "Alpha",
+        "B3": "10",
+        "C3": "=B3*2",
+        "A4": "Beta",
+        "B4": "20",
+        "A5": "Gamma",
+        "B5": "30"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "FindReplace",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A3": "apple",
+        "B3": "100",
+        "A5": "banana",
+        "B5": "200",
+        "A7": "apple",
+        "B7": "150",
+        "A9": "cherry",
+        "B9": "300",
+        "A11": "apple",
+        "B11": "250"
+      }
+    }
+  ]
+}

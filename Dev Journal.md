@@ -197,7 +197,33 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
    - Change: Added a 1s coalescing window in `UndoManager.RecordSet`. Rapid edits to the same cell merge into a single undo record, preserving the first old value and last new value. Redo stack clears as before. Non‑single operations reset the merge window.
 
 2) Undo/Redo menu state sync
-   - Problem: Edit → Undo/Redo enable state could lag until another UI event.
+    - Problem: Edit → Undo/Redo enable state could lag until another UI event.
+    
+## Test Suite Automation + Multi‑turn Chat Learnings (2026‑03‑19)
+
+1) Removed in‑sheet instructions; added automated specs
+   - Change: Eliminated A1 instruction text from all `tests/test_*.workbook.json` files to avoid contaminating AI context.
+   - Added `tests/TEST_SPECS.json` that defines per‑test AI chat steps (prompt, target sheet, and selection/range).
+   - Test Runner now executes these steps via “Run Steps”, shows a live log, and can save snapshots to `tests/output/` after each step.
+
+2) Chat dialog UX improvements (applied earlier in this pass)
+   - Apply no longer closes the chat window; clears input and shows an “Applied …” summary. Added a lightweight “Thinking…” indicator and extended planning timeout to 30s.
+
+3) Multi‑turn (Test 06) observations from snapshots
+   - Symptom: Step 1 placed a repeated “Expense Table” across A3:C3, omitted the Amount header/data, and wrote totals prematurely. Step 2/3 produced formulas in the wrong columns (e.g., `=B4*0.1` in C4, then `=C4*0.1` in D4).
+   - Likely causes:
+     - Selection shape and start were not strongly conveyed; context had `Rows=5, Cols=1` regardless of selection, biasing single‑column plans.
+     - System prompt allowed “extras” (titles/totals) not explicitly requested.
+     - Header awareness is minimal; provider inferred columns loosely.
+   - Fixes applied:
+     - BuildPlannerContext now sets StartRow/StartCol to the selection’s top‑left and Rows/Cols to the selection shape. Nearby window also anchors at this start.
+     - Provider system prompt tightened: “Only perform requested changes; do not add titles/totals unless asked; align writes to the indicated shape.”
+     - Updated `TEST_SPECS.json` for Test 06 to anchor steps with explicit ranges: Step 1 `A3:C6`, Step 2 `D3:D6`, Step 3 `A6:E6`.
+
+4) Next steps
+   - Add optional plan JSON dump to `tests/output/` for deeper debugging.
+   - Enhance header detection in the workbook summary (identify actual header row when row 1 is a title).
+   - Expand MockChatPlanner to cover `set_formula`, `sort_range`, `clear_range`, `rename_sheet` for offline parity.
    - Change: Centralized calls to update menu state after edits, bulk applies, clear contents, replace, AI applies, and after Undo/Redo itself. Also refreshes on sheet (re)initialization and on Edit menu opening.
 
 Rationale: Smoother undo UX reduces noise and accidental multi‑undo clicks; keeping menu state in sync improves perceived reliability.
@@ -235,3 +261,60 @@ Rationale / Notes
 4) Number formats extended
    - Added presets: 0, 0.00, #,##0, #,##0.00, 0%, 0.00%, $#,##0, $#,##0.00.
    - Implemented formatting in `GetDisplayWithFormat` for numeric cells; errors/text unchanged. Menu updated under Format → Number Format.
+
+## Codebase Audit & E2E Test Suite (2026-03-19)
+
+### ENHANCEMENTS.md Audit
+
+Performed a comprehensive audit of ENHANCEMENTS.md against the actual codebase. Key findings:
+
+- **AI Command Grammar:** 2 of 8 implemented (set_formula, sort_range). Remaining 6 (insert/delete rows/cols, set_format, move_range, copy_range, delete_sheet) are not started.
+- **AI Context Enrichment:** 4 of 4 complete. SelectionValues, NearbyValues, Workbook summary, and conversation history all shipped and wired through ProviderChatPlanner.
+- **New AI Interaction Modes:** ~0.5 of 5. Selection content is sent (enabling transforms) but no dedicated UX. Inline formula help, explain cell, error repair, and undo-aware re-planning are not started.
+- **Formula Engine Gaps:** ~4.5 of 10 functions present. HLOOKUP, INDEX, MATCH, UPPER, LOWER, SUBSTITUTE are implemented. SUMIF/COUNTIF/AVERAGEIF, IFERROR, TRIM, PROPER, TEXT, TODAY/NOW, COUNTA, ISBLANK/ISNUMBER/ISTEXT, REPLACE are missing.
+- **All other sections** (data validation, cross-sheet refs, observability, QoL) are not started.
+- **Overall completion: ~25-30%**, with the highest-priority items (the original top-4 recommendations) fully shipped.
+
+Updated ENHANCEMENTS.md with per-item status annotations, a new "Known Issues & Quick Wins" section, and revised priority recommendations.
+
+### New Issues Discovered
+
+Found 8 actionable issues during the codebase review, added to BACKLOG.md:
+
+1. **Planner timeout too short (10s)** — complex plans with rich context time out regularly. Needs 20-30s.
+2. **Anthropic max_tokens=800** — budget tables exceed this; OpenAI has no cap, creating asymmetry. Needs 2048+.
+3. **Chat closes on Apply** — `ChatAssistantForm` calls `Close()` after apply, breaking multi-turn iteration. Should stay open.
+4. **No plan revision UX** — only Apply or Close, no way to give feedback and re-plan.
+5. **set_values doesn't auto-detect formulas** — values starting with `=` written as literal text. Should auto-route to formula path.
+6. **No progress indicator during planning** — just a disabled button, no spinner or "Thinking..." label.
+7. **Workbook summary sends row 1 as headers** — wrong when row 1 is a title and row 2 has actual headers.
+8. **MockChatPlanner doesn't cover full command set** — can't generate set_formula, sort_range, clear_range, or rename_sheet plans offline.
+
+### E2E Test Suite Created
+
+Created 15 `.workbook.json` test files in `tests/`, each with cell A1 containing step-by-step testing instructions:
+
+| Tests 01-07 | AI capabilities: set_values, set_formula, sort_range, create/rename sheet, clear_range, multi-turn chat, context awareness |
+| Test 08 | Formula engine: 12 scenarios covering math, DIV/0, IF, strings, VLOOKUP, comparisons |
+| Tests 09-13 | UX: undo/redo (single/bulk/composite), workbook I/O, find & replace, copy/paste/cut, cell formatting |
+| Tests 14-15 | AI advanced: complex multi-command plans, cross-sheet workbook context |
+
+Also created `tests/TEST_INDEX.md` as a reference index.
+
+### Test Runner UI
+
+Added a Test Runner form (`UI/TestRunnerForm.cs`) accessible via **Test > Test Runner** menu:
+
+- Discovers all `test_*.workbook.json` files in the `tests/` directory automatically (walks up from bin to project root).
+- Lists tests in sorted order with Prev/Next navigation (buttons + arrow keys).
+- Shows the A1 instruction text as a preview before loading.
+- "Load Test" button (or Enter) loads the selected workbook into the main spreadsheet.
+- Added `LoadWorkbookFromPath(string path)` public method to MainForm for programmatic workbook loading.
+- Added Test menu with Test Runner entry to `MainForm.Designer.cs`.
+
+### Documents Updated
+
+- **ENHANCEMENTS.md** — Full status annotations on every item, new sections for known issues and updated priorities, test suite reference.
+- **BACKLOG.md** — Restructured with new "Active — AI / Chat UX" section containing the 8 discovered issues. Cleaned up existing items.
+- **Roadmap.md** — Added E2E test suite reference in Quality & Verification section.
+- **tests/TEST_INDEX.md** — New file documenting all 15 test workbooks with usage instructions.

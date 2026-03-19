@@ -1,0 +1,24 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Test_SortRange",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Name",
+        "B2": "Amount",
+        "A3": "Alice",
+        "B3": "300",
+        "A4": "Bob",
+        "B4": "150",
+        "A5": "Carol",
+        "B5": "500",
+        "A6": "Dave",
+        "B6": "200",
+        "A7": "Zara",
+        "B7": "900"
+      }
+    }
+  ]
+}

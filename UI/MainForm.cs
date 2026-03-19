@@ -1197,17 +1197,8 @@ namespace SpreadsheetApp.UI
         {
             int sr = grid.CurrentCell?.RowIndex ?? 0;
             int sc = grid.CurrentCell?.ColumnIndex ?? 0;
-            string? title = sr > 0 ? _sheet.GetRaw(sr - 1, sc) : null;
-            var ctx = new AIContext
-            {
-                SheetName = _sheetNames.Count > _activeSheetIndex ? _sheetNames[_activeSheetIndex] : "Sheet",
-                StartRow = sr,
-                StartCol = sc,
-                Rows = 5,
-                Cols = 1,
-                Title = title,
-                Prompt = string.Empty
-            };
+            int rowsHint = 5, colsHint = 1;
+            bool hadSelection = false;
             try
             {
                 // Selection values (bounded)
@@ -1224,8 +1215,12 @@ namespace SpreadsheetApp.UI
                     }
                     if (minR <= maxR && minC <= maxC)
                     {
+                        hadSelection = true;
+                        // Update context start to selection top-left
+                        sr = minR; sc = minC;
                         int rows = Math.Min(40, maxR - minR + 1);
                         int cols = Math.Min(10, maxC - minC + 1);
+                        rowsHint = rows; colsHint = cols;
                         var sel = new string[rows][];
                         for (int r = 0; r < rows; r++)
                         {
@@ -1236,8 +1231,30 @@ namespace SpreadsheetApp.UI
                                 sel[r][c] = _sheet.GetDisplay(rr, cc);
                             }
                         }
-                        ctx.SelectionValues = sel;
+                        // We'll set this after creating ctx
+                        // temp hold
+                        _lastSelVals = sel;
                     }
+                }
+            }
+            catch { }
+            // Recompute title after possibly moving sr/sc
+            string? title = sr > 0 ? _sheet.GetRaw(sr - 1, sc) : null;
+            var ctx = new AIContext
+            {
+                SheetName = _sheetNames.Count > _activeSheetIndex ? _sheetNames[_activeSheetIndex] : "Sheet",
+                StartRow = sr,
+                StartCol = sc,
+                Rows = rowsHint,
+                Cols = colsHint,
+                Title = title,
+                Prompt = string.Empty
+            };
+            try
+            {
+                if (hadSelection && _lastSelVals != null)
+                {
+                    ctx.SelectionValues = _lastSelVals;
                 }
             }
             catch { }
@@ -1293,6 +1310,9 @@ namespace SpreadsheetApp.UI
 
             return ctx;
         }
+
+        // temp holder to thread selection values through ctx creation
+        private string[][]? _lastSelVals;
 
         private void ApplyPlan(AIPlan plan)
         {
@@ -2074,6 +2094,130 @@ namespace SpreadsheetApp.UI
             fmt.NumberFormat = fmtStr == "General" ? null : fmtStr;
             _sheet.SetFormat(r, c, fmt);
             RefreshGridDisplays();
+        }
+
+        // --- Test Runner ---
+
+        public void LoadWorkbookFromPath(string path)
+        {
+            var wb = IO.SpreadsheetIO.LoadWorkbookFromFile(path);
+            _sheets.Clear(); _sheetNames.Clear(); _undos.Clear();
+            for (int i = 0; i < wb.Sheets.Count; i++)
+            {
+                _sheets.Add(wb.Sheets[i]);
+                _sheetNames.Add(i < wb.Names.Count ? wb.Names[i] : $"Sheet{i + 1}");
+                _undos.Add(new UndoManager());
+            }
+            _activeSheetIndex = 0;
+            InitializeSheet(_sheets[0]);
+            _automationHistory.Clear();
+        }
+
+        private void OpenTestRunner()
+        {
+            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory);
+            runner.ShowDialog(this);
+        }
+
+        // --- Programmatic AI helpers for Test Runner ---
+        private readonly System.Collections.Generic.List<SpreadsheetApp.Core.AI.ChatMessage> _automationHistory = new();
+
+        public void ClearAutomationChatHistory()
+        {
+            _automationHistory.Clear();
+        }
+
+        public void SaveWorkbookSnapshotTo(string path)
+        {
+            try
+            {
+                IO.SpreadsheetIO.SaveWorkbookToFile(_sheets, _sheetNames, path);
+            }
+            catch { }
+        }
+
+        public void ActivateSheetByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            int idx = _sheetNames.FindIndex(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0 && idx < _sheets.Count)
+            {
+                try { tabs.SelectedIndex = idx; } catch { _activeSheetIndex = idx; InitializeSheet(_sheets[idx]); }
+            }
+        }
+
+        public async System.Threading.Tasks.Task<SpreadsheetApp.Core.AI.AIPlan> RunChatStepAsync(string prompt, string? location, bool apply, System.Threading.CancellationToken ct)
+        {
+            try
+            {
+                // Adjust selection/cursor
+                if (!string.IsNullOrWhiteSpace(location))
+                {
+                    SetSelectionFromLocation(location!);
+                }
+            }
+            catch { }
+
+            var ctx = BuildPlannerContext();
+            try
+            {
+                if (_automationHistory.Count > 0)
+                    ctx.Conversation = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ChatMessage>(_automationHistory);
+            }
+            catch { }
+
+            var plan = await _chatPlanner.PlanAsync(ctx, prompt ?? string.Empty, ct).ConfigureAwait(true);
+
+            // Update automation conversation history (mirror ChatAssistantForm)
+            try
+            {
+                var userMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "user", Content = prompt ?? string.Empty };
+                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
+                var asstMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "assistant", Content = asstSummary };
+                _automationHistory.Add(userMsg);
+                _automationHistory.Add(asstMsg);
+                if (_automationHistory.Count > 10) _automationHistory.RemoveRange(0, _automationHistory.Count - 10);
+            }
+            catch { }
+
+            if (apply && plan.Commands.Count > 0)
+            {
+                ApplyPlan(plan);
+            }
+            return plan;
+        }
+
+        private void SetSelectionFromLocation(string loc)
+        {
+            if (string.IsNullOrWhiteSpace(loc) || grid.RowCount == 0 || grid.ColumnCount == 0) return;
+            grid.ClearSelection();
+            if (loc.Contains(":", StringComparison.Ordinal))
+            {
+                var parts = loc.Split(':');
+                if (parts.Length == 2 && Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                {
+                    int rStart = Math.Max(0, Math.Min(r1, r2));
+                    int rEnd = Math.Min(_sheet.Rows - 1, Math.Max(r1, r2));
+                    int cStart = Math.Max(0, Math.Min(c1, c2));
+                    int cEnd = Math.Min(_sheet.Columns - 1, Math.Max(c1, c2));
+                    for (int r = rStart; r <= rEnd; r++)
+                    {
+                        for (int c = cStart; c <= cEnd; c++)
+                        {
+                            try { grid[c, r].Selected = true; } catch { }
+                        }
+                    }
+                    try { grid.CurrentCell = grid[cStart, rStart]; } catch { }
+                    return;
+                }
+            }
+            // Single address
+            if (Core.CellAddress.TryParse(loc.Trim(), out int rr, out int cc))
+            {
+                rr = Math.Max(0, Math.Min(_sheet.Rows - 1, rr));
+                cc = Math.Max(0, Math.Min(_sheet.Columns - 1, cc));
+                try { grid.CurrentCell = grid[cc, rr]; grid[cc, rr].Selected = true; } catch { }
+            }
         }
     }
 }

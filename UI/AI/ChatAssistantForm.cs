@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Drawing;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -15,6 +16,7 @@ namespace SpreadsheetApp.UI.AI
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60 };
         private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 28 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
+        private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Visible = false };
         private readonly ListBox _lst = new() { Dock = DockStyle.Fill };
         private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 32, Enabled = false };
         private readonly Button _btnClose = new() { Text = "Close", Dock = DockStyle.Bottom, Height = 28 };
@@ -34,13 +36,36 @@ namespace SpreadsheetApp.UI.AI
             panel.Controls.Add(_btnApply);
             panel.Controls.Add(_btnClose);
             panel.Controls.Add(_btnPlan);
+            panel.Controls.Add(_lblStatus);
             panel.Controls.Add(_btnReset);
             panel.Controls.Add(_input);
             Controls.Add(panel);
 
             _btnPlan.Click += async (_, __) => await DoPlanAsync();
             _btnReset.Click += (_, __) => { _history.Clear(); _lst.Items.Add("History cleared."); };
-            _btnApply.Click += (_, __) => { if (_currentPlan != null) { _applyPlan(_currentPlan); Close(); } };
+            _btnApply.Click += (_, __) =>
+            {
+                if (_currentPlan != null)
+                {
+                    try
+                    {
+                        _applyPlan(_currentPlan);
+                        var summary = string.Join("; ", _currentPlan.Commands.Select(c => c.Summarize()));
+                        _lst.Items.Add($"Applied: {summary}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _lst.Items.Add($"Apply error: {ex.Message}");
+                    }
+                    finally
+                    {
+                        _currentPlan = null;
+                        _btnApply.Enabled = false;
+                        _input.Clear();
+                        _input.Focus();
+                    }
+                }
+            };
             _btnClose.Click += (_, __) => Close();
             AcceptButton = _btnPlan;
         }
@@ -48,9 +73,10 @@ namespace SpreadsheetApp.UI.AI
         private async Task DoPlanAsync()
         {
             _btnPlan.Enabled = false; _btnApply.Enabled = false; _lst.Items.Clear(); _currentPlan = null;
+            _lblStatus.Text = "Thinking..."; _lblStatus.Visible = true;
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 var ctx = _getContext();
                 // Include rolling conversation
                 ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_history);
@@ -88,6 +114,7 @@ namespace SpreadsheetApp.UI.AI
             finally
             {
                 _btnPlan.Enabled = true;
+                _lblStatus.Visible = false;
             }
         }
     }
