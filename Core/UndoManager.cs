@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace SpreadsheetApp.Core
@@ -16,6 +17,12 @@ namespace SpreadsheetApp.Core
         private readonly Stack<UndoItem> _undos = new();
         private readonly Stack<UndoItem> _redos = new();
 
+        // Coalescing: merge rapid edits to the same cell into one undo item
+        private const int MergeWindowMs = 1000; // time window to coalesce
+        private long _lastSetTick = long.MinValue;
+        private int _lastSetRow = -1;
+        private int _lastSetCol = -1;
+
         public bool CanUndo => _undos.Count > 0;
         public bool CanRedo => _redos.Count > 0;
 
@@ -23,13 +30,33 @@ namespace SpreadsheetApp.Core
         {
             _undos.Clear();
             _redos.Clear();
+            _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
         }
 
         public void RecordSet(int row, int col, string? oldRaw, string? newRaw)
         {
             if (oldRaw == newRaw) return;
-            _undos.Push(new Single(new Edit(row, col, oldRaw, newRaw)));
+            // Try to coalesce with the previous Single if same cell and within window
+            bool merged = false;
+            long now = Environment.TickCount64;
+            if (_undos.Count > 0 && _redos.Count == 0 &&
+                _lastSetRow == row && _lastSetCol == col && (now - _lastSetTick) <= MergeWindowMs)
+            {
+                var top = _undos.Peek();
+                if (top is Single s)
+                {
+                    // Pop and push a new Single preserving the original OldRaw, updating NewRaw
+                    _undos.Pop();
+                    _undos.Push(new Single(new Edit(row, col, s.E.OldRaw, newRaw)));
+                    merged = true;
+                }
+            }
+            if (!merged)
+            {
+                _undos.Push(new Single(new Edit(row, col, oldRaw, newRaw)));
+            }
             _redos.Clear();
+            _lastSetTick = now; _lastSetRow = row; _lastSetCol = col;
         }
 
         public void RecordBulk(IEnumerable<(int row, int col, string? oldRaw, string? newRaw)> edits)
@@ -43,12 +70,14 @@ namespace SpreadsheetApp.Core
             if (list.Count == 0) return;
             _undos.Push(new Bulk(list));
             _redos.Clear();
+            _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
         }
 
         public void RecordSheetAdd(int index, string name)
         {
             _undos.Push(new SheetAdd(index, name));
             _redos.Clear();
+            _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
         }
 
         public void RecordComposite(IEnumerable<BulkEdit> edits, (int index, string name)? sheetAdd)
@@ -65,6 +94,7 @@ namespace SpreadsheetApp.Core
             if (items.Count == 0) return;
             _undos.Push(new Composite(items));
             _redos.Clear();
+            _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
         }
 
         public bool TryUndo(out int row, out int col, out string? raw)
@@ -77,6 +107,7 @@ namespace SpreadsheetApp.Core
                 _undos.Pop();
                 _redos.Push(s);
                 row = s.E.Row; col = s.E.Col; raw = s.E.OldRaw;
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -92,6 +123,7 @@ namespace SpreadsheetApp.Core
                 _redos.Pop();
                 _undos.Push(s);
                 row = s.E.Row; col = s.E.Col; raw = s.E.NewRaw;
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -119,6 +151,7 @@ namespace SpreadsheetApp.Core
                             break;
                     }
                 }
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -146,6 +179,7 @@ namespace SpreadsheetApp.Core
                             break;
                     }
                 }
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -161,6 +195,7 @@ namespace SpreadsheetApp.Core
                 _undos.Pop();
                 _redos.Push(sa);
                 index = sa.Index; name = sa.Name;
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -176,6 +211,7 @@ namespace SpreadsheetApp.Core
                 _redos.Pop();
                 _undos.Push(sa);
                 index = sa.Index; name = sa.Name;
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -191,6 +227,7 @@ namespace SpreadsheetApp.Core
                 _undos.Pop();
                 _redos.Push(b);
                 foreach (var e in b.Edits) edits.Add((e.Row, e.Col, e.OldRaw));
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;
@@ -206,6 +243,7 @@ namespace SpreadsheetApp.Core
                 _redos.Pop();
                 _undos.Push(b);
                 foreach (var e in b.Edits) edits.Add((e.Row, e.Col, e.NewRaw));
+                _lastSetTick = long.MinValue; _lastSetRow = _lastSetCol = -1;
                 return true;
             }
             return false;

@@ -152,6 +152,7 @@ namespace SpreadsheetApp.UI
             editToolStripMenuItem.Name = "editToolStripMenuItem";
             editToolStripMenuItem.Text = "Edit";
             editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { undoToolStripMenuItem, redoToolStripMenuItem, new ToolStripSeparator(), copyToolStripMenuItem, pasteToolStripMenuItem, cutToolStripMenuItem, new ToolStripSeparator(), findToolStripMenuItem, replaceToolStripMenuItem, new ToolStripSeparator(), clearContentsToolStripMenuItem, recalcToolStripMenuItem });
+            editToolStripMenuItem.DropDownOpening += (_, __) => UpdateAiMenuItemsState();
 
             // undoToolStripMenuItem
             undoToolStripMenuItem.Name = "undoToolStripMenuItem";
@@ -223,8 +224,15 @@ namespace SpreadsheetApp.UI
             alignMenu.DropDownItems.AddRange(new ToolStripItem[] { alignLeft, alignCenter, alignRight });
             var numFmtMenu = new ToolStripMenuItem("Number Format");
             var nfGeneral = new ToolStripMenuItem("General"); nfGeneral.Click += (_, __) => SetNumberFormat("General");
+            var nf0 = new ToolStripMenuItem("0"); nf0.Click += (_, __) => SetNumberFormat("0");
             var nf2 = new ToolStripMenuItem("0.00"); nf2.Click += (_, __) => SetNumberFormat("0.00");
-            numFmtMenu.DropDownItems.AddRange(new ToolStripItem[] { nfGeneral, nf2 });
+            var nfT0 = new ToolStripMenuItem("#,##0"); nfT0.Click += (_, __) => SetNumberFormat("#,##0");
+            var nfT2 = new ToolStripMenuItem("#,##0.00"); nfT2.Click += (_, __) => SetNumberFormat("#,##0.00");
+            var nfP0 = new ToolStripMenuItem("0%"); nfP0.Click += (_, __) => SetNumberFormat("0%");
+            var nfP2 = new ToolStripMenuItem("0.00%"); nfP2.Click += (_, __) => SetNumberFormat("0.00%");
+            var nfC0 = new ToolStripMenuItem("$#,##0"); nfC0.Click += (_, __) => SetNumberFormat("$#,##0");
+            var nfC2 = new ToolStripMenuItem("$#,##0.00"); nfC2.Click += (_, __) => SetNumberFormat("$#,##0.00");
+            numFmtMenu.DropDownItems.AddRange(new ToolStripItem[] { nfGeneral, new ToolStripSeparator(), nf0, nf2, new ToolStripSeparator(), nfT0, nfT2, new ToolStripSeparator(), nfP0, nfP2, new ToolStripSeparator(), nfC0, nfC2 });
             formatToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { boldItem, textColorItem, fillColorItem, new ToolStripSeparator(), alignMenu, numFmtMenu });
 
             // aiToolStripMenuItem

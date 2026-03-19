@@ -189,3 +189,49 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
 7) Regression fix
    - Issue: Dependent cells not repainting after edit when we first tried incremental-on-edit.
    - Fix: Reverted edits to full refresh path; kept incremental for bulk ops.
+
+## Post‑Update (Undo UX + Menu State)
+
+1) Undo coalescing for rapid edits
+   - Problem: Multiple quick changes to the same cell (e.g., paste/replace bursts) created many tiny undo steps.
+   - Change: Added a 1s coalescing window in `UndoManager.RecordSet`. Rapid edits to the same cell merge into a single undo record, preserving the first old value and last new value. Redo stack clears as before. Non‑single operations reset the merge window.
+
+2) Undo/Redo menu state sync
+   - Problem: Edit → Undo/Redo enable state could lag until another UI event.
+   - Change: Centralized calls to update menu state after edits, bulk applies, clear contents, replace, AI applies, and after Undo/Redo itself. Also refreshes on sheet (re)initialization and on Edit menu opening.
+
+Rationale: Smoother undo UX reduces noise and accidental multi‑undo clicks; keeping menu state in sync improves perceived reliability.
+
+3) Multi‑cell clipboard (Copy/Paste/Cut)
+   - Added rectangular selection support for Copy and Cut; clipboard format is TSV (rows by newlines, columns by tabs) with minimal quoting for tabs/newlines.
+   - Paste detects TSV and writes a 2D block starting at the top‑left of the current selection; records a single bulk undo and uses incremental repaint.
+
+## AI Enhancements (Context, Commands, Chat History)
+
+1) New planner commands: set_formula and sort_range
+   - set_formula: Distinct from set_values; writes raw formulas (kept as strings with a leading `=`). Schema: {"type":"set_formula","start":{row, col},"formulas":[["=..."],...]}. Applied as a bulk write with composite undo.
+   - sort_range: Sorts a rectangular region by a specified column. Schema: {"type":"sort_range","start":{row, col},"rows":N,"cols":N,"sort_col":"B"|2,"order":"asc|desc","has_header":true|false}.
+     - sort_col accepts a column letter (absolute) or a 1-based index relative to the start column.
+     - Sorting compares numerically when both sides are numbers; otherwise case-insensitive text; blanks last. Header row (when has_header) is preserved.
+     - Formats are not moved with rows in this pass; we only rewrite raw values to keep undo semantics simple.
+
+2) Context enrichment for planning
+   - AIContext now carries optional SelectionValues (up to 40x10), NearbyValues (20x10 window to the right/down of the cursor), and Workbook summaries (sheet names, used rows/cols, first-row headers).
+   - ProviderChatPlanner includes a compact inline representation of this context in the user message, keeping the existing strict-JSON system prompt and write-cap guidance.
+
+3) Conversation history in Chat Assistant
+   - The chat dialog maintains an in-memory rolling history (last ~5 exchanges). History is sent with each plan request to enable multi-turn prompts.
+   - Added a "Reset History" button to clear context quickly.
+   - Preview shows command summaries and counts both value and formula writes.
+
+4) Planner schema/prompt updates
+   - Strict schema extended to include set_formula and sort_range. JSON parsing covers both, with sort_col supporting either column letters or relative indices.
+
+Rationale / Notes
+- We avoided extending MockChatPlanner further; the provider-backed planner is the main path. Mock remains for offline dev but does not emit new commands.
+- Sorting does not adjust external references; formulas moved within the block keep their relative addresses. Cross-range formulas elsewhere may change results; we will consider reference-safe structural ops later.
+- Context strings are bounded to keep token cost reasonable. If we need more fidelity later, we can switch to a structured JSON context pack.
+
+4) Number formats extended
+   - Added presets: 0, 0.00, #,##0, #,##0.00, 0%, 0.00%, $#,##0, $#,##0.00.
+   - Implemented formatting in `GetDisplayWithFormat` for numeric cells; errors/text unchanged. Menu updated under Format → Number Format.

@@ -61,17 +61,18 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Only 1D list continuation; respects existing data boundaries; zero writes without explicit accept.
   - Cancelation immediate; UI never blocks; memory/CPU overhead minimal.
 
-### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (minimal)
+### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (expanded)
 - UX: docked side panel with chat; messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step.
-- Command grammar v0 (safe subset):
+- Command grammar now includes:
   - `set_values(range, values2d)`
+  - `set_formula(range, formulas2d)`
+  - `sort_range(range, sort_col, order, has_header)`
   - `create_sheet(name)`
   - `set_title(range, text)`
   - `clear_range(range)`
   - `rename_sheet(name|index, new_name)`
-  - (Defer formatting/sort/insert/delete until v0.4)
 - Context pack:
-  - Workbook summary (sheet names, detected titles), active selection snapshot, first header row/column samples, and small stats (row/col counts).
+  - Selection content (bounded), nearby window values, and workbook summary (sheet names, used sizes, first-row headers).
 - Limits & safety: hard cap on changed cells per apply (default 5,000); always preview; undo groups per apply; confirm cross‑sheet changes.
 - Streaming & control: show plan as it streams; allow Cancel; retry uses cached context.
 - Acceptance:

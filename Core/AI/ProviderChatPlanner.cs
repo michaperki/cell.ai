@@ -28,8 +28,66 @@ namespace SpreadsheetApp.Core.AI
                 else return new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"}]} with no extra keys, no prose.";
-            string usr = $"Sheet={context.SheetName}; Selection=({context.StartRow+1},{CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}; Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for rectangular fills.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose.";
+
+            var sbUsr = new System.Text.StringBuilder();
+            sbUsr.Append($"Sheet={context.SheetName}; Selection=({context.StartRow+1},{CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}. ");
+            // Include small snapshots to improve planning
+            try
+            {
+                if (context.SelectionValues != null && context.SelectionValues.Length > 0)
+                {
+                    sbUsr.Append(" SelectionContent=");
+                    int rlim = Math.Min(context.SelectionValues.Length, 20);
+                    for (int i = 0; i < rlim; i++)
+                    {
+                        if (i > 0) sbUsr.Append(" || ");
+                        var row = context.SelectionValues[i];
+                        int clim = Math.Min(row.Length, 10);
+                        sbUsr.Append(string.Join(" | ", row.AsSpan(0, clim).ToArray()));
+                    }
+                    sbUsr.Append(";");
+                }
+                if (context.NearbyValues != null && context.NearbyValues.Length > 0)
+                {
+                    sbUsr.Append(" Nearby=");
+                    int rlim = Math.Min(context.NearbyValues.Length, 20);
+                    for (int i = 0; i < rlim; i++)
+                    {
+                        if (i > 0) sbUsr.Append(" || ");
+                        var row = context.NearbyValues[i];
+                        int clim = Math.Min(row.Length, 10);
+                        sbUsr.Append(string.Join(" | ", row.AsSpan(0, clim).ToArray()));
+                    }
+                    sbUsr.Append(";");
+                }
+                if (context.Workbook != null && context.Workbook.Length > 0)
+                {
+                    sbUsr.Append(" Workbook=");
+                    int lim = Math.Min(context.Workbook.Length, 10);
+                    for (int i = 0; i < lim; i++)
+                    {
+                        var s = context.Workbook[i];
+                        if (i > 0) sbUsr.Append("; ");
+                        sbUsr.Append($"[{s.Name} rows={s.UsedRows} cols={s.UsedCols} header={(s.HeaderRow!=null?string.Join(",", s.HeaderRow):string.Empty)}]");
+                    }
+                    sbUsr.Append(". ");
+                }
+                if (context.Conversation != null && context.Conversation.Count > 0)
+                {
+                    sbUsr.Append(" History=");
+                    int start = Math.Max(0, context.Conversation.Count - 6);
+                    for (int i = start; i < context.Conversation.Count; i++)
+                    {
+                        var m = context.Conversation[i];
+                        sbUsr.Append($"[{m.Role}:{m.Content}]");
+                    }
+                    sbUsr.Append(". ");
+                }
+            }
+            catch { }
+            sbUsr.Append($" Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for plain text and set_formula for formulas; use sort_range for sorting.");
+            string usr = sbUsr.ToString();
 
             string json = provider switch
             {
@@ -170,6 +228,28 @@ namespace SpreadsheetApp.Core.AI
                                 plan.Commands.Add(sv);
                             break;
                         }
+                        case "set_formula":
+                            {
+                                var sf = new SetFormulaCommand();
+                                if (cmd.TryGetProperty("start", out var start))
+                                {
+                                    int srr, scc; ParseStart(start, out srr, out scc); sf.StartRow = srr; sf.StartCol = scc;
+                                }
+                                if (cmd.TryGetProperty("formulas", out var vals) && vals.ValueKind == JsonValueKind.Array)
+                                {
+                                    var rows = new System.Collections.Generic.List<string[]>();
+                                    foreach (var rowEl in vals.EnumerateArray())
+                                    {
+                                        var cols = new System.Collections.Generic.List<string>();
+                                        if (rowEl.ValueKind == JsonValueKind.Array)
+                                            foreach (var c in rowEl.EnumerateArray()) cols.Add(c.GetString() ?? string.Empty);
+                                        rows.Add(cols.ToArray());
+                                    }
+                                    sf.Formulas = rows.ToArray();
+                                }
+                                plan.Commands.Add(sf);
+                                break;
+                            }
                         case "clear_range":
                             {
                                 var cr = new ClearRangeCommand();
@@ -213,6 +293,35 @@ namespace SpreadsheetApp.Core.AI
                                 var cs = new CreateSheetCommand();
                                 if (cmd.TryGetProperty("name", out var n)) cs.Name = n.GetString() ?? cs.Name;
                                 plan.Commands.Add(cs);
+                                break;
+                            }
+                        case "sort_range":
+                            {
+                                var sr = new SortRangeCommand();
+                                if (cmd.TryGetProperty("start", out var start))
+                                {
+                                    int srr, scc; ParseStart(start, out srr, out scc); sr.StartRow = srr; sr.StartCol = scc;
+                                }
+                                if (cmd.TryGetProperty("rows", out var rr)) sr.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) sr.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("order", out var ord) && ord.ValueKind == JsonValueKind.String) sr.Order = (ord.GetString() ?? "asc").ToLowerInvariant();
+                                if (cmd.TryGetProperty("has_header", out var hh) && (hh.ValueKind == JsonValueKind.True || hh.ValueKind == JsonValueKind.False)) sr.HasHeader = hh.GetBoolean();
+                                // sort_col can be string letter (absolute) or number (1-based relative)
+                                if (cmd.TryGetProperty("sort_col", out var sc))
+                                {
+                                    if (sc.ValueKind == JsonValueKind.String)
+                                    {
+                                        string? letter = sc.GetString();
+                                        try { sr.SortCol = CellAddress.ColumnNameToIndex(letter ?? "A"); }
+                                        catch { sr.SortCol = sr.StartCol; }
+                                    }
+                                    else
+                                    {
+                                        int idx1 = SafeInt(sc, 1);
+                                        sr.SortCol = Math.Max(0, sr.StartCol + idx1 - 1);
+                                    }
+                                }
+                                plan.Commands.Add(sr);
                                 break;
                             }
                     }

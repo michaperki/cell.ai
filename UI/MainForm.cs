@@ -114,6 +114,7 @@ namespace SpreadsheetApp.UI
             RefreshGridValues();
             UpdateStatus();
             RefreshTabs();
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void Grid_CellBeginEdit(object? sender, DataGridViewCellCancelEventArgs e)
@@ -147,6 +148,7 @@ namespace SpreadsheetApp.UI
             }
             // Schedule inline suggestions after edit
             if (_aiInlineEnabled) ScheduleInlineSuggestion();
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void Undo()
@@ -210,6 +212,7 @@ namespace SpreadsheetApp.UI
                     grid.CurrentCell = grid[c, r];
                 }
             }
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void Redo()
@@ -272,6 +275,7 @@ namespace SpreadsheetApp.UI
                     grid.CurrentCell = grid[c, r];
                 }
             }
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void RefreshGridValues()
@@ -341,8 +345,32 @@ namespace SpreadsheetApp.UI
                     var val = _sheet.GetValue(r, c);
                     if (val.Error == null && val.Number is double d)
                     {
-                        if (fmt.NumberFormat == "0.00")
-                            return d.ToString("0.00", CultureInfo.InvariantCulture);
+                        string f = fmt.NumberFormat!;
+                        switch (f)
+                        {
+                            case "0":
+                                return d.ToString("0", CultureInfo.InvariantCulture);
+                            case "0.00":
+                                return d.ToString("0.00", CultureInfo.InvariantCulture);
+                            case "#,##0":
+                                return d.ToString("#,##0", CultureInfo.InvariantCulture);
+                            case "#,##0.00":
+                                return d.ToString("#,##0.00", CultureInfo.InvariantCulture);
+                            case "0%":
+                                return d.ToString("0%", CultureInfo.InvariantCulture);
+                            case "0.00%":
+                                return d.ToString("0.00%", CultureInfo.InvariantCulture);
+                            case "$#,##0":
+                            {
+                                string core = d.ToString("#,##0", CultureInfo.InvariantCulture);
+                                return d < 0 ? "-$" + core.TrimStart('-') : "$" + core;
+                            }
+                            case "$#,##0.00":
+                            {
+                                string core = d.ToString("#,##0.00", CultureInfo.InvariantCulture);
+                                return d < 0 ? "-$" + core.TrimStart('-') : "$" + core;
+                            }
+                        }
                     }
                 }
                 catch { }
@@ -419,10 +447,38 @@ namespace SpreadsheetApp.UI
         private void CopyCell()
         {
             if (grid.CurrentCell == null) return;
-            int r = grid.CurrentCell.RowIndex;
-            int c = grid.CurrentCell.ColumnIndex;
-            var raw = _sheet.GetRaw(r, c) ?? string.Empty;
-            try { Clipboard.SetText(raw); } catch { /* ignore */ }
+            // Compute rectangular selection bounds (or current cell if single)
+            int top = grid.CurrentCell.RowIndex, left = grid.CurrentCell.ColumnIndex, bottom = top, right = left;
+            var cells = grid.SelectedCells;
+            if (cells != null && cells.Count > 1)
+            {
+                foreach (DataGridViewCell cell in cells)
+                {
+                    if (cell == null) continue;
+                    top = Math.Min(top, cell.RowIndex);
+                    left = Math.Min(left, cell.ColumnIndex);
+                    bottom = Math.Max(bottom, cell.RowIndex);
+                    right = Math.Max(right, cell.ColumnIndex);
+                }
+            }
+            var sb = new System.Text.StringBuilder();
+            for (int r = top; r <= bottom; r++)
+            {
+                for (int c = left; c <= right; c++)
+                {
+                    if (c > left) sb.Append('\t');
+                    var raw = _sheet.GetRaw(r, c) ?? string.Empty;
+                    // Escape tabs/newlines minimally by quoting if needed
+                    if (raw.Contains('\t') || raw.Contains('\n') || raw.Contains('\r'))
+                    {
+                        string q = '"' + raw.Replace("\"", "\"\"") + '"';
+                        sb.Append(q);
+                    }
+                    else sb.Append(raw);
+                }
+                if (r < bottom) sb.AppendLine();
+            }
+            try { Clipboard.SetText(sb.ToString()); } catch { /* ignore */ }
         }
 
         private void PasteCell()
@@ -430,38 +486,97 @@ namespace SpreadsheetApp.UI
             if (grid.CurrentCell == null) return;
             string text = string.Empty;
             try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); } catch { }
-            int r = grid.CurrentCell.RowIndex;
-            int c = grid.CurrentCell.ColumnIndex;
-            var oldRaw = _sheet.GetRaw(r, c);
+            if (string.IsNullOrEmpty(text)) return;
+
+            // Parse TSV/CSV-like text into rows x cols
+            static string Unquote(string s)
+            {
+                if (s.Length >= 2 && s[0] == '"' && s[^1] == '"')
+                {
+                    var inner = s.Substring(1, s.Length - 2);
+                    return inner.Replace("\"\"", "\"");
+                }
+                return s;
+            }
+
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            // Drop a trailing empty line if present (common when copying)
+            if (lines.Length > 0 && lines[^1].Length == 0)
+            {
+                Array.Resize(ref lines, lines.Length - 1);
+            }
+            string[][] table;
+            if (lines.Length <= 1 && !text.Contains('\t'))
+            {
+                // Single cell paste
+                table = new[] { new[] { text } };
+            }
+            else
+            {
+                var rowsList = new List<string[]>();
+                foreach (var line in lines)
+                {
+                    var parts = line.Split('\t');
+                    for (int i = 0; i < parts.Length; i++) parts[i] = Unquote(parts[i]);
+                    rowsList.Add(parts);
+                }
+                table = rowsList.ToArray();
+            }
+
+            // Determine paste start at top-left of current selection
+            int startR = grid.CurrentCell.RowIndex;
+            int startC = grid.CurrentCell.ColumnIndex;
+            var cells = grid.SelectedCells;
+            if (cells != null && cells.Count > 0)
+            {
+                foreach (DataGridViewCell cell in cells)
+                {
+                    if (cell == null) continue;
+                    startR = Math.Min(startR, cell.RowIndex);
+                    startC = Math.Min(startC, cell.ColumnIndex);
+                }
+            }
+
+            var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
             _suppressRecord = true;
-            try { _sheet.SetRaw(r, c, text); }
-            finally { _suppressRecord = false; }
-            _undo.RecordSet(r, c, oldRaw, text);
             try
             {
-                var affected = _sheet.RecalculateDirty(r, c);
-                RefreshDirtyOrFull(affected);
+                for (int r = 0; r < table.Length; r++)
+                {
+                    var row = table[r];
+                    int cols = row.Length;
+                    for (int c = 0; c < cols; c++)
+                    {
+                        int rr = startR + r;
+                        int cc = startC + c;
+                        if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                        string? oldRaw = _sheet.GetRaw(rr, cc);
+                        string newRaw = row[c] ?? string.Empty;
+                        if (oldRaw == newRaw) continue;
+                        _sheet.SetRaw(rr, cc, newRaw);
+                        edits.Add((rr, cc, oldRaw, newRaw));
+                        foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
+                    }
+                }
             }
-            catch { }
+            finally { _suppressRecord = false; }
+            if (edits.Count > 0)
+            {
+                _undo.RecordBulk(edits);
+                try { RefreshDirtyOrFull(affected); } catch { }
+            }
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void CutCell()
         {
             if (grid.CurrentCell == null) return;
-            int r = grid.CurrentCell.RowIndex;
-            int c = grid.CurrentCell.ColumnIndex;
-            var oldRaw = _sheet.GetRaw(r, c) ?? string.Empty;
-            try { Clipboard.SetText(oldRaw); } catch { }
-            _suppressRecord = true;
-            try { _sheet.SetRaw(r, c, string.Empty); }
-            finally { _suppressRecord = false; }
-            _undo.RecordSet(r, c, oldRaw, string.Empty);
-            try
-            {
-                var affected = _sheet.RecalculateDirty(r, c);
-                RefreshDirtyOrFull(affected);
-            }
-            catch { }
+            // Copy current selection to clipboard
+            CopyCell();
+            // Then clear selected cells (with confirmation for formulas)
+            ClearSelectedCells();
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         // Keyboard navigation: Enter down, Tab right when not editing
@@ -596,6 +711,7 @@ namespace SpreadsheetApp.UI
                 {
                     _undo.RecordBulk(edits);
                     RefreshDirtyOrFull(affected);
+                    try { UpdateAiMenuItemsState(); } catch { }
                 }
             }
             catch { }
@@ -725,6 +841,7 @@ namespace SpreadsheetApp.UI
                 // Move to next
                 _findPosRow = r; _findPosCol = c;
                 DoFindNext(_lastFind, _lastMatchCase);
+                try { UpdateAiMenuItemsState(); } catch { }
             }
         }
 
@@ -758,6 +875,7 @@ namespace SpreadsheetApp.UI
             if (any)
             {
                 RefreshDirtyOrFull(affectedAll);
+                try { UpdateAiMenuItemsState(); } catch { }
             }
         }
 
@@ -1069,25 +1187,111 @@ namespace SpreadsheetApp.UI
         private void OpenChatAssistant()
         {
             if (!_settings.AiEnabled) { MessageBox.Show(this, "AI is disabled in Settings.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            Func<AIContext> getCtx = () =>
-            {
-                int sr = grid.CurrentCell?.RowIndex ?? 0;
-                int sc = grid.CurrentCell?.ColumnIndex ?? 0;
-                string? title = sr > 0 ? _sheet.GetRaw(sr - 1, sc) : null;
-                return new AIContext
-                {
-                    SheetName = _sheetNames.Count > _activeSheetIndex ? _sheetNames[_activeSheetIndex] : "Sheet",
-                    StartRow = sr,
-                    StartCol = sc,
-                    Rows = 5,
-                    Cols = 1,
-                    Title = title,
-                    Prompt = string.Empty
-                };
-            };
+            Func<AIContext> getCtx = () => BuildPlannerContext();
             void apply(AIPlan plan) => ApplyPlan(plan);
             using var dlg = new ChatAssistantForm(_chatPlanner, getCtx, apply);
             dlg.ShowDialog(this);
+        }
+
+        private AIContext BuildPlannerContext()
+        {
+            int sr = grid.CurrentCell?.RowIndex ?? 0;
+            int sc = grid.CurrentCell?.ColumnIndex ?? 0;
+            string? title = sr > 0 ? _sheet.GetRaw(sr - 1, sc) : null;
+            var ctx = new AIContext
+            {
+                SheetName = _sheetNames.Count > _activeSheetIndex ? _sheetNames[_activeSheetIndex] : "Sheet",
+                StartRow = sr,
+                StartCol = sc,
+                Rows = 5,
+                Cols = 1,
+                Title = title,
+                Prompt = string.Empty
+            };
+            try
+            {
+                // Selection values (bounded)
+                if (grid.SelectedCells != null && grid.SelectedCells.Count > 1)
+                {
+                    int minR = int.MaxValue, maxR = -1, minC = int.MaxValue, maxC = -1;
+                    foreach (DataGridViewCell cell in grid.SelectedCells)
+                    {
+                        if (cell == null) continue;
+                        if (cell.RowIndex < minR) minR = cell.RowIndex;
+                        if (cell.RowIndex > maxR) maxR = cell.RowIndex;
+                        if (cell.ColumnIndex < minC) minC = cell.ColumnIndex;
+                        if (cell.ColumnIndex > maxC) maxC = cell.ColumnIndex;
+                    }
+                    if (minR <= maxR && minC <= maxC)
+                    {
+                        int rows = Math.Min(40, maxR - minR + 1);
+                        int cols = Math.Min(10, maxC - minC + 1);
+                        var sel = new string[rows][];
+                        for (int r = 0; r < rows; r++)
+                        {
+                            sel[r] = new string[cols];
+                            for (int c = 0; c < cols; c++)
+                            {
+                                int rr = minR + r; int cc = minC + c;
+                                sel[r][c] = _sheet.GetDisplay(rr, cc);
+                            }
+                        }
+                        ctx.SelectionValues = sel;
+                    }
+                }
+            }
+            catch { }
+            try
+            {
+                // Nearby values window
+                int winRows = 20, winCols = 10;
+                int startR = Math.Max(0, sr);
+                int startC = Math.Max(0, sc);
+                int rows = Math.Min(winRows, _sheet.Rows - startR);
+                int cols = Math.Min(winCols, _sheet.Columns - startC);
+                var near = new string[rows][];
+                for (int r = 0; r < rows; r++)
+                {
+                    near[r] = new string[cols];
+                    for (int c = 0; c < cols; c++) near[r][c] = _sheet.GetDisplay(startR + r, startC + c);
+                }
+                ctx.NearbyValues = near;
+            }
+            catch { }
+            try
+            {
+                // Workbook summary
+                int sheetCount = _sheets.Count;
+                var list = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.SheetSummary>(sheetCount);
+                for (int i = 0; i < sheetCount; i++)
+                {
+                    var sh = _sheets[i];
+                    int usedR = 0, usedC = 0;
+                    for (int r = 0; r < sh.Rows; r++)
+                    {
+                        for (int c = 0; c < sh.Columns; c++)
+                        {
+                            var raw = sh.GetRaw(r, c);
+                            if (!string.IsNullOrWhiteSpace(raw))
+                            {
+                                if (r + 1 > usedR) usedR = r + 1;
+                                if (c + 1 > usedC) usedC = c + 1;
+                            }
+                        }
+                    }
+                    string[]? header = null;
+                    if (usedR > 0 && usedC > 0)
+                    {
+                        header = new string[usedC];
+                        for (int c = 0; c < usedC; c++) header[c] = sh.GetDisplay(0, c);
+                    }
+                    list.Add(new SpreadsheetApp.Core.AI.SheetSummary { Name = _sheetNames.Count > i ? _sheetNames[i] : $"Sheet{i+1}", UsedRows = usedR, UsedCols = usedC, HeaderRow = header });
+                }
+                ctx.Workbook = list.ToArray();
+            }
+            catch { }
+
+            return ctx;
         }
 
         private void ApplyPlan(AIPlan plan)
@@ -1112,6 +1316,27 @@ namespace SpreadsheetApp.UI
                             if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
                             string? oldRaw = _sheet.GetRaw(rr, cc);
                             string newRaw = set.Values[r][c] ?? string.Empty;
+                            _sheet.SetRaw(rr, cc, newRaw);
+                            edits.Add((rr, cc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
+                        }
+                    }
+                }
+                else if (cmd is SetFormulaCommand sf)
+                {
+                    int rows = sf.Formulas.Length;
+                    int cols = rows > 0 ? sf.Formulas[0].Length : 0;
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = sf.StartRow + r;
+                            int cc = sf.StartCol + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            string? oldRaw = _sheet.GetRaw(rr, cc);
+                            string formula = sf.Formulas[r][c] ?? string.Empty;
+                            // Ensure formulas are written as raw text; allow missing leading '=' (we'll add it)
+                            string newRaw = string.IsNullOrEmpty(formula) ? string.Empty : (formula.StartsWith("=", StringComparison.Ordinal) ? formula : ("=" + formula));
                             _sheet.SetRaw(rr, cc, newRaw);
                             edits.Add((rr, cc, oldRaw, newRaw));
                             foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
@@ -1179,6 +1404,95 @@ namespace SpreadsheetApp.UI
                     sheetAddedIndex = _activeSheetIndex;
                     sheetAddedName = cs.Name;
                 }
+                else if (cmd is SortRangeCommand sr)
+                {
+                    int rows = Math.Max(1, sr.Rows);
+                    int cols = Math.Max(1, sr.Cols);
+                    int r0 = sr.StartRow;
+                    int c0 = sr.StartCol;
+                    int sortCol = Math.Max(0, Math.Min(_sheet.Columns - 1, sr.SortCol));
+                    int rStart = r0;
+                    int rCount = rows;
+                    if (sr.HasHeader && rCount > 1)
+                    {
+                        // Keep header at first row
+                        rStart = r0 + 1;
+                        rCount = rows - 1;
+                    }
+                    // Snapshot current block raw values
+                    var block = new string[rows][];
+                    for (int r = 0; r < rows; r++)
+                    {
+                        block[r] = new string[cols];
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r; int cc = c0 + c;
+                            block[r][c] = _sheet.GetRaw(rr, cc) ?? string.Empty;
+                        }
+                    }
+                    // Build sortable list of row indices within the sortable segment
+                    var idx = new System.Collections.Generic.List<int>();
+                    for (int i = 0; i < rCount; i++) idx.Add(i);
+                    // Comparison using evaluated value of sort column when numeric, else case-insensitive text
+                    int sortRelCol = sortCol - c0; // may be outside block; clamp
+                    if (sortRelCol < 0 || sortRelCol >= cols)
+                    {
+                        sortRelCol = 0; // default to first column inside region
+                    }
+                    idx.Sort((a, b) =>
+                    {
+                        int ra = rStart - r0 + a; // relative row inside block
+                        int rb = rStart - r0 + b;
+                        var va = _sheet.GetValue(r0 + ra, c0 + sortRelCol);
+                        var vb = _sheet.GetValue(r0 + rb, c0 + sortRelCol);
+                        int cmp;
+                        if (va.Error == null && vb.Error == null && va.Number is double na && vb.Number is double nb)
+                        {
+                            cmp = na.CompareTo(nb);
+                        }
+                        else
+                        {
+                            var sa = va.ToDisplay();
+                            var sb = vb.ToDisplay();
+                            // empty last
+                            bool ea = string.IsNullOrWhiteSpace(sa);
+                            bool eb = string.IsNullOrWhiteSpace(sb);
+                            if (ea && eb) cmp = 0; else if (ea) cmp = 1; else if (eb) cmp = -1; else cmp = string.Compare(sa, sb, StringComparison.OrdinalIgnoreCase);
+                        }
+                        if (string.Equals(sr.Order, "desc", StringComparison.OrdinalIgnoreCase)) cmp = -cmp;
+                        return cmp;
+                    });
+
+                    // Construct new block with sorted rows (preserving header if present)
+                    var sortedBlock = new string[rows][];
+                    for (int r = 0; r < rows; r++) sortedBlock[r] = new string[cols];
+                    if (sr.HasHeader && rows > 0)
+                    {
+                        Array.Copy(block[0], sortedBlock[0], cols);
+                    }
+                    for (int i = 0; i < rCount; i++)
+                    {
+                        int srcRel = rStart - r0 + idx[i];
+                        int dstRel = rStart - r0 + i;
+                        Array.Copy(block[srcRel], sortedBlock[dstRel], cols);
+                    }
+                    // Apply sorted block
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r; int cc = c0 + c;
+                            string? oldRaw = _sheet.GetRaw(rr, cc);
+                            string newRaw = sortedBlock[r][c] ?? string.Empty;
+                            if (oldRaw != newRaw)
+                            {
+                                _sheet.SetRaw(rr, cc, newRaw);
+                                edits.Add((rr, cc, oldRaw, newRaw));
+                                foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
+                            }
+                        }
+                    }
+                }
             }
             if (edits.Count > 0 || sheetAddedIndex.HasValue)
             {
@@ -1190,6 +1504,7 @@ namespace SpreadsheetApp.UI
                     : null;
                 _undo.RecordComposite(be, sheetAddArg);
                 try { RefreshDirtyOrFull(affected); } catch { }
+                try { UpdateAiMenuItemsState(); } catch { }
             }
         }
 
@@ -1371,6 +1686,7 @@ namespace SpreadsheetApp.UI
                     RefreshDirtyOrFull(affected);
                 }
                 catch { }
+                try { UpdateAiMenuItemsState(); } catch { }
             }
         }
 
