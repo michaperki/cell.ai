@@ -35,14 +35,31 @@ namespace SpreadsheetApp.Core.AI
 
             string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
 
-            // Strengthen constraints for values-only prompts
-            bool valuesOnly = (prompt ?? string.Empty).IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool noTitles = valuesOnly || (prompt ?? string.Empty).IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || (prompt ?? string.Empty).IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (valuesOnly)
+            // Allowed commands and strengthened constraints
+            string[]? allowedCmds = null;
+            try { allowedCmds = (context.AllowedCommands != null && context.AllowedCommands.Length > 0) ? context.AllowedCommands : null; } catch { allowedCmds = null; }
+            // Back-compat: infer valuesOnly/noTitles from prompt if no explicit policy was provided
+            bool inferredValuesOnly = (prompt ?? string.Empty).IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool inferredNoTitles = inferredValuesOnly || (prompt ?? string.Empty).IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || (prompt ?? string.Empty).IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (allowedCmds != null)
+            {
+                // Emit an explicit AllowedCommands list into the system message
+                var sbAllowed = new System.Text.StringBuilder();
+                sbAllowed.Append(" Allowed command types: ");
+                for (int i = 0; i < allowedCmds.Length; i++)
+                {
+                    if (i > 0) sbAllowed.Append(", ");
+                    sbAllowed.Append(allowedCmds[i]);
+                }
+                sbAllowed.Append('.')
+                    .Append(" Use only these commands and no others.");
+                sys += sbAllowed.ToString();
+            }
+            else if (inferredValuesOnly)
             {
                 sys += " Allowed command types: set_values only. Do NOT use set_title or set_formula or any other commands.";
             }
-            else if (noTitles)
+            else if (inferredNoTitles)
             {
                 sys += " Do NOT use set_title for this request.";
             }
@@ -121,12 +138,16 @@ namespace SpreadsheetApp.Core.AI
             {
                 var doc = JsonDocument.Parse(json);
                 var plan = ParsePlan(doc);
-                // Filter disallowed command types for values-only prompts
-                if (valuesOnly)
+                // Filter disallowed command types: explicit AllowedCommands first, then inferred guards
+                if (allowedCmds != null && allowedCmds.Length > 0)
+                {
+                    plan.Commands.RemoveAll(c => !IsCommandAllowedByList(c, allowedCmds));
+                }
+                else if (inferredValuesOnly)
                 {
                     plan.Commands.RemoveAll(c => c is not SetValuesCommand);
                 }
-                else if (noTitles)
+                else if (inferredNoTitles)
                 {
                     plan.Commands.RemoveAll(c => c is SetTitleCommand);
                 }
@@ -199,9 +220,51 @@ namespace SpreadsheetApp.Core.AI
             }
             sb.Append('.');
 
-            // Make the input column explicit; clarify not to write into it
-            string inputColLetter = CellAddress.ColumnIndexToName(tableLeftCol + 0);
-            sb.Append($" InputColumn={inputColLetter}. Do not write to {inputColLetter}; write outputs only to the mapped columns.");
+            // Policy: input column and writable columns
+            try
+            {
+                var policy = context.WritePolicy;
+                if (policy != null)
+                {
+                    if (policy.WritableColumns != null && policy.WritableColumns.Length > 0)
+                    {
+                        sb.Append(" WritableColumns=");
+                        for (int i = 0; i < policy.WritableColumns.Length; i++)
+                        {
+                            if (i > 0) sb.Append(',');
+                            sb.Append(CellAddress.ColumnIndexToName(policy.WritableColumns[i]));
+                        }
+                        sb.Append('.');
+                    }
+                    if (policy.InputColumnIndex.HasValue)
+                    {
+                        string inputLetter = CellAddress.ColumnIndexToName(Math.Max(0, policy.InputColumnIndex.Value));
+                        if (!policy.AllowInputWritesForExistingRows && !policy.AllowInputWritesForEmptyRows)
+                        {
+                            sb.Append($" InputColumn={inputLetter}. Do not write to {inputLetter}.");
+                        }
+                        else if (!policy.AllowInputWritesForExistingRows && policy.AllowInputWritesForEmptyRows)
+                        {
+                            sb.Append($" InputColumn={inputLetter}. Do not write to existing values in {inputLetter}; writing to empty rows within the selection is allowed.");
+                        }
+                        else if (policy.AllowInputWritesForExistingRows && !policy.AllowInputWritesForEmptyRows)
+                        {
+                            sb.Append($" InputColumn={inputLetter}. Only existing rows in {inputLetter} may be edited; do not write new inputs.");
+                        }
+                        else
+                        {
+                            sb.Append($" InputColumn={inputLetter}. Writing is allowed.");
+                        }
+                    }
+                }
+                else
+                {
+                    // Default: do not write to the first (input) column
+                    string inputColLetter = CellAddress.ColumnIndexToName(tableLeftCol + 0);
+                    sb.Append($" InputColumn={inputColLetter}. Do not write to {inputColLetter}; write outputs only to the mapped columns.");
+                }
+            }
+            catch { }
 
             // Row-to-input mapping: list inputs detected in the first column of the Nearby window
             if (nearby != null && nearby.Length > 1)
@@ -219,7 +282,49 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
 
+            // Schema: include column headers for the selection if provided
+            try
+            {
+                if (context.Schema != null && context.Schema.Length > 0)
+                {
+                    sb.Append(" Schema:");
+                    int count = 0;
+                    foreach (var col in context.Schema)
+                    {
+                        if (count > 0) sb.Append(',');
+                        sb.Append(' ').Append(col.ColumnLetter);
+                        if (!string.IsNullOrWhiteSpace(col.Name)) sb.Append('=').Append(col.Name);
+                        sb.Append(" (").Append(col.Type)
+                          .Append(col.AllowEmpty ? ", optional)" : ", required)");
+                        count++;
+                    }
+                    sb.Append('.');
+                }
+            }
+            catch { }
+
             return sb.ToString();
+        }
+
+        private static bool IsCommandAllowedByList(IAICommand cmd, string[] allowed)
+        {
+            string type = cmd switch
+            {
+                SetValuesCommand => "set_values",
+                SetFormulaCommand => "set_formula",
+                SetTitleCommand => "set_title",
+                CreateSheetCommand => "create_sheet",
+                ClearRangeCommand => "clear_range",
+                RenameSheetCommand => "rename_sheet",
+                SortRangeCommand => "sort_range",
+                _ => string.Empty
+            };
+            if (string.IsNullOrEmpty(type)) return false;
+            foreach (var a in allowed)
+            {
+                if (string.Equals(a?.Trim(), type, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
         }
 
         private static async Task<string> CallOpenAIAsync(string system, string user, CancellationToken ct)

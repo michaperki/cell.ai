@@ -63,6 +63,27 @@
         { "action": "ai_chat", "prompt": "Fill in the morphological forms for the 5 Hebrew roots in column A (rows 2-6). Row 1 contains the headers describing what each column needs. For each root, provide: B = transliteration of the root consonants, C = Qal perfect 3rd person masculine singular verb form, D = Qal imperfect 3rd person masculine singular verb form, E = common noun (singular masculine if applicable), F = noun (singular feminine if applicable, otherwise leave blank), G = adjective masculine form (if one exists from this root, otherwise leave blank), H = adjective feminine form (if applicable, otherwise leave blank), I = semantic domain (one or two words, e.g. 'writing', 'learning'). Write Hebrew text in Hebrew script for columns C-H. Use set_values only. Do not add titles, formulas, or extra rows.", "location": "B2:I6", "apply": true },
         { "action": "ai_chat", "prompt": "Now add 3 more Hebrew roots and their forms. Add the roots פקד (paqad), שׁפט (shapat), and ברך (barakh) in A7:A9, then fill B7:I9 with their morphological forms following the same pattern as the existing rows. Use set_values only.", "location": "A7:I9", "apply": true }
       ]
+    },
+    {
+      "file": "test_17_append_only_multi_turn.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Within A2:D4, create 3 sample rows with Item, Qty, Price, Total. Use set_values for Item/Qty/Price and set_formula for Total in each row as =B(row)*C(row). Do not write outside A2:D4. No titles.", "location": "A2:D4", "apply": true },
+        { "action": "ai_chat", "prompt": "Append 2 more rows in A5:D6 following the same pattern. Do not modify A2:D4. Use set_values for Item/Qty/Price and set_formula for Total in each new row.", "location": "A5:D6", "apply": true }
+      ]
+    },
+    {
+      "file": "test_18_no_write_input_column.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "For each existing input in A2:A4, fill outputs in B2:D4 aligned to the headers. Use set_values only. Do not write to A.", "location": "B2:D4", "apply": true },
+        { "action": "ai_chat", "prompt": "Add two new inputs delta and epsilon in A5:A6, then fill B5:D6 with outputs aligned to the headers. Use set_values only. Do not modify existing rows.", "location": "A5:D6", "apply": true }
+      ]
+    },
+    {
+      "file": "test_19_formula_autoroute.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Fill A2:B4 with three pairs of numbers (any small integers). Leave C empty.", "location": "A2:B4", "apply": true },
+        { "action": "ai_chat", "prompt": "In C2:C4 write =A2+B2, =A3+B3, =A4+B4 respectively. Use set_values only.", "location": "C2:C4", "apply": true }
+      ]
     }
   ]
 }

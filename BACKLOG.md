@@ -35,6 +35,15 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - **MockChatPlanner coverage — PARTIAL DONE**
   - Expanded to produce `set_formula`, `sort_range`, `clear_range`, `rename_sheet`, plus heuristics for expense tables, tax columns, and bonus columns. Further tuning still welcome.
 
+- **Planner revise loop — NOT STARTED**
+  - When model returns a plan with policy/shape violations (e.g., wrong width or writes to non-writable columns), automatically request a revised plan with a concise correction message instead of silently sanitizing.
+
+- **Schema/policy preview in Chat UI — NOT STARTED**
+  - Show the mapped columns (letters), AllowedCommands, and WritePolicy summary above the Plan/Apply actions to reduce surprises and catch over-constraints early.
+
+- **Typed schema constraints (optional) — NOT STARTED**
+  - Allow per-column hints like `allow_script=latin` (for transliteration columns) or `type=number` to improve content class fidelity without domain overfitting.
+
 ---
 
 ## Active — Infrastructure
@@ -121,6 +130,11 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - Add unit tests for: comparison operators, string literals and `&`, new functions (IF/AND/OR/NOT, string ops, math, VLOOKUP), absolute refs parsing, and dependency-graph incremental recalc.
 - E2E test suite: 16 workbook test files in `tests/` with Test Runner UI (Test menu). See `tests/TEST_INDEX.md`.
+
+- Add new E2E tests (next):
+  - Append-only multi-turn table (no overwrites between steps; fixed width, selection bounded).
+  - No-write to input column unless explicitly allowed (two-step variant adding new inputs in empty rows only).
+  - Formula auto-routing from set_values (values starting with `=` evaluate as formulas).
 
 ---
 

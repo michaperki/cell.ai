@@ -243,6 +243,36 @@ namespace SpreadsheetApp.UI
                         {
                             var after = _captureSheetMap();
                             WriteDiffToLog(before, after);
+                            // Structural assertion: all changes must be within the requested selection (if provided)
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(step.Location) && step.Location!.Contains(":", StringComparison.Ordinal))
+                                {
+                                    var parts = step.Location!.Split(':');
+                                    if (parts.Length == 2 && SpreadsheetApp.Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && SpreadsheetApp.Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                                    {
+                                        int rStart = Math.Min(r1, r2), rEnd = Math.Max(r1, r2);
+                                        int cStart = Math.Min(c1, c2), cEnd = Math.Max(c1, c2);
+                                        var keys = new System.Collections.Generic.HashSet<string>(before.Keys, System.StringComparer.OrdinalIgnoreCase);
+                                        foreach (var k in after.Keys) keys.Add(k);
+                                        foreach (var k in keys)
+                                        {
+                                            before.TryGetValue(k, out var b);
+                                            after.TryGetValue(k, out var a);
+                                            if (string.Equals(b ?? string.Empty, a ?? string.Empty, StringComparison.Ordinal)) continue;
+                                            // parse address
+                                            if (SpreadsheetApp.Core.CellAddress.TryParse(k, out int rr, out int cc))
+                                            {
+                                                if (rr < rStart || rr > rEnd || cc < cStart || cc > cEnd)
+                                                {
+                                                    Log($"    ASSERTION FAILED: change outside selection: {k}\r\n");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                         // Always ensure a snapshot exists for consolidated export; save once here
                         try

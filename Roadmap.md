@@ -135,6 +135,10 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Provider‑agnostic: `IInferenceProvider` abstraction; `MockProvider` default in dev.
 - Privacy switch: global “Allow AI” toggle with per‑workbook preference.
 
+### Near-term Additions
+- Schema/policy preview in Chat UI: show mapped columns (letters), allowed commands, and write policy before applying a plan.
+- Planner revise loop: on width/policy mismatch, request an automatic plan repair instead of silently cropping.
+
 ### Technical Foundation
 - Providers: Mock, OpenAI (`OpenAIProvider`), Anthropic (`AnthropicProvider`), optional External POST (`ExternalApiProvider`).
 - Env‑first config: `.env`/system env — OPENAI_API_KEY / ANTHROPIC_API_KEY; default model via OPENAI_MODEL / ANTHROPIC_MODEL.
@@ -153,6 +157,7 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Build gate and quick manual checklist per release.
 - Unit tests for parser, functions, I/O, and formatting.
 - **E2E Test Suite**: 16 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
+ - Structural assertions: after each applied step, assert that all modified cells are within the requested selection; optional schema-aware checks can be enabled for stricter validation.
 
 ### Planner Robustness (In Progress)
 - Plan parser tolerates typed values in `set_values` and coerces to strings.
@@ -160,6 +165,8 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Test Runner sanitizes AI plans to selection bounds during automation to prevent out‑of‑range writes.
  - Values-only enforcement for chat plans: block `set_title`/`set_formula` when the prompt explicitly requires `set_values` only; clear biasing Title hints in such cases.
  - Selection sanitization handles ragged `set_values` arrays by intersecting per row and compacting rows with no overlap; prevents header duplication by dropping a header-echo first row.
+ - AllowedCommands + WritePolicy (new): pass explicit allowed command types and per‑selection write policies (writable columns, input‑column rules) through AIContext to the planner; filter disallowed commands post‑parse.
+ - Schema in context (new): include a compact, typed schema for the target selection (column headers, exact per‑row width) to reduce ambiguity and improve plan shape fidelity.
 
 ## File Format Versioning
 - Introduced `formatVersion` (1) for workbook JSON; loader auto-detects workbook vs single-sheet for backward compatibility.

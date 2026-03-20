@@ -1695,6 +1695,44 @@ namespace SpreadsheetApp.UI
                 ctx.NearbyValues = near;
             }
             catch { }
+            // Selection write policy + schema
+            try
+            {
+                var policy = new SpreadsheetApp.Core.AI.SelectionWritePolicy();
+                var writable = new System.Collections.Generic.List<int>();
+                for (int dc = 0; dc < colsHint; dc++)
+                {
+                    int abs = sc + dc; if (abs >= 0 && abs < _sheet.Columns) writable.Add(abs);
+                }
+                policy.WritableColumns = writable.ToArray();
+                int inputCol = sc > 0 ? sc - 1 : sc;
+                if (inputCol >= 0 && inputCol < _sheet.Columns)
+                {
+                    policy.InputColumnIndex = inputCol;
+                    bool inputInsideSelection = (inputCol >= sc && inputCol < sc + colsHint);
+                    policy.AllowInputWritesForExistingRows = false;
+                    policy.AllowInputWritesForEmptyRows = inputInsideSelection; // allow adding inputs only for empty rows when inside selection
+                }
+                policy.HeaderRowReadOnly = true;
+                ctx.WritePolicy = policy;
+
+                var schemas = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ColumnSchema>();
+                for (int dc = 0; dc < colsHint; dc++)
+                {
+                    int abs = sc + dc; if (abs < 0 || abs >= _sheet.Columns) continue;
+                    var col = new SpreadsheetApp.Core.AI.ColumnSchema
+                    {
+                        ColumnIndex = abs,
+                        ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs),
+                        Name = sr > 0 ? (_sheet.GetDisplay(sr - 1, abs) ?? string.Empty) : string.Empty,
+                        Type = "text",
+                        AllowEmpty = true
+                    };
+                    schemas.Add(col);
+                }
+                if (schemas.Count > 0) ctx.Schema = schemas.ToArray();
+            }
+            catch { }
             try
             {
                 // Workbook summary
@@ -2812,6 +2850,17 @@ namespace SpreadsheetApp.UI
                 if (noTitles)
                 {
                     ctx.Title = string.Empty;
+                }
+            }
+            catch { }
+
+            // AllowedCommands (explicit gating) derived from prompt when present
+            try
+            {
+                string p = prompt ?? string.Empty;
+                if (p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("Use set_values only", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    ctx.AllowedCommands = new[] { "set_values" };
                 }
             }
             catch { }

@@ -1,0 +1,17 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "AppendOnly",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Item",
+        "B1": "Qty",
+        "C1": "Price",
+        "D1": "Total"
+      }
+    }
+  ]
+}
+

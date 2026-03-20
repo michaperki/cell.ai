@@ -1,0 +1,16 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "FormulaAuto",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "X",
+        "B1": "Y",
+        "C1": "Sum"
+      }
+    }
+  ]
+}
+

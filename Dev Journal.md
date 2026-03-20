@@ -214,6 +214,37 @@ Rationale
 Validation
 - Re-ran the E2E steps for Test 16 using the Test Runner: row 2 contains actual data (no header dup), and Step 2 fills B7:I9 for the three new roots while A7:A9 are populated once.
 
+## Planner Policy Refactor + Test 16 Learnings (2026‑03‑20)
+
+What we saw
+- Plans drifted from schema and policy:
+  - Step 1 wrote 9 columns starting at B and used Hebrew in B (transliteration column), overrunning B..I. Cropping hid the mismatch.
+  - Step 2’s user context forbade writing to A globally even though the instruction asked to add inputs in A7:A9.
+
+Root cause
+- Policies were implied in prose (heuristics scanning the prompt) instead of being explicit, typed constraints passed to the planner and enforced post‑parse.
+
+Changes
+- Added explicit AllowedCommands, WritePolicy, and Schema on AIContext.
+  - AllowedCommands gates planner at both prompt and post‑parse filtering (e.g., set_values only).
+  - WritePolicy carries writable columns and nuanced input‑column rules (e.g., “A read‑only for existing rows, allowed for empty rows in selection”).
+  - Schema summarizes column headers and expected per‑row width bound to the selection.
+- ProviderChatPlanner now renders a compact policy+schema section in the user message and filters disallowed commands by type.
+- Test Runner gained structural assertions: after apply, verify that changed cells are inside the requested selection. This catches silent crops/overwrites and header edits.
+
+Rationale
+- Make constraints machine‑readable for the planner, visible for debugging (dumped to tests/output), and enforceable without domain‑specific tuning.
+
+Validation
+- For Test 16:
+  - Step 1: policy expresses “Do not write to A; write only to B..I; exactly 8 values per row.”
+  - Step 2: policy allows writes to A for empty rows 7..9 while keeping prior rows read‑only. Plan stays within A7:I9.
+
+Follow-ups queued
+- Planner revise loop: when the plan width/policy mismatches, request a repair instead of only cropping. Logged in BACKLOG.
+- Chat UI schema/policy preview: surface AllowedCommands, writable columns, and input-column rules pre-apply. Logged in ROADMAP/BACKLOG.
+- Typed schema (optional): enable simple content-class hints (e.g., transliteration ASCII) to guide providers without overfitting to domains. Logged in BACKLOG.
+
 ## Post‑Update (Undo UX + Menu State)
 
 1) Undo coalescing for rapid edits

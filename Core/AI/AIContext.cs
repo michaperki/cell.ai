@@ -19,6 +19,15 @@ namespace SpreadsheetApp.Core.AI
 
         // Optional: rolling conversation for multi-turn chat
         public System.Collections.Generic.List<ChatMessage>? Conversation { get; set; }
+
+        // Optional: explicit command gating for the planner (e.g., ["set_values"]) 
+        public string[]? AllowedCommands { get; set; }
+
+        // Optional: write policy for the active selection
+        public SelectionWritePolicy? WritePolicy { get; set; }
+
+        // Optional: concise schema for the active selection (headers and types)
+        public ColumnSchema[]? Schema { get; set; }
     }
 
     public sealed class ChatMessage
@@ -37,5 +46,28 @@ namespace SpreadsheetApp.Core.AI
         public int DataRowCountExcludingHeader { get; set; }
         public string? UsedTopLeft { get; set; }
         public string? UsedBottomRight { get; set; }
+    }
+
+    public sealed class SelectionWritePolicy
+    {
+        // Absolute 0-based column indices allowed for writes for this operation
+        public int[]? WritableColumns { get; set; }
+        // Input column index if applicable (e.g., first column of the table)
+        public int? InputColumnIndex { get; set; }
+        // If true, writes to InputColumn are allowed for empty rows within the selection
+        public bool AllowInputWritesForEmptyRows { get; set; }
+        // If true, writes to InputColumn are allowed for rows that already contain data
+        public bool AllowInputWritesForExistingRows { get; set; }
+        // Header row is read-only unless explicitly targeted
+        public bool HeaderRowReadOnly { get; set; } = true;
+    }
+
+    public sealed class ColumnSchema
+    {
+        public int ColumnIndex { get; set; }
+        public string ColumnLetter { get; set; } = "A";
+        public string? Name { get; set; }
+        public string Type { get; set; } = "text"; // text | number | formula | date
+        public bool AllowEmpty { get; set; } = true;
     }
 }
