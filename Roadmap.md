@@ -32,6 +32,11 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Double-buffered DataGridView to eliminate scroll/resize flicker.
   - Consistent default cell font (Segoe UI 9pt).
 
+### v0.3.x — Core Spreadsheet UX (near‑term, user‑reported gaps)
+- **Formula bar / cell viewer:** Add a dedicated editable text area above the grid (like Excel's formula bar) that shows the active cell's address and raw contents. Clicking a cell populates it; editing there commits back to the cell. The current status bar at the bottom is read‑only and cramped — this is a fundamental spreadsheet affordance.
+- **Clipboard selection outline:** When the user copies (Ctrl+C) or cuts (Ctrl+X) a range, draw a visible outline around the source cells — solid border for copy, animated dashed ("marching ants") for cut — matching Excel's behavior. Clear the outline on Escape or after paste.
+- **Fill Down (Ctrl+D) and drag‑fill handle:** Ctrl+D fills the selection with the value/formula from the top cell of each column (rewriting relative refs). A small drag handle at the bottom‑right corner of the selection extends a series or copies values/formulas downward/rightward on drag. This is one of the most fundamental spreadsheet interactions.
+
 ### v0.4 — Interop & Distribution (stretch)
 - Evaluate XLSX import/export or a stable interchange path.
 - Packaging, versioning, and basic telemetry/crash reporting.
@@ -67,7 +72,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Cancelation immediate; UI never blocks; memory/CPU overhead minimal.
 
 ### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (expanded)
-- UX: docked side panel with chat; messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step.
+- UX: docked side panel with chat (toggle via AI > Toggle Docked Chat Pane or Ctrl+Shift+C); messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step. A pop‑out window version remains available.
 - Command grammar now includes:
   - `set_values(range, values2d)`
   - `set_formula(range, formulas2d)`
@@ -82,6 +87,40 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 - Streaming & control: show plan as it streams; allow Cancel; retry uses cached context.
 - Acceptance:
   - Plans are syntactically valid and scope‑limited; preview matches final apply; undo fully reverts.
+
+### AI v0.3.x — Structured Batch Fill (MVP use case: Hebrew morphology)
+
+The motivating use case: a user enters Hebrew roots in column A with headers describing desired morphological forms (Verb, Noun, Adjective, etc.) across the top row, then uses an "AI fill" gesture to populate the empty cells. This generalizes to any "input column + header schema → AI fills the grid" pattern.
+
+#### Stage 1 — Single‑shot fill (10–40 rows)
+- **UX — "AI drag to fill" gesture:** User selects the empty output range. The system detects:
+  - Header row (row 1 or detected via heuristic) as the output schema.
+  - Input column (leftmost non‑empty column adjacent to selection) as the seed data.
+  - Fires a single AI request with headers + input values as context; applies result to the selection.
+- **Context optimization:** Strip NearbyValues / full workbook summary. Send only: system prompt (task definition + JSON schema) + headers + input values. Minimal tokens.
+- **Model selection:** Test smaller models (Haiku, GPT‑4o‑mini) for factual/linguistic lookup tasks where accuracy is high and creativity is unnecessary. Surface model choice in the fill dialog.
+- Acceptance: Works end‑to‑end for ≤40 rows. Single undo group. Preview before apply.
+
+#### Stage 2 — Batch orchestration (100–1,000 rows)
+- **Batch planner:** Given the output region size and estimated per‑row token density, split work into N batches of 20–50 rows each. Each batch sends identical system prompt + headers (cache‑friendly) and only that batch's input values.
+- **Prompt caching:** Leverage Anthropic prompt caching — system prompt + headers prefix is identical across batches, so batches 2–N pay ~90% less on input tokens.
+- **Progress UI:** Progress bar (batch X of N, row Y of Z), Cancel button (finishes current batch, keeps completed work), incremental apply (write results to grid as each batch returns).
+- **Error recovery:** Per‑batch retry (up to 2 retries on timeout/parse failure). Failed batches are logged and skippable; user can re‑run failures later.
+- **Undo:** One composite undo per batch, plus a "Revert All Batches" option.
+- **Cost estimation:** Before starting, show "~N batches, ~X tokens, ~$Y estimated — proceed?" confirmation.
+
+#### Stage 3 — Async bulk processing (1,000–10,000+ rows)
+- **Anthropic Batch API integration:** Submit all batches as a single async batch job (50% cost discount, 24h turnaround). Poll for completion; import results when ready.
+- **Offline workflow:** Export roots → process externally → import filled CSV. The spreadsheet is the I/O surface, not the processing engine.
+- **Resumability:** Persist batch progress to disk so interrupted jobs can resume.
+- **Re‑run failures:** Identify rows that errored or returned empty; offer targeted re‑fill.
+
+#### Design principles for batch fill
+- **Schema is static:** Headers define what to produce. Send once, cache forever across batches.
+- **Input is minimal:** A Hebrew root is 2–4 characters. Per‑row input cost is tiny.
+- **Task is embarrassingly parallel:** Row N doesn't depend on row N−1. Batches can run concurrently (with rate‑limit cap of 3–5 concurrent).
+- **Temperature 0.0:** Factual/linguistic lookup, not creative generation. Deterministic output.
+- **Validation pass:** LLMs aren't perfect on irregular forms. The UX should support spot‑check → revise cycles (existing Chat Revise loop is reusable).
 
 ### AI v0.4+ — RAG, Functions, Interop (stretch)
 - Retrieval across workbook for richer context; lightweight index of headers/keys.
@@ -113,7 +152,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 ## Quality & Verification
 - Build gate and quick manual checklist per release.
 - Unit tests for parser, functions, I/O, and formatting.
-- **E2E Test Suite**: 15 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
+- **E2E Test Suite**: 16 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
 
 ### Planner Robustness (In Progress)
 - Plan parser tolerates typed values in `set_values` and coerces to strings.

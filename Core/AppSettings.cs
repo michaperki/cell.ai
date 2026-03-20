@@ -12,6 +12,8 @@ namespace SpreadsheetApp.Core
         public string Provider { get; set; } = "Auto"; // Auto, Mock, OpenAI, Anthropic, External
         public string? ExternalApiBaseUrl { get; set; } = null; // Full endpoint URL for GenerateFill
         public string? ApiKeyProtectedBase64 { get; set; } = null; // DPAPI-protected key
+        public bool ChatPaneVisible { get; set; } = false; // Docked chat pane visibility
+        public int ChatPaneWidth { get; set; } = 340; // Width in pixels when visible
 
         public static string SettingsPath()
         {

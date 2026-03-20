@@ -131,18 +131,27 @@ The chat preview currently shows a plan summary list. A richer preview would sho
 
 ---
 
-## Quality of Life — NOT STARTED
+## Quality of Life — PARTIALLY STARTED
 
-### Auto-detect header rows
-Heuristic to identify the first non-empty row with text values as a header row. Use this for AI context (send headers automatically), for sort operations, and for formatting (auto-bold headers).
+### Auto-detect header rows — IMPLEMENTED
+Heuristic to identify the first non-empty row with text values as a header row. Used for AI context (send headers automatically) and workbook summary.
+
+### Formula bar / cell viewer — NOT STARTED
+A dedicated editable text area above the grid (like Excel's formula bar) showing the active cell's address (name box) and raw contents. The current status bar is read‑only and tucked at the bottom. This is a fundamental spreadsheet UX element — users expect to see and edit cell contents in a prominent bar, especially for long formulas that overflow the cell width.
+
+### Clipboard selection outline (marching ants) — NOT STARTED
+When the user copies or cuts a range, draw a visible border around the source cells — solid for copy, animated dashed ("marching ants") for cut. Clear on Escape or after paste. This is standard in Excel/Sheets and provides essential visual feedback about what's on the clipboard.
+
+### Fill Down (Ctrl+D) and drag‑fill handle — NOT STARTED
+Ctrl+D fills selected cells with the value/formula from the top cell of each column, rewriting relative references. A small drag handle at the bottom‑right corner of the selection extends a series or copies values downward/rightward. This is one of the most used spreadsheet interactions — critical for productivity.
 
 ### Drag-fill handle
-Click and drag the corner of a selection to extend a series (1,2,3... or Mon,Tue,Wed...). Core spreadsheet interaction that's missing.
+Click and drag the corner of a selection to extend a series (1,2,3... or Mon,Tue,Wed...). Core spreadsheet interaction that's missing. (Subsumed by Fill Down / drag‑fill above.)
 
-### Freeze panes
+### Freeze panes — NOT STARTED
 Freeze the top row(s) or left column(s) so headers stay visible during scrolling. DataGridView supports frozen columns/rows natively.
 
-### Conditional formatting rules
+### Conditional formatting rules — NOT STARTED
 Color cells based on value thresholds. The AI could set these: "highlight cells over 1000 in red." Another natural `set_conditional_format` command.
 
 ---
@@ -159,6 +168,25 @@ These are actionable items found during codebase review that don't fit neatly in
 6. **No progress indicator during planning.** The UI only disables the Plan button. A "Thinking..." label or spinner would reassure users.
 7. **Workbook summary only sends row 1 as headers.** If the actual header row is row 2 (common when row 1 is a title), the AI gets wrong context. Ties into the auto-detect-header QoL item.
 8. **MockChatPlanner doesn't cover full command set.** It can't generate `set_formula` or `sort_range` plans, limiting offline development and testing.
+
+---
+
+## Structured Batch Fill — NOT STARTED
+
+### MVP use case: Hebrew morphological forms
+User enters Hebrew roots in column A, headers across row 1 describe desired forms (Verb, Noun, Adjective, etc.), AI fills the grid. Generalizes to any "input column + header schema → AI populates" pattern.
+
+### AI drag‑to‑fill gesture — NOT STARTED
+Select the empty output range; system detects header row as schema and leftmost non‑empty column as input; fires AI request(s) and fills. Distinct from Generate Fill (which requires a manual prompt) and Chat (which is conversational). This is the natural spreadsheet gesture for AI‑assisted data entry.
+
+### Batch orchestration — NOT STARTED
+For >40 rows, split into batches of 20–50 rows. Each batch sends identical system prompt + headers (prompt‑cache friendly) and only that batch's input values. Progress bar, per‑batch error recovery, incremental apply, cancel support.
+
+### Async bulk via Anthropic Batch API — NOT STARTED
+For 1,000+ rows, submit as a single async batch job (50% cost discount). Poll for completion, import results. Resumable and re‑runnable for failed rows.
+
+### Cost estimation before fill — NOT STARTED
+Before starting a batch fill, estimate token count and cost from the schema + row count. Show a confirmation dialog.
 
 ---
 

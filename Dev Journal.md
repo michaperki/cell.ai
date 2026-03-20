@@ -28,6 +28,9 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
   - CSV import/export (display values)
   - Async Save/Load methods added (UI still sync)
 
+- UI — Docked Chat Pane
+  - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Toggle via AI menu or Ctrl+Shift+C. Kept the pop-out Chat window as an option.
+
 ## Hurdles and How We Solved Them
 1) Dependent cells not updating after edit
    - Symptom: After editing `A1`, cells with `=A1+1` didn’t visually update until clicked.
@@ -437,3 +440,116 @@ WinForms defaults (3D sunken borders, royal-blue selection, system-drawn headers
 4) Provider stability
    - OpenAI/Anthropic planner calls now use `temperature=0.0`; Anthropic `max_tokens` increased to 2048.
    - Impact: Reduces variance and truncation for larger JSON plans without test‑specific prompts.
+
+## Hebrew Roots Test + Batch Fill Vision (2026‑03‑20)
+
+### MVP use case identified
+The target workflow: user enters Hebrew roots in column A, headers across row 1 describe morphological forms (Verb Qal Perf/Imperf, Noun masc/fem, Adjective masc/fem, Semantic Domain), and AI fills the empty grid. This generalizes to any "input column + header schema → AI populates" pattern and drives the design of a new **Structured Batch Fill** feature.
+
+### Scale analysis and batching strategy
+- **≤40 rows:** Single API call. Current Generate Fill / Chat can handle this today with minor prompt tuning.
+- **100 rows:** Needs 3–5 batches of 20–30 rows. System prompt + headers are identical across batches → prompt caching saves ~90% input cost on batches 2–N.
+- **1,000 rows:** 20–50 batches. Needs parallel execution (3–5 concurrent), progress bar, per‑batch error recovery, incremental apply.
+- **10,000+ rows:** Anthropic Batch API (async, 50% cost discount) or offline CSV workflow.
+
+Key insight: the task is embarrassingly parallel (row N doesn't depend on row N−1), the schema (headers) is static, and input per row is tiny (a Hebrew root is 2–4 chars). This makes it ideal for aggressive caching and batching.
+
+### Roadmap additions
+- Added **AI v0.3.x — Structured Batch Fill** to Roadmap.md with three staged milestones (single‑shot → batch orchestration → async bulk).
+- Added **Structured Batch Fill** section to ENHANCEMENTS.md (AI drag‑to‑fill gesture, batch orchestration, cost estimation, Anthropic Batch API).
+- Added **Active — Structured Batch Fill** section to BACKLOG.md.
+
+### UX gaps identified and added to roadmap
+Three user‑reported missing spreadsheet primitives, added as **v0.3.x — Core Spreadsheet UX** in Roadmap.md:
+1. **Formula bar / cell viewer** — no editable bar above the grid; only a read‑only status strip at the bottom. Fundamental UX gap.
+2. **Clipboard selection outline** — no visual feedback on copy/cut (no marching ants or solid border).
+3. **Fill Down (Ctrl+D) + drag‑fill handle** — not implemented. One of the most‑used spreadsheet interactions.
+
+### Test 16: Hebrew roots morphology
+- Created `tests/test_16_ai_hebrew_roots.workbook.json` with 9 headers and 5 pre‑filled roots (כתב, למד, שמר, מלך, קדש).
+- Added 2‑step automation to `TEST_SPECS.json`: Step 1 fills B2:I6 for existing roots; Step 2 adds 3 more roots (פקד, שׁפט, ברך) and fills B7:I9.
+- Updated `TEST_INDEX.md` (now 16 tests).
+
+### Test 16 — first run observations
+- **Bug fixed:** `ObjectDisposedException` in `TestRunnerForm.RunSelectedAsync` — the form's `_txtLog.AppendText` was called after the form was disposed (user closed the window while async steps were still running). Fixed by adding a `Log()` helper that guards on `IsDisposed`, replacing all direct `_txtLog.AppendText` calls, and adding an early‑exit check in the step loop.
+- **AI accuracy issues (prompt tuning needed):**
+  - The planner produced 8 separate `set_values` commands (one per column) instead of a single 2D block. Functionally correct but inefficient — more commands means more parsing and a larger plan JSON.
+  - **Root‑to‑row misalignment:** Row 2 (כתב) received forms for שמר; row 3 (למד) received forms for כתב; rows shifted by one. The planner didn't anchor output rows to the input roots in column A.
+  - **Transliteration column (B) received Hebrew verb forms** instead of Latin transliterations. The prompt asked for "transliteration of the root consonants" but the AI wrote vocalized Hebrew.
+  - **Noun/Adjective columns had repetitions** from the verb forms (e.g., שָׁמֵר appeared in Noun, Adjective, and Fem Adjective for the same row).
+  - Step 2 never ran (crashed on the disposed‑form bug before reaching it).
+
+### Lessons for prompt engineering
+- The planner prompt needs to **explicitly associate each output row with the root in column A** for that row. Current context sends NearbyValues which includes the roots, but the AI doesn't reliably pair them.
+- Column B should specify "Latin/English transliteration" more clearly to avoid Hebrew script output.
+- Consider a dedicated prompt template for "fill based on column A using row 1 headers" that is more structured than free‑form chat.
+- For the batch fill feature, the prompt should send roots as an explicit numbered list mapped to output rows, not rely on spatial context inference.
+
+## Formula Bar + Schema‑Fill Prompt Fix + Log() Crash (2026‑03‑20)
+
+### What We Shipped
+
+1) **Formula bar / cell viewer** (`MainForm.Designer.cs`, `MainForm.cs`)
+   - Panel docked above the grid with cell‑name box (60px, left) + editable formula bar (fill).
+   - Synced from `UpdateStatus()` via `_suppressFormulaBarSync` guard (suppressed while the bar has focus, like Excel cancel‑on‑blur).
+   - Enter commits edit + records undo; Escape reverts; Tab commits + moves right.
+   - Name box accepts typed addresses (e.g., "C5" + Enter navigates).
+
+2) **NearbyValues context window shift** (`MainForm.cs` — `BuildPlannerContext`)
+   - Shifted `startR` up by 1 row and `startC` left by 1 column so the planner can see headers above and input columns to the left of the selection.
+   - Two‑line change: `Math.Max(0, sr - 1)` and `Math.Max(0, sc - 1)`.
+
+3) **Schema‑fill detection** (`ProviderChatPlanner.cs`)
+   - System prompt appended: "When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array."
+   - `TryBuildSchemaFillSection()` helper detects when NearbyValues row 0 has headers and rows 1+ have non‑empty col 0 values, then emits an explicit `FillMapping` section mapping each row to its input value and target columns.
+
+4) **Crash logging** (`Program.cs`, `MainForm.cs`)
+   - Global exception handlers now write to `crash.log` before showing MessageBox.
+   - `RunChatStepAsync` wraps both `BuildPlannerContext()` and `PlanAsync()` in try/catch with file logging.
+
+### The Log() Infinite Recursion Bug
+
+**Symptom:** Every test runner execution caused an instant hard crash — no error dialog, no log file, process just died. Affected all tests, not just test 16.
+
+**Debugging journey:**
+- Added `crash.log` to `RunChatStepAsync` — no file created → crash was before that code.
+- Added `crash.log` to global exception handlers in `Program.cs` — still no file → not a .NET exception.
+- Disabled formula bar (Controls.Add commented out) — still crashed → not the formula bar.
+- Disabled NearbyValues shift + schema‑fill helper — still crashed → not our Priority 1 changes.
+- Concluded the crash predated all our changes entirely.
+
+**Root cause:** `TestRunnerForm.Log()` (line 198‑202) had been refactored to add a disposed‑object guard but the body called itself instead of `_txtLog.AppendText(text)`:
+```csharp
+private void Log(string text)
+{
+    if (IsDisposed || _txtLog.IsDisposed) return;
+    Log(text);  // ← INFINITE RECURSION → StackOverflowException
+}
+```
+A `StackOverflowException` cannot be caught by any .NET exception handler — it terminates the process immediately. This is why no crash dialog appeared and no log file was written.
+
+**Fix:** Changed `Log(text)` → `_txtLog.AppendText(text)`.
+
+**Lesson:** When a .NET app dies with no exception dialog and no log, suspect `StackOverflowException` (uncatchable) or `AccessViolationException`. The disposed‑guard refactor in a previous session introduced this bug by accidentally creating a self‑recursive call.
+
+### Test 16 Results (post‑fix, NearbyValues shift still reverted during this run)
+
+**Step 1** (fill B2:I6 for 5 roots):
+- Produced **8 separate set_values commands** (one per column) instead of a single 2D block — the system prompt instruction to combine wasn't enough without the schema‑fill helper active.
+- **Root‑to‑row misalignment persists:** Row 2 (כתב) got forms for a different root; Transliteration column (B) received Hebrew text instead of Latin.
+- **Semantic Domain (I) got Hebrew** instead of English keywords.
+- Workbook summary headers saved partial alignment — the AI knew column names but couldn't see roots in column A (NearbyValues shift was reverted for crash isolation).
+
+**Step 2** (add 3 more roots to A7:A9, fill B7:I9):
+- Produced **1 set_values command** with a proper 3×9 2D array — much better structure.
+- Transliteration (B7:B9) correctly in Latin: "paqad", "shapat", "barakh".
+- Verb forms (C, D) in Hebrew with vowel pointing — correct.
+- Noun/Adjective columns (F, G, H) mostly blank — the selection bounding sanitizer clipped them because the AI wrote to col 1 (A) which is outside the B‑I selection.
+- Semantic Domain (I7:I9) correctly in English: "command", "judgment", "blessing".
+
+**Step 2 is closer to the target behavior.** The key difference: step 2's prompt explicitly named the roots with transliterations, giving the AI a clear row↔input mapping. Step 1 relied on spatial context which was empty.
+
+### Next Steps
+- Re‑run test 16 with NearbyValues shift + schema‑fill helper **enabled** (now re‑enabled) to see if the FillMapping section fixes step 1's alignment.
+- The schema‑fill helper should make step 1 behave more like step 2 by giving the planner explicit "Row N: input=X" mappings.
+- Column B transliteration issue needs a prompt template fix (specify "Latin alphabet" more forcefully).

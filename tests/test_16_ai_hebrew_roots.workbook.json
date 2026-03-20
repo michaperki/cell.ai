@@ -1,0 +1,26 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Hebrew_Roots",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Hebrew Root",
+        "B1": "Transliteration",
+        "C1": "Verb (Qal Perfect 3ms)",
+        "D1": "Verb (Qal Imperfect 3ms)",
+        "E1": "Noun (sing. masc.)",
+        "F1": "Noun (sing. fem.)",
+        "G1": "Adjective (masc.)",
+        "H1": "Adjective (fem.)",
+        "I1": "Semantic Domain",
+        "A2": "\u05db\u05ea\u05d1",
+        "A3": "\u05dc\u05de\u05d3",
+        "A4": "\u05e9\u05de\u05e8",
+        "A5": "\u05de\u05dc\u05da",
+        "A6": "\u05e7\u05d3\u05e9"
+      }
+    }
+  ]
+}

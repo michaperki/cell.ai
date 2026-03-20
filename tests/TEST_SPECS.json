@@ -56,6 +56,13 @@
       "steps": [
         { "action": "ai_chat", "sheet": "Summary", "prompt": "Fill A2 with the count of data rows (excluding the header) in the Sales sheet, and A3 with the count of data rows (excluding the header) in the Inventory sheet. Write plain numbers only (set_values), no formulas, no titles, and do not edit other cells.", "location": "A2:A3", "apply": true }
       ]
+    },
+    {
+      "file": "test_16_ai_hebrew_roots.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Fill in the morphological forms for the 5 Hebrew roots in column A (rows 2-6). Row 1 contains the headers describing what each column needs. For each root, provide: B = transliteration of the root consonants, C = Qal perfect 3rd person masculine singular verb form, D = Qal imperfect 3rd person masculine singular verb form, E = common noun (singular masculine if applicable), F = noun (singular feminine if applicable, otherwise leave blank), G = adjective masculine form (if one exists from this root, otherwise leave blank), H = adjective feminine form (if applicable, otherwise leave blank), I = semantic domain (one or two words, e.g. 'writing', 'learning'). Write Hebrew text in Hebrew script for columns C-H. Use set_values only. Do not add titles, formulas, or extra rows.", "location": "B2:I6", "apply": true },
+        { "action": "ai_chat", "prompt": "Now add 3 more Hebrew roots and their forms. Add the roots פקד (paqad), שׁפט (shapat), and ברך (barakh) in A7:A9, then fill B7:I9 with their morphological forms following the same pattern as the existing rows. Use set_values only.", "location": "A7:I9", "apply": true }
+      ]
     }
   ]
 }

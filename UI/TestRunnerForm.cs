@@ -195,6 +195,12 @@ namespace SpreadsheetApp.UI
             }
         }
 
+        private void Log(string text)
+        {
+            if (IsDisposed || _txtLog.IsDisposed) return;
+            _txtLog.AppendText(text);
+        }
+
         private async System.Threading.Tasks.Task RunSelectedAsync()
         {
             int idx = _lstTests.SelectedIndex;
@@ -206,30 +212,31 @@ namespace SpreadsheetApp.UI
                 MessageBox.Show(this, "No steps defined for this test in TEST_SPECS.json.", "Test Runner", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            _txtLog.AppendText($"> Running {Path.GetFileName(path)}\r\n");
+            Log($"> Running {Path.GetFileName(path)}\r\n");
             _clearChatHistory();
             int stepNo = 1;
             foreach (var step in spec.Steps)
             {
+                if (IsDisposed) return;
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(step.Sheet))
                     {
                         _activateSheet(step.Sheet!);
-                        _txtLog.AppendText($"  - Activated sheet: {step.Sheet}\r\n");
+                        Log($"  - Activated sheet: {step.Sheet}\r\n");
                     }
                     if (step.Action == "ai_chat")
                     {
-                        _txtLog.AppendText($"  - Step {stepNo}: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
+                        Log($"  - Step {stepNo}: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
                         var before = _captureSheetMap();
                         var plan = await _runChatStepAsync(step.Prompt ?? string.Empty, step.Location, step.Apply, System.Threading.CancellationToken.None).ConfigureAwait(true);
                         if (plan.Commands.Count == 0)
                         {
-                            _txtLog.AppendText("    -> No changes suggested.\r\n");
+                            Log("    -> No changes suggested.\r\n");
                         }
                         else
                         {
-                            foreach (var cmd in plan.Commands) _txtLog.AppendText($"    -> {cmd.Summarize()}\r\n");
+                            foreach (var cmd in plan.Commands) Log($"    -> {cmd.Summarize()}\r\n");
                         }
                         // Diff (only when apply)
                         if (step.Apply)
@@ -246,11 +253,11 @@ namespace SpreadsheetApp.UI
                                 string promptPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.user.txt");
                                 string contents = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
                                 File.WriteAllText(promptPath, contents);
-                                _txtLog.AppendText($"    -> User prompt saved: {promptPath}\r\n");
+                                Log($"    -> User prompt saved: {promptPath}\r\n");
                             }
                             catch (Exception ex)
                             {
-                                _txtLog.AppendText($"    -> Failed to save user prompt: {ex.Message}\r\n");
+                                Log($"    -> Failed to save user prompt: {ex.Message}\r\n");
                             }
                         }
                         if (_chkDumpPlan.Checked)
@@ -262,11 +269,11 @@ namespace SpreadsheetApp.UI
                                 string planPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.plan.json");
                                 string contents = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
                                 File.WriteAllText(planPath, contents);
-                                _txtLog.AppendText($"    -> Plan JSON saved: {planPath}\r\n");
+                                Log($"    -> Plan JSON saved: {planPath}\r\n");
                             }
                             catch (Exception ex)
                             {
-                                _txtLog.AppendText($"    -> Failed to save plan JSON: {ex.Message}\r\n");
+                                Log($"    -> Failed to save plan JSON: {ex.Message}\r\n");
                             }
                         }
                         if (_chkDumpSystem.Checked)
@@ -278,11 +285,11 @@ namespace SpreadsheetApp.UI
                                 string sysPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.system.txt");
                                 string contents = plan.RawSystem ?? "(no system prompt)";
                                 File.WriteAllText(sysPath, contents);
-                                _txtLog.AppendText($"    -> System prompt saved: {sysPath}\r\n");
+                                Log($"    -> System prompt saved: {sysPath}\r\n");
                             }
                             catch (Exception ex)
                             {
-                                _txtLog.AppendText($"    -> Failed to save system prompt: {ex.Message}\r\n");
+                                Log($"    -> Failed to save system prompt: {ex.Message}\r\n");
                             }
                         }
                         if (_chkSnapshots.Checked)
@@ -291,21 +298,21 @@ namespace SpreadsheetApp.UI
                             string baseName = Path.GetFileNameWithoutExtension(path);
                             string snap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
                             _saveWorkbook(snap);
-                            _txtLog.AppendText($"    -> Snapshot saved: {snap}\r\n");
+                            Log($"    -> Snapshot saved: {snap}\r\n");
                         }
                     }
                     else
                     {
-                        _txtLog.AppendText($"  - Step {stepNo}: Unsupported action '{step.Action}'.\r\n");
+                        Log($"  - Step {stepNo}: Unsupported action '{step.Action}'.\r\n");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _txtLog.AppendText($"    !! Error: {ex.Message}\r\n");
+                    Log($"    !! Error: {ex.Message}\r\n");
                 }
                 finally { stepNo++; }
             }
-            _txtLog.AppendText("> Done.\r\n");
+            Log("> Done.\r\n");
         }
 
         private void RefreshVisibleList()
@@ -442,14 +449,14 @@ namespace SpreadsheetApp.UI
                 }
                 if (changed.Count == 0)
                 {
-                    _txtLog.AppendText("    -> No cell changes detected.\r\n");
+                    Log("    -> No cell changes detected.\r\n");
                     return;
                 }
                 int maxShow = 100;
-                _txtLog.AppendText($"    -> Cell changes ({changed.Count}):\r\n");
+                Log($"    -> Cell changes ({changed.Count}):\r\n");
                 for (int i = 0; i < Math.Min(maxShow, changed.Count); i++)
-                    _txtLog.AppendText(changed[i] + "\r\n");
-                if (changed.Count > maxShow) _txtLog.AppendText($"      ... ({changed.Count - maxShow} more)\r\n");
+                    Log(changed[i] + "\r\n");
+                if (changed.Count > maxShow) Log($"      ... ({changed.Count - maxShow} more)\r\n");
             }
             catch { }
         }

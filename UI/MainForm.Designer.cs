@@ -23,6 +23,7 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem aiEnableInlineToolStripMenuItem = null!;
         private ToolStripMenuItem aiAcceptInlineToolStripMenuItem = null!;
         private ToolStripMenuItem aiOpenChatToolStripMenuItem = null!;
+        private ToolStripMenuItem aiToggleChatPaneToolStripMenuItem = null!;
         private ToolStripMenuItem aiSettingsToolStripMenuItem = null!;
         private ToolStripMenuItem undoToolStripMenuItem = null!;
         private ToolStripMenuItem redoToolStripMenuItem = null!;
@@ -46,6 +47,9 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem testToolStripMenuItem = null!;
         private ToolStripMenuItem testRunnerToolStripMenuItem = null!;
         private DataGridView grid = null!;
+        private Panel _formulaBarPanel = null!;
+        private TextBox _cellNameBox = null!;
+        private TextBox _formulaBar = null!;
 
         protected override void Dispose(bool disposing)
         {
@@ -251,11 +255,13 @@ namespace SpreadsheetApp.UI
             aiEnableInlineToolStripMenuItem.CheckedChanged += (_, __) => ToggleInlineSuggestions(aiEnableInlineToolStripMenuItem.Checked);
             aiAcceptInlineToolStripMenuItem = new ToolStripMenuItem("Apply AI Changes") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.I };
             aiAcceptInlineToolStripMenuItem.Click += (_, __) => AcceptInlineSuggestion();
-            aiOpenChatToolStripMenuItem = new ToolStripMenuItem("Open Chat Assistant...") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C };
+            aiToggleChatPaneToolStripMenuItem = new ToolStripMenuItem("Toggle Docked Chat Pane") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C };
+            aiToggleChatPaneToolStripMenuItem.Click += (_, __) => ToggleChatPane();
+            aiOpenChatToolStripMenuItem = new ToolStripMenuItem("Open Chat Assistant (window)...");
             aiOpenChatToolStripMenuItem.Click += (_, __) => OpenChatAssistant();
             aiSettingsToolStripMenuItem = new ToolStripMenuItem("Settings...");
             aiSettingsToolStripMenuItem.Click += (_, __) => OpenAiSettings();
-            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
+            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
             menuStrip1.Items.Add(aiToolStripMenuItem);
 
             // testToolStripMenuItem
@@ -288,6 +294,35 @@ namespace SpreadsheetApp.UI
             tabs.Dock = DockStyle.Top;
             tabs.Height = 26;
             tabs.SelectedIndexChanged += Tabs_SelectedIndexChanged;
+
+            // Formula bar
+            _formulaBarPanel = new Panel();
+            _formulaBarPanel.Dock = DockStyle.Top;
+            _formulaBarPanel.Height = 26;
+            _formulaBarPanel.BackColor = Color.FromArgb(240, 240, 240);
+            _formulaBarPanel.Padding = new Padding(0);
+
+            _cellNameBox = new TextBox();
+            _cellNameBox.Dock = DockStyle.Left;
+            _cellNameBox.Width = 60;
+            _cellNameBox.Font = new Font("Segoe UI", 9F);
+            _cellNameBox.TextAlign = HorizontalAlignment.Center;
+            _cellNameBox.BorderStyle = BorderStyle.FixedSingle;
+
+            var formulaSep = new Label();
+            formulaSep.Dock = DockStyle.Left;
+            formulaSep.Width = 1;
+            formulaSep.BackColor = Color.FromArgb(200, 200, 200);
+
+            _formulaBar = new TextBox();
+            _formulaBar.Dock = DockStyle.Fill;
+            _formulaBar.Font = new Font("Segoe UI", 9F);
+            _formulaBar.BackColor = Color.White;
+            _formulaBar.BorderStyle = BorderStyle.FixedSingle;
+
+            _formulaBarPanel.Controls.Add(_formulaBar);     // Fill — added first
+            _formulaBarPanel.Controls.Add(formulaSep);      // Left
+            _formulaBarPanel.Controls.Add(_cellNameBox);    // Left
 
             // grid
             grid.Dock = DockStyle.Fill;
@@ -356,10 +391,11 @@ namespace SpreadsheetApp.UI
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new System.Drawing.Size(1000, 700);
-            Controls.Add(grid);
-            Controls.Add(tabs);
-            Controls.Add(statusStrip1);
-            Controls.Add(menuStrip1);
+            Controls.Add(grid);              // Fill
+            Controls.Add(tabs);              // Top
+            Controls.Add(_formulaBarPanel);  // Top — between tabs and menu
+            Controls.Add(statusStrip1);      // Bottom
+            Controls.Add(menuStrip1);        // Top — topmost
             MainMenuStrip = menuStrip1;
             Name = "MainForm";
             Text = "Spreadsheet";

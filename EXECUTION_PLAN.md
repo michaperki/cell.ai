@@ -51,6 +51,13 @@ This plan prioritizes reliability, UX polish, and small-but-high‑leverage AI i
 
 ## Phase 3 — AI UX Improvements (Status: DONE)
 
+5a) Docked Chat Pane — DONE
+- Tasks
+  - Extract ChatAssistantForm internals to a reusable UserControl and host it in a right-docked panel with a splitter.
+  - Toggle via menu and Ctrl+Shift+C; persist width/visibility in settings; keep pop-out window as optional.
+- Acceptance
+  - Chat is available as a docked pane without blocking workflows; users can continue editing while planning and applying.
+
 5) Chat “Revise” loop — DONE
 - Tasks
   - Add a “Revise” button to `ChatAssistantForm` to append feedback into `_history` and re‑plan.

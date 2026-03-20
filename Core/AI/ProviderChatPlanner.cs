@@ -33,7 +33,7 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
 
             var sbUsr = new System.Text.StringBuilder();
             sbUsr.Append($"Sheet={context.SheetName}; Selection=({context.StartRow+1},{CellAddress.ColumnIndexToName(context.StartCol)}); Rows={context.Rows}; Cols={context.Cols}; Title={(context.Title??string.Empty)}. ");
@@ -93,6 +93,8 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
             catch { }
+            var schemaSection = TryBuildSchemaFillSection(context);
+            if (!string.IsNullOrEmpty(schemaSection)) sbUsr.Append(schemaSection);
             sbUsr.Append($" Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for plain text and set_formula for formulas; use sort_range for sorting.");
             string usr = sbUsr.ToString();
 
@@ -124,6 +126,56 @@ namespace SpreadsheetApp.Core.AI
                 }
                 return new AIPlan();
             }
+        }
+
+        private static string? TryBuildSchemaFillSection(AIContext context)
+        {
+            var nearby = context.NearbyValues;
+            if (nearby == null || nearby.Length < 2) return null;
+
+            // Row 0 should have >=2 non-empty header cells
+            var headerRow = nearby[0];
+            int nonEmptyHeaders = 0;
+            foreach (var h in headerRow)
+                if (!string.IsNullOrWhiteSpace(h)) nonEmptyHeaders++;
+            if (nonEmptyHeaders < 2) return null;
+
+            // Rows 1+ should have non-empty values in col 0 (the input column)
+            int inputCount = 0;
+            for (int r = 1; r < nearby.Length; r++)
+                if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0])) inputCount++;
+            if (inputCount < 1) return null;
+
+            // Build the section
+            var sb = new System.Text.StringBuilder();
+            sb.Append(" FillMapping (emit ONE set_values with a 2D array):");
+
+            // Headers — map column letters to header names
+            sb.Append(" Headers:");
+            int startCol = context.StartCol;
+            for (int c = 1; c < headerRow.Length; c++)
+            {
+                if (string.IsNullOrWhiteSpace(headerRow[c])) continue;
+                string colLetter = CellAddress.ColumnIndexToName(startCol + c - 1);
+                if (c > 1) sb.Append(',');
+                sb.Append($" {colLetter}={headerRow[c]}");
+            }
+            sb.Append('.');
+
+            // Row-to-input mapping
+            int startRow1 = context.StartRow + 1; // 1-based
+            int fillColCount = headerRow.Length - 1;
+            string fillStart = CellAddress.ColumnIndexToName(startCol);
+            string fillEnd = CellAddress.ColumnIndexToName(startCol + fillColCount - 1);
+            for (int r = 1; r < nearby.Length; r++)
+            {
+                if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0]))
+                {
+                    sb.Append($" Row {startRow1 + r - 1}: input=\"{nearby[r][0]}\" -> fill columns {fillStart}-{fillEnd}.");
+                }
+            }
+
+            return sb.ToString();
         }
 
         private static async Task<string> CallOpenAIAsync(string system, string user, CancellationToken ct)

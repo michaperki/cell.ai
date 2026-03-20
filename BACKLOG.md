@@ -8,6 +8,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ## Active — AI / Chat UX
 
+- **Docked Chat Pane — DONE**
+  - Added a right-side docked Chat panel with Plan/Revise/Apply and rolling history. Toggle via AI > Toggle Docked Chat Pane or Ctrl+Shift+C. Pop-out window remains available.
+
 - **Chat closes on Apply (bug/UX) — DONE**
   - Chat now stays open after Apply; input clears and an “Applied …” summary is appended so users can continue multi‑turn flows.
 
@@ -75,6 +78,15 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - Clear contents for multi-cell selections — DONE
   - Delete/Backspace clears selection with a single bulk undo action; guarded prompt for formulas; incremental repaint in place.
 
+- **Formula bar / cell viewer — NOT STARTED**
+  - Add an editable text area above the grid showing the active cell address (name box) and raw contents. Editing commits back to the cell. Replaces the need to squint at the bottom status bar for cell content.
+
+- **Clipboard selection outline — NOT STARTED**
+  - Draw a visible border around copied/cut source cells (solid for copy, dashed/marching ants for cut). Clear on Escape or paste. Standard spreadsheet visual feedback.
+
+- **Fill Down (Ctrl+D) + drag‑fill handle — NOT STARTED**
+  - Ctrl+D fills selection from the top cell per column with reference rewriting. Drag handle at selection corner extends series or copies downward/rightward. Fundamental spreadsheet productivity feature.
+
 ---
 
 ## Active — Undo/Redo Polish
@@ -95,7 +107,29 @@ This file tracks follow-ups and refinements discovered while implementing the en
 ## Active — Testing
 
 - Add unit tests for: comparison operators, string literals and `&`, new functions (IF/AND/OR/NOT, string ops, math, VLOOKUP), absolute refs parsing, and dependency-graph incremental recalc.
-- E2E test suite: 15 workbook test files in `tests/` with Test Runner UI (Test menu). See `tests/TEST_INDEX.md`.
+- E2E test suite: 16 workbook test files in `tests/` with Test Runner UI (Test menu). See `tests/TEST_INDEX.md`.
+
+---
+
+## Active — Structured Batch Fill (MVP: Hebrew roots)
+
+- **AI drag‑to‑fill gesture — NOT STARTED**
+  - Select empty output range; system detects header row + input column; fires AI request(s); fills. Single-shot for ≤40 rows, batched beyond that.
+
+- **Batch orchestration — NOT STARTED**
+  - Split large fills into 20–50 row batches. Same system prompt + headers per batch (prompt‑cache friendly). Progress bar, cancel, per‑batch retry, incremental apply.
+
+- **Cost estimation dialog — NOT STARTED**
+  - Before batch fill, estimate tokens/cost from schema + row count. User confirms before proceeding.
+
+- **Anthropic Batch API integration — NOT STARTED (stretch)**
+  - For 1,000+ rows, submit async batch job at 50% cost. Poll completion, import results, resume on interruption.
+
+- **Prompt template for schema‑driven fill — NOT STARTED**
+  - Current free‑form chat prompt doesn't reliably align output rows to input column values. Need a structured prompt template that explicitly maps each root (row) to its expected output columns. Discovered via Test 16 where the AI misaligned roots to rows and wrote Hebrew in the transliteration column.
+
+- **TestRunnerForm disposed‑object crash — FIXED**
+  - `_txtLog.AppendText` threw `ObjectDisposedException` when the form was closed mid‑run. Added `Log()` guard helper and early‑exit check in step loop.
 
 ---
 

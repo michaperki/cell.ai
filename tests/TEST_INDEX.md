@@ -19,6 +19,7 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 | 13 | test_13_cell_formatting | UX | Bold, number format, alignment, save/reopen persistence |
 | 14 | test_14_ai_complex_plan | AI | Multi-command plan (set_values + set_formula in one shot) |
 | 15 | test_15_ai_workbook_context | AI | AI reasoning across multiple sheets using workbook summary |
+| 16 | test_16_ai_hebrew_roots | AI | Hebrew morphology fill: headers as schema + roots as input; multi-turn append |
 
 ## How to use
 

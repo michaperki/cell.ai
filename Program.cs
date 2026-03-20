@@ -14,11 +14,13 @@ namespace SpreadsheetApp
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) =>
             {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] UI thread exception:\n{e.Exception}\n\n"); } catch { }
                 try { MessageBox.Show($"Unhandled UI exception:\n{e.Exception}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
                 catch { }
             };
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] AppDomain exception:\n{e.ExceptionObject}\n\n"); } catch { }
                 try { MessageBox.Show($"Unhandled exception:\n{e.ExceptionObject}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
                 catch { }
             };
@@ -28,6 +30,7 @@ namespace SpreadsheetApp
             }
             catch (Exception ex)
             {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] Fatal:\n{ex}\n\n"); } catch { }
                 try { MessageBox.Show($"Fatal error:\n{ex}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
                 catch { }
             }

@@ -46,6 +46,11 @@ namespace SpreadsheetApp.UI
         private IChatPlanner _chatPlanner = new MockChatPlanner();
         private readonly System.Collections.Generic.Dictionary<string, string[]> _aiInlineCache = new();
         private SpreadsheetApp.Core.AppSettings _settings = SpreadsheetApp.Core.AppSettings.Load();
+        private bool _suppressFormulaBarSync;
+        // Docked Chat pane
+        private System.Windows.Forms.Panel? _chatDockHost;
+        private System.Windows.Forms.Splitter? _chatDockSplitter;
+        private SpreadsheetApp.UI.AI.ChatAssistantPanel? _chatPane;
 
         public MainForm()
         {
@@ -61,6 +66,13 @@ namespace SpreadsheetApp.UI
             CreateGhostUI();
             ApplySettings(_settings);
             SyncAiMenuState();
+            // Formula bar events
+            _formulaBar.KeyDown += FormulaBar_KeyDown;
+            _formulaBar.Enter += (_, __) => _suppressFormulaBarSync = true;
+            _formulaBar.Leave += FormulaBar_Leave;
+            _cellNameBox.KeyDown += CellNameBox_KeyDown;
+            // Create docked chat pane (initially hidden or visible per settings)
+            try { CreateDockedChatPane(); } catch { }
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -75,12 +87,102 @@ namespace SpreadsheetApp.UI
                 OpenGenerateFill();
                 return true;
             }
-            if (keyData == (Keys.Control | Keys.Shift | Keys.C))
-            {
-                OpenChatAssistant();
-                return true;
-            }
+            if (keyData == (Keys.Control | Keys.Shift | Keys.C)) { ToggleChatPane(); return true; }
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void CreateDockedChatPane()
+        {
+            // host panel on the right + splitter
+            _chatDockHost = new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = Math.Max(220, Math.Min(800, _settingsChatPaneWidth())),
+                Visible = _settingsChatPaneVisible()
+            };
+            _chatDockHost.BackColor = System.Drawing.Color.FromArgb(248, 248, 248);
+            _chatDockSplitter = new Splitter
+            {
+                Dock = DockStyle.Right,
+                Width = 4,
+                BackColor = System.Drawing.Color.FromArgb(234, 234, 234),
+                Visible = _chatDockHost.Visible
+            };
+            Controls.Add(_chatDockSplitter);
+            Controls.Add(_chatDockHost);
+
+            // instantiate chat panel
+            Func<AIContext> getCtx = () => BuildPlannerContext();
+            void apply(AIPlan plan) => ApplyPlan(plan);
+            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, getCtx, apply);
+            _chatPane.Dock = DockStyle.Fill;
+            _chatDockHost.Controls.Add(_chatPane);
+
+            _chatDockSplitter.SplitterMoved += (_, __) => SaveChatPaneWidth();
+            _chatDockHost.SizeChanged += (_, __) => { if (_chatDockHost.Visible) SaveChatPaneWidth(); };
+        }
+
+        private int _settingsChatPaneWidth()
+        {
+            try
+            {
+                var prop = typeof(SpreadsheetApp.Core.AppSettings).GetProperty("ChatPaneWidth");
+                if (prop != null)
+                {
+                    var v = prop.GetValue(_settings);
+                    if (v is int i && i > 0) return i;
+                }
+            }
+            catch { }
+            return 340;
+        }
+
+        private bool _settingsChatPaneVisible()
+        {
+            try
+            {
+                var prop = typeof(SpreadsheetApp.Core.AppSettings).GetProperty("ChatPaneVisible");
+                if (prop != null)
+                {
+                    var v = prop.GetValue(_settings);
+                    if (v is bool b) return b;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private void SaveChatPaneWidth()
+        {
+            try
+            {
+                if (_chatDockHost == null) return;
+                var prop = typeof(SpreadsheetApp.Core.AppSettings).GetProperty("ChatPaneWidth");
+                if (prop != null) prop.SetValue(_settings, _chatDockHost.Width);
+                _settings.Save();
+            }
+            catch { }
+        }
+
+        private void ToggleChatPane()
+        {
+            if (_chatDockHost == null || _chatDockSplitter == null)
+            {
+                try { CreateDockedChatPane(); } catch { }
+            }
+            if (_chatDockHost == null || _chatDockSplitter == null) return;
+            bool show = !_chatDockHost.Visible;
+            _chatDockHost.Visible = show;
+            _chatDockSplitter.Visible = show;
+            try
+            {
+                var prop = typeof(SpreadsheetApp.Core.AppSettings).GetProperty("ChatPaneVisible");
+                if (prop != null) prop.SetValue(_settings, show);
+                _settings.Save();
+            }
+            catch { }
+            try { if (show) _chatPane?.FocusInput(); } catch { }
+            try { UpdateAiMenuItemsState(); } catch { }
         }
 
         private void InitializeSheet(Spreadsheet? newSheet = null)
@@ -438,6 +540,11 @@ namespace SpreadsheetApp.UI
                 statusCell.Text = "Cell: -";
                 statusRaw.Text = "Raw: ";
                 statusValue.Text = "Value: ";
+                if (!_suppressFormulaBarSync)
+                {
+                    _cellNameBox.Text = string.Empty;
+                    _formulaBar.Text = string.Empty;
+                }
                 return;
             }
             int r = grid.CurrentCell.RowIndex;
@@ -450,6 +557,92 @@ namespace SpreadsheetApp.UI
             statusCell.Text = $"Cell: {addr}";
             statusRaw.Text = $"Raw: {raw}";
             statusValue.Text = $"Value: {val}";
+            if (!_suppressFormulaBarSync)
+            {
+                _cellNameBox.Text = addr;
+                _formulaBar.Text = raw;
+            }
+        }
+
+        // --- Formula Bar ---
+        private void FormulaBar_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                CommitFormulaBarEdit();
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                e.SuppressKeyPress = true;
+                _suppressFormulaBarSync = false;
+                UpdateStatus();
+                grid.Focus();
+            }
+            else if (e.KeyCode == Keys.Tab)
+            {
+                e.SuppressKeyPress = true;
+                CommitFormulaBarEdit();
+                // Move to next cell
+                if (grid.CurrentCell != null)
+                {
+                    int r = grid.CurrentCell.RowIndex;
+                    int c = grid.CurrentCell.ColumnIndex + 1;
+                    if (c < grid.ColumnCount)
+                    {
+                        grid.CurrentCell = grid[c, r];
+                    }
+                }
+            }
+        }
+
+        private void CommitFormulaBarEdit()
+        {
+            if (grid.CurrentCell == null) { grid.Focus(); return; }
+            int r = grid.CurrentCell.RowIndex;
+            int c = grid.CurrentCell.ColumnIndex;
+            string newVal = _formulaBar.Text ?? string.Empty;
+            string oldVal = _sheet.GetRaw(r, c) ?? string.Empty;
+            if (newVal != oldVal)
+            {
+                _sheet.SetRaw(r, c, newVal);
+                _undo.RecordSet(r, c, oldVal, newVal);
+                _sheet.RecalculateDirty(r, c);
+                RefreshGridValues();
+            }
+            _suppressFormulaBarSync = false;
+            UpdateStatus();
+            grid.Focus();
+        }
+
+        private void FormulaBar_Leave(object? sender, EventArgs e)
+        {
+            _suppressFormulaBarSync = false;
+            UpdateStatus();
+        }
+
+        private void CellNameBox_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                string addr = _cellNameBox.Text?.Trim() ?? string.Empty;
+                if (CellAddress.TryParse(addr, out int row, out int col))
+                {
+                    if (row < grid.RowCount && col < grid.ColumnCount)
+                    {
+                        grid.CurrentCell = grid[col, row];
+                    }
+                }
+                grid.Focus();
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                e.SuppressKeyPress = true;
+                _suppressFormulaBarSync = false;
+                UpdateStatus();
+                grid.Focus();
+            }
         }
 
         // --- Copy / Paste / Cut ---
@@ -1210,7 +1403,8 @@ namespace SpreadsheetApp.UI
                 // Global enable/disable
                 bool providerReady = ProviderReady();
                 aiGenerateFillToolStripMenuItem.Enabled = _settings.AiEnabled && providerReady;
-                aiOpenChatToolStripMenuItem.Enabled = _settings.AiEnabled; // chat uses mock planner for now
+                aiOpenChatToolStripMenuItem.Enabled = _settings.AiEnabled; // pop-out window
+                aiToggleChatPaneToolStripMenuItem.Enabled = _settings.AiEnabled;
                 aiEnableInlineToolStripMenuItem.Enabled = _settings.AiEnabled && providerReady;
                 if (!_settings.AiEnabled || !providerReady)
                 {
@@ -1460,8 +1654,8 @@ namespace SpreadsheetApp.UI
             {
                 // Nearby values window
                 int winRows = 20, winCols = 10;
-                int startR = Math.Max(0, sr);
-                int startC = Math.Max(0, sc);
+                int startR = Math.Max(0, sr - 1);  // include header row above selection
+                int startC = Math.Max(0, sc - 1);  // include one column to the left for context
                 int rows = Math.Min(winRows, _sheet.Rows - startR);
                 int cols = Math.Min(winCols, _sheet.Columns - startC);
                 var near = new string[rows][];
@@ -2524,7 +2718,13 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
-            var ctx = BuildPlannerContext();
+            AIContext ctx;
+            try { ctx = BuildPlannerContext(); }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] BuildPlannerContext failed: {ex}\n"); } catch { }
+                return new SpreadsheetApp.Core.AI.AIPlan();
+            }
             // Ensure planner context strictly reflects the provided location shape (if any)
             try
             {
@@ -2575,7 +2775,16 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
-            var plan = await _chatPlanner.PlanAsync(ctx, prompt ?? string.Empty, ct).ConfigureAwait(true);
+            SpreadsheetApp.Core.AI.AIPlan plan;
+            try
+            {
+                plan = await _chatPlanner.PlanAsync(ctx, prompt ?? string.Empty, ct).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] PlanAsync failed: {ex}\n"); } catch { }
+                return new SpreadsheetApp.Core.AI.AIPlan();
+            }
 
             // Update automation conversation history (mirror ChatAssistantForm)
             try
