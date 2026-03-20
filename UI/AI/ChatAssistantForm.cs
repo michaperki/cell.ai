@@ -9,13 +9,13 @@ namespace SpreadsheetApp.UI.AI
     {
         private readonly ChatAssistantPanel _panel;
 
-        public ChatAssistantForm(IChatPlanner planner, Func<AIContext> getContext, Action<AIPlan> applyPlan, string? initialPrompt = null, bool autoPlan = false)
+        public ChatAssistantForm(IChatPlanner planner, ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, string? initialPrompt = null, bool autoPlan = false)
         {
             Text = "AI Chat Assistant";
             StartPosition = FormStartPosition.CenterParent;
             Width = 420; Height = 480;
 
-            _panel = new ChatAssistantPanel(planner, getContext, applyPlan, initialPrompt, autoPlan);
+            _panel = new ChatAssistantPanel(planner, session, getContext, applyPlan, initialPrompt, autoPlan);
             _panel.Dock = DockStyle.Fill;
 
             var btnClose = new Button { Text = "Close", Dock = DockStyle.Bottom, Height = 28 };

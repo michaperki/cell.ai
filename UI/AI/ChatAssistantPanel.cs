@@ -14,6 +14,7 @@ namespace SpreadsheetApp.UI.AI
         private readonly IChatPlanner _planner;
         private readonly Func<AIContext> _getContext;
         private readonly Action<AIPlan> _applyPlan;
+        private readonly SpreadsheetApp.Core.AI.ChatSession _session;
 
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60 };
         private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 28 };
@@ -25,11 +26,11 @@ namespace SpreadsheetApp.UI.AI
         private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 56, ReadOnly = true, BackColor = SystemColors.Info, Font = new Font("Consolas", 8.5f) };
 
         private AIPlan? _currentPlan;
-        private readonly System.Collections.Generic.List<ChatMessage> _history = new();
 
-        public ChatAssistantPanel(IChatPlanner planner, Func<AIContext> getContext, Action<AIPlan> applyPlan, string? initialPrompt = null, bool autoPlan = false)
+        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, string? initialPrompt = null, bool autoPlan = false)
         {
             _planner = planner;
+            _session = session;
             _getContext = getContext;
             _applyPlan = applyPlan;
 
@@ -54,12 +55,11 @@ namespace SpreadsheetApp.UI.AI
                 var feedback = _input.Text ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(feedback))
                 {
-                    _history.Add(new ChatMessage { Role = "user", Content = feedback });
-                    if (_history.Count > 10) _history.RemoveRange(0, _history.Count - 10);
+                    _session.AddUser(feedback);
                 }
                 await DoPlanAsync();
             };
-            _btnReset.Click += (_, __) => { _history.Clear(); _lst.Items.Add("History cleared."); };
+            _btnReset.Click += (_, __) => { _session.Clear(); _lst.Items.Add("History cleared."); };
             _btnApply.Click += (_, __) =>
             {
                 if (_currentPlan != null)
@@ -118,7 +118,7 @@ namespace SpreadsheetApp.UI.AI
                 var ctx = _getContext();
                 try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
                 // Include rolling conversation
-                ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_history);
+                ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_session.History);
                 var plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
                 _currentPlan = plan;
                 _lst.Items.Clear();
@@ -136,12 +136,9 @@ namespace SpreadsheetApp.UI.AI
                     _btnApply.Enabled = true;
                 }
                 // Update conversation history (keep last 10 entries)
-                var userMsg = new ChatMessage { Role = "user", Content = _input.Text ?? string.Empty };
+                _session.AddUser(_input.Text ?? string.Empty);
                 var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
-                var asstMsg = new ChatMessage { Role = "assistant", Content = asstSummary };
-                _history.Add(userMsg);
-                _history.Add(asstMsg);
-                if (_history.Count > 10) _history.RemoveRange(0, _history.Count - 10);
+                _session.AddAssistant(asstSummary);
             }
             catch (OperationCanceledException)
             {

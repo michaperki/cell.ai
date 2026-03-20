@@ -57,6 +57,7 @@ namespace SpreadsheetApp.UI
         private System.Windows.Forms.Panel? _chatDockHost;
         private System.Windows.Forms.Splitter? _chatDockSplitter;
         private SpreadsheetApp.UI.AI.ChatAssistantPanel? _chatPane;
+        private SpreadsheetApp.Core.AI.ChatSession _chatSession = new SpreadsheetApp.Core.AI.ChatSession();
         // Drag-fill handle + preview state
         private bool _dragFillActive;
         private bool _dragFillPreview;
@@ -129,7 +130,7 @@ namespace SpreadsheetApp.UI
             // instantiate chat panel
             Func<AIContext> getCtx = () => BuildPlannerContext();
             void apply(AIPlan plan) => ApplyPlan(plan);
-            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, getCtx, apply);
+            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply);
             _chatPane.Dock = DockStyle.Fill;
             _chatDockHost.Controls.Add(_chatPane);
 
@@ -275,7 +276,7 @@ namespace SpreadsheetApp.UI
                 {
                     Func<AIContext> getCtx = () => BuildPlannerContext();
                     void apply(AIPlan ap) => ApplyPlan(ap);
-                    using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, getCtx, apply, prompt, autoPlan: true);
+                    using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply, prompt, autoPlan: true);
                     dlg.ShowDialog(this);
                 }
             }
@@ -2216,7 +2217,7 @@ namespace SpreadsheetApp.UI
             if (!_settings.AiEnabled) { MessageBox.Show(this, "AI is disabled in Settings.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
             Func<AIContext> getCtx = () => BuildPlannerContext();
             void apply(AIPlan plan) => ApplyPlan(plan);
-            using var dlg = new ChatAssistantForm(_chatPlanner, getCtx, apply);
+            using var dlg = new ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply);
             dlg.ShowDialog(this);
         }
 
@@ -2858,7 +2859,7 @@ namespace SpreadsheetApp.UI
                         string prompt = BuildErrorRepairPrompt(errs);
                         Func<AIContext> getCtx = () => BuildPlannerContext();
                         void apply(AIPlan ap) => ApplyPlan(ap);
-                        using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, getCtx, apply, prompt, autoPlan: true);
+                        using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply, prompt, autoPlan: true);
                         dlg.ShowDialog(this);
                     }
                 }
