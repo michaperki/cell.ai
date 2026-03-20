@@ -36,11 +36,11 @@ namespace SpreadsheetApp.Core.AI
             string sys;
             if (context.RequestQueriesOnly)
             {
-                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"queries\":[{\"type\":\"selection_summary\"},{\"type\":\"profile_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"unique_values\",\"col\":\"<letter or 1-based index>\",\"top\":<int optional>},{\"type\":\"sample_rows\",\"rows\":<int>,\"cols\":<int>]} } with no extra keys, no prose. Choose a small set of high-value queries to understand the selection (column uniqueness, profile, a few sample rows). Do not include write commands.";
+                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"queries\":[{\"type\":\"selection_summary\"},{\"type\":\"profile_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"describe_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"unique_values\",\"col\":\"<letter or 1-based index>\",\"top\":<int optional>},{\"type\":\"sample_rows\",\"rows\":<int>,\"cols\":<int>},{\"type\":\"count_where\",\"filters\":[{\"col\":\"<letter or 1-based index>\",\"op\":\"eq|ne|gt|ge|lt|le|contains|not_contains\",\"value\":\"...\"}]}]} with no extra keys, no prose. Choose a small set of high-value queries to understand the selection (uniques, column descriptions, a few sample rows, and counts under simple filters). Do not include write commands.";
             }
             else
             {
-                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
+                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array. Each command MAY include an optional \"rationale\" string explaining why; this is for preview only and has no effect on execution.";
             }
 
             // Allowed commands and strengthened constraints
@@ -345,6 +345,15 @@ namespace SpreadsheetApp.Core.AI
             // Conditional formatting
             if (p.Contains("highlight ") || p.Contains("conditional format") || p.Contains(">=") || p.Contains("<=") || p.Contains("threshold")) list.Add("set_conditional_format");
 
+            // Deterministic transforms
+            bool mentionsTrim = p.Contains("trim ") || p.Contains("remove extra spaces") || p.Contains("strip whitespace");
+            bool mentionsUpper = p.Contains("uppercase") || p.Contains("upper case") || p.Contains("to upper");
+            bool mentionsLower = p.Contains("lowercase") || p.Contains("lower case") || p.Contains("to lower");
+            bool mentionsProper = p.Contains("proper case") || p.Contains("title case") || p.Contains("capitalize");
+            bool mentionsPunct = p.Contains("strip punctuation") || p.Contains("remove punctuation");
+            bool mentionsCity = p.Contains("normalize city") || p.Contains("clean city") || p.Contains("city names");
+            if (mentionsTrim || mentionsUpper || mentionsLower || mentionsProper || mentionsPunct || mentionsCity) list.Add("transform_range");
+
             // If we inferred nothing structural, return null to keep default behavior
             return list.Count > 0 ? list.ToArray() : null;
         }
@@ -523,6 +532,7 @@ namespace SpreadsheetApp.Core.AI
                 SetFormatCommand => "set_format",
                 SetValidationCommand => "set_validation",
                 SetConditionalFormatCommand => "set_conditional_format",
+                TransformRangeCommand => "transform_range",
                 _ => string.Empty
             };
             if (string.IsNullOrEmpty(type)) return false;
@@ -868,6 +878,14 @@ namespace SpreadsheetApp.Core.AI
                                     plan.Queries.Add(pq);
                                     break;
                                 }
+                            case "describe_column":
+                                {
+                                    var dq = new DescribeColumnQuery();
+                                    if (q.TryGetProperty("col", out var colEl)) dq.ColumnIndex = ParseColumnIndex(colEl);
+                                    if (q.TryGetProperty("rows", out var rr) && rr.ValueKind == JsonValueKind.Number) dq.Rows = SafeInt(rr, 0);
+                                    plan.Queries.Add(dq);
+                                    break;
+                                }
                             case "unique_values":
                                 {
                                     var uq = new UniqueValuesQuery();
@@ -882,6 +900,27 @@ namespace SpreadsheetApp.Core.AI
                                     if (q.TryGetProperty("rows", out var r) && r.ValueKind == JsonValueKind.Number) sq.Rows = SafeInt(r, 5);
                                     if (q.TryGetProperty("cols", out var c) && c.ValueKind == JsonValueKind.Number) sq.Cols = SafeInt(c, 6);
                                     plan.Queries.Add(sq);
+                                    break;
+                                }
+                            case "count_where":
+                                {
+                                    var cq = new CountWhereQuery();
+                                    if (q.TryGetProperty("filters", out var fs) && fs.ValueKind == JsonValueKind.Array)
+                                    {
+                                        foreach (var f in fs.EnumerateArray())
+                                        {
+                                            try
+                                            {
+                                                var filter = new CountWhereQuery.Filter();
+                                                if (f.TryGetProperty("col", out var colE)) filter.ColumnIndex = ParseColumnIndex(colE);
+                                                if (f.TryGetProperty("op", out var opE) && opE.ValueKind == JsonValueKind.String) filter.Op = opE.GetString() ?? "eq";
+                                                if (f.TryGetProperty("value", out var valE)) filter.Value = valE.ValueKind == JsonValueKind.String ? (valE.GetString() ?? string.Empty) : valE.GetRawText();
+                                                cq.Filters.Add(filter);
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                    plan.Queries.Add(cq);
                                     break;
                                 }
                         }
@@ -899,6 +938,17 @@ namespace SpreadsheetApp.Core.AI
                     var type = t.GetString()?.Trim().ToLowerInvariant();
                     switch (type)
                     {
+                        case "transform_range":
+                            {
+                                var tr = new TransformRangeCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int srr, scc; ParseStart(start, out srr, out scc); tr.StartRow = srr; tr.StartCol = scc; }
+                                if (cmd.TryGetProperty("rows", out var r)) tr.Rows = SafeInt(r, 1);
+                                if (cmd.TryGetProperty("cols", out var c)) tr.Cols = SafeInt(c, 1);
+                                if (cmd.TryGetProperty("op", out var op) && op.ValueKind == JsonValueKind.String) tr.Op = op.GetString() ?? "trim";
+                                if (cmd.TryGetProperty("rationale", out var rat) && rat.ValueKind == JsonValueKind.String) tr.Rationale = rat.GetString();
+                                plan.Commands.Add(tr);
+                                break;
+                            }
                         case "set_values":
                             {
                                 var sv = new SetValuesCommand();
@@ -941,9 +991,10 @@ namespace SpreadsheetApp.Core.AI
                                         }
                                         rows.Add(cols.ToArray());
                                     }
-                                    sv.Values = rows.ToArray();
-                                }
-                                plan.Commands.Add(sv);
+                                sv.Values = rows.ToArray();
+                            }
+                            if (cmd.TryGetProperty("rationale", out var rsv) && rsv.ValueKind == JsonValueKind.String) sv.Rationale = rsv.GetString();
+                            plan.Commands.Add(sv);
                             break;
                         }
                         case "set_formula":
@@ -969,9 +1020,10 @@ namespace SpreadsheetApp.Core.AI
                                         }
                                         rows.Add(cols.ToArray());
                                     }
-                                    sf.Formulas = rows.ToArray();
-                                }
-                                plan.Commands.Add(sf);
+                                sf.Formulas = rows.ToArray();
+                            }
+                            if (cmd.TryGetProperty("rationale", out var rsf) && rsf.ValueKind == JsonValueKind.String) sf.Rationale = rsf.GetString();
+                            plan.Commands.Add(sf);
                                 break;
                             }
                         case "clear_range":
@@ -985,6 +1037,7 @@ namespace SpreadsheetApp.Core.AI
                                 }
                                 if (cmd.TryGetProperty("rows", out var r)) cr.Rows = SafeInt(r, 1);
                                 if (cmd.TryGetProperty("cols", out var c)) cr.Cols = SafeInt(c, 1);
+                                if (cmd.TryGetProperty("rationale", out var rcr) && rcr.ValueKind == JsonValueKind.String) cr.Rationale = rcr.GetString();
                                 plan.Commands.Add(cr);
                                 break;
                             }
@@ -1000,6 +1053,7 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("rows", out var r)) st.Rows = SafeInt(r, 1);
                                 if (cmd.TryGetProperty("cols", out var c)) st.Cols = SafeInt(c, 1);
                                 if (cmd.TryGetProperty("text", out var tx)) st.Text = tx.GetString() ?? string.Empty;
+                                if (cmd.TryGetProperty("rationale", out var rst) && rst.ValueKind == JsonValueKind.String) st.Rationale = rst.GetString();
                                 plan.Commands.Add(st);
                                 break;
                             }
@@ -1009,6 +1063,7 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("index", out var idx)) rn.Index1 = SafeInt(idx, 0) > 0 ? SafeInt(idx, 0) : (int?)null;
                                 if (cmd.TryGetProperty("old_name", out var on) && on.ValueKind == JsonValueKind.String) rn.OldName = on.GetString();
                                 if (cmd.TryGetProperty("new_name", out var nn) && nn.ValueKind == JsonValueKind.String) rn.NewName = nn.GetString() ?? rn.NewName;
+                                if (cmd.TryGetProperty("rationale", out var rrn) && rrn.ValueKind == JsonValueKind.String) rn.Rationale = rrn.GetString();
                                 plan.Commands.Add(rn);
                                 break;
                             }
@@ -1016,6 +1071,7 @@ namespace SpreadsheetApp.Core.AI
                             {
                                 var cs = new CreateSheetCommand();
                                 if (cmd.TryGetProperty("name", out var n)) cs.Name = n.GetString() ?? cs.Name;
+                                if (cmd.TryGetProperty("rationale", out var rcs) && rcs.ValueKind == JsonValueKind.String) cs.Rationale = rcs.GetString();
                                 plan.Commands.Add(cs);
                                 break;
                             }
@@ -1045,6 +1101,7 @@ namespace SpreadsheetApp.Core.AI
                                         sr.SortCol = Math.Max(0, sr.StartCol + idx1 - 1);
                                     }
                                 }
+                                if (cmd.TryGetProperty("rationale", out var rsr) && rsr.ValueKind == JsonValueKind.String) sr.Rationale = rsr.GetString();
                                 plan.Commands.Add(sr);
                                 break;
                             }
@@ -1053,6 +1110,7 @@ namespace SpreadsheetApp.Core.AI
                                 var ir = new InsertRowsCommand();
                                 if (cmd.TryGetProperty("at", out var at)) ir.At = Math.Max(0, SafeInt(at, 1) - 1);
                                 if (cmd.TryGetProperty("count", out var cnt)) ir.Count = Math.Max(1, SafeInt(cnt, 1));
+                                if (cmd.TryGetProperty("rationale", out var rir) && rir.ValueKind == JsonValueKind.String) ir.Rationale = rir.GetString();
                                 plan.Commands.Add(ir);
                                 break;
                             }
@@ -1061,6 +1119,7 @@ namespace SpreadsheetApp.Core.AI
                                 var dr = new DeleteRowsCommand();
                                 if (cmd.TryGetProperty("at", out var at)) dr.At = Math.Max(0, SafeInt(at, 1) - 1);
                                 if (cmd.TryGetProperty("count", out var cnt)) dr.Count = Math.Max(1, SafeInt(cnt, 1));
+                                if (cmd.TryGetProperty("rationale", out var rdr) && rdr.ValueKind == JsonValueKind.String) dr.Rationale = rdr.GetString();
                                 plan.Commands.Add(dr);
                                 break;
                             }
@@ -1106,6 +1165,7 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("rows", out var rr)) cr.Rows = SafeInt(rr, 1);
                                 if (cmd.TryGetProperty("cols", out var cc)) cr.Cols = SafeInt(cc, 1);
                                 if (cmd.TryGetProperty("dest", out var dest)) { int rd, cd; ParseStart(dest, out rd, out cd); cr.DestRow = rd; cr.DestCol = cd; }
+                                if (cmd.TryGetProperty("rationale", out var rcp) && rcp.ValueKind == JsonValueKind.String) cr.Rationale = rcp.GetString();
                                 plan.Commands.Add(cr);
                                 break;
                             }
@@ -1116,6 +1176,7 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("rows", out var rr)) mr.Rows = SafeInt(rr, 1);
                                 if (cmd.TryGetProperty("cols", out var cc)) mr.Cols = SafeInt(cc, 1);
                                 if (cmd.TryGetProperty("dest", out var dest)) { int rd, cd; ParseStart(dest, out rd, out cd); mr.DestRow = rd; mr.DestCol = cd; }
+                                if (cmd.TryGetProperty("rationale", out var rmv) && rmv.ValueKind == JsonValueKind.String) mr.Rationale = rmv.GetString();
                                 plan.Commands.Add(mr);
                                 break;
                             }
@@ -1130,6 +1191,7 @@ namespace SpreadsheetApp.Core.AI
                                 if (cmd.TryGetProperty("h_align", out var ha) && ha.ValueKind == JsonValueKind.String) { var s = ha.GetString(); if (!string.IsNullOrWhiteSpace(s)) sfmt.HAlign = s!.Trim().ToLowerInvariant(); }
                                 if (cmd.TryGetProperty("fore_color", out var fc) && fc.ValueKind == JsonValueKind.String) sfmt.ForeColorArgb = ParseHexColor(fc.GetString());
                                 if (cmd.TryGetProperty("back_color", out var bc) && bc.ValueKind == JsonValueKind.String) sfmt.BackColorArgb = ParseHexColor(bc.GetString());
+                                if (cmd.TryGetProperty("rationale", out var rfmt) && rfmt.ValueKind == JsonValueKind.String) sfmt.Rationale = rfmt.GetString();
                                 plan.Commands.Add(sfmt);
                                 break;
                             }
@@ -1144,6 +1206,7 @@ namespace SpreadsheetApp.Core.AI
                                         ic.At = Math.Max(0, SafeInt(at, 1) - 1);
                                 }
                                 if (cmd.TryGetProperty("count", out var cnt)) ic.Count = Math.Max(1, SafeInt(cnt, 1));
+                                if (cmd.TryGetProperty("rationale", out var ric) && ric.ValueKind == JsonValueKind.String) ic.Rationale = ric.GetString();
                                 plan.Commands.Add(ic);
                                 break;
                             }
@@ -1158,6 +1221,7 @@ namespace SpreadsheetApp.Core.AI
                                         dc.At = Math.Max(0, SafeInt(at, 1) - 1);
                                 }
                                 if (cmd.TryGetProperty("count", out var cnt)) dc.Count = Math.Max(1, SafeInt(cnt, 1));
+                                if (cmd.TryGetProperty("rationale", out var rdc) && rdc.ValueKind == JsonValueKind.String) dc.Rationale = rdc.GetString();
                                 plan.Commands.Add(dc);
                                 break;
                             }
@@ -1166,6 +1230,7 @@ namespace SpreadsheetApp.Core.AI
                                 var ds = new DeleteSheetCommand();
                                 if (cmd.TryGetProperty("index", out var idx)) ds.Index1 = SafeInt(idx, 0) > 0 ? SafeInt(idx, 0) : (int?)null;
                                 if (cmd.TryGetProperty("name", out var nm) && nm.ValueKind == JsonValueKind.String) ds.Name = nm.GetString();
+                                if (cmd.TryGetProperty("rationale", out var rds) && rds.ValueKind == JsonValueKind.String) ds.Rationale = rds.GetString();
                                 plan.Commands.Add(ds);
                                 break;
                             }

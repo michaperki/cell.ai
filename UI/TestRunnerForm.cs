@@ -483,6 +483,21 @@ namespace SpreadsheetApp.UI
                             }
                             catch { }
                         }
+                        // Export observations JSON for agent steps
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string obsPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.observations.json");
+                            var rootObs = new System.Collections.Generic.Dictionary<string, object?>
+                            {
+                                ["observations"] = transcript
+                            };
+                            var optsObs = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            File.WriteAllText(obsPath, System.Text.Json.JsonSerializer.Serialize(rootObs, optsObs));
+                            Log($"    -> Observations JSON saved: {obsPath}\r\n");
+                        }
+                        catch { }
                         try
                         {
                             Directory.CreateDirectory(Path.Combine("tests", "output"));

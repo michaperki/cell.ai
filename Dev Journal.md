@@ -837,6 +837,18 @@ Next Work
 - Refactor to a single ChatAssistantView + shared ChatSession used by both docked and (optional) pop‑out wrappers; deprecate the second codepath.
 - Extend Test Runner structural assertions (per‑row width, header‑dup checks) and add content checks where safe.
 
+## Agent Loop + Queries Expansion (2026‑03‑20, late PM)
+
+What changed
+- Query intents expanded and formalized: added `describe_column` and `count_where` to the existing set (`selection_summary`, `profile_column`, `unique_values`, `sample_rows`). Query‑only system schema updated; parser fills `AIPlan.Queries`; `AgentLoop` executes and appends compact transcript lines.
+- Plan preview rationales: commands can include an optional `rationale` string (preview‑only); Chat panel shows a “reason:” line under each planned action.
+- Test Runner observations export: `ai_agent` steps now emit `observations.json` with the transcript array for downstream tooling.
+- Automation safety: default Selection Hard Mode enabled for Test Runner chat/agent runs to drop out‑of‑bounds writes before apply.
+
+Follow‑ups
+- Expand observation library (regex match counts, simple histograms).
+- Allow Mock planner to emit sample rationales for demo purposes.
+
 ## Two‑Phase Agent Loop + Query Schema (2026‑03‑20 PM)
 
 What we shipped

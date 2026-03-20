@@ -2459,7 +2459,7 @@ namespace SpreadsheetApp.UI
                         ColumnIndex = abs,
                         ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs),
                         Name = sr > 0 ? (_sheet.GetDisplay(sr - 1, abs) ?? string.Empty) : string.Empty,
-                        Type = "text",
+                        Type = GuessType(sr, abs, rowsHint: Math.Max(1, rowsHint)),
                         AllowEmpty = true
                     };
                     schemas.Add(col);
@@ -3154,6 +3154,31 @@ namespace SpreadsheetApp.UI
                         }
                     }
                 }
+                else if (cmd is TransformRangeCommand tr)
+                {
+                    int r0 = Math.Max(0, tr.StartRow); int c0 = Math.Max(0, tr.StartCol);
+                    int rows = Math.Max(1, tr.Rows); int cols = Math.Max(1, tr.Cols);
+                    string op = (tr.Op ?? "trim").Trim().ToLowerInvariant();
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r, cc = c0 + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            string? oldRaw = _sheet.GetRaw(rr, cc) ?? string.Empty;
+                            if (string.IsNullOrEmpty(oldRaw)) continue;
+                            // Do not transform formulas
+                            if (oldRaw.StartsWith("=", StringComparison.Ordinal)) continue;
+                            string newRaw = ApplyTransform(oldRaw, op);
+                            if (!string.Equals(oldRaw, newRaw, StringComparison.Ordinal))
+                            {
+                                _sheet.SetRaw(rr, cc, newRaw);
+                                edits.Add((rr, cc, oldRaw, newRaw));
+                                foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
+                            }
+                        }
+                    }
+                }
             }
             if (edits.Count > 0 || sheetAddedIndex.HasValue)
             {
@@ -3207,6 +3232,68 @@ namespace SpreadsheetApp.UI
                 }
             }
             catch { }
+        }
+
+        private string GuessType(int startRow, int colIndex, int rowsHint)
+        {
+            try
+            {
+                int rows = Math.Max(1, rowsHint);
+                int nonEmpty = 0, numeric = 0;
+                for (int i = 0; i < rows && i < _sheet.Rows; i++)
+                {
+                    string raw = _sheet.GetRaw(startRow + i, colIndex) ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    nonEmpty++;
+                    if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)) numeric++;
+                }
+                if (nonEmpty > 0 && numeric >= Math.Max(1, nonEmpty * 4 / 5)) return "number"; // ~80% numeric
+            }
+            catch { }
+            return "text";
+        }
+
+        private static string ApplyTransform(string text, string op)
+        {
+            string CollapseSpaces(string s)
+            {
+                var parts = s.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                return string.Join(" ", parts);
+            }
+            switch (op)
+            {
+                case "trim":
+                    return CollapseSpaces(text.Trim());
+                case "upper":
+                case "uppercase":
+                    return text.ToUpperInvariant();
+                case "lower":
+                case "lowercase":
+                    return text.ToLowerInvariant();
+                case "proper":
+                case "title":
+                case "title_case":
+                    {
+                        var lower = text.ToLowerInvariant();
+                        try { return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(CollapseSpaces(lower).Trim()); }
+                        catch { return CollapseSpaces(lower).Trim(); }
+                    }
+                case "strip_punct":
+                    {
+                        var arr = text.Where(ch => !char.IsPunctuation(ch)).ToArray();
+                        return CollapseSpaces(new string(arr).Trim());
+                    }
+                case "normalize_city":
+                    {
+                        // Trim, collapse spaces, and Title Case
+                        var lower = text.Trim().ToLowerInvariant();
+                        lower = CollapseSpaces(lower);
+                        try { return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower); }
+                        catch { return lower; }
+                    }
+                default:
+                    return text;
+            }
         }
 
         private string BuildErrorRepairPrompt(System.Collections.Generic.List<(int r, int c, string raw, string err)> errs)
@@ -3951,6 +4038,8 @@ namespace SpreadsheetApp.UI
                 try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] BuildPlannerContext failed: {ex}\n"); } catch { }
                 return new SpreadsheetApp.Core.AI.AIPlan();
             }
+            // Default to selection hard mode in automation
+            try { ctx.SelectionHardMode = true; } catch { }
             // Ensure planner context strictly reflects the provided location shape (if any)
             try
             {
@@ -4008,14 +4097,14 @@ namespace SpreadsheetApp.UI
                                 for (int dc = 0; dc < cols; dc++)
                                 {
                                     int abs = cStart + dc; if (abs < 0 || abs >= _sheet.Columns) continue;
-                                    var col = new SpreadsheetApp.Core.AI.ColumnSchema
-                                    {
-                                        ColumnIndex = abs,
-                                        ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs),
-                                        Name = rStart > 0 ? (_sheet.GetDisplay(rStart - 1, abs) ?? string.Empty) : string.Empty,
-                                        Type = "text",
-                                        AllowEmpty = true
-                                    };
+                    var col = new SpreadsheetApp.Core.AI.ColumnSchema
+                    {
+                        ColumnIndex = abs,
+                        ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs),
+                        Name = rStart > 0 ? (_sheet.GetDisplay(rStart - 1, abs) ?? string.Empty) : string.Empty,
+                        Type = GuessType(rStart, abs, rowsHint: Math.Max(1, rows)),
+                        AllowEmpty = true
+                    };
                                     schemas.Add(col);
                                 }
                                 ctx.Schema = schemas.Count > 0 ? schemas.ToArray() : null;
@@ -4042,7 +4131,7 @@ namespace SpreadsheetApp.UI
                                 AllowInputWritesForEmptyRows = (ctx.StartCol == (ctx.StartCol > 0 ? ctx.StartCol - 1 : ctx.StartCol))
                             };
                             ctx.WritePolicy = policy;
-                            ctx.Schema = new[] { new SpreadsheetApp.Core.AI.ColumnSchema { ColumnIndex = ctx.StartCol, ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.StartCol), Name = ctx.StartRow > 0 ? (_sheet.GetDisplay(ctx.StartRow - 1, ctx.StartCol) ?? string.Empty) : string.Empty, Type = "text", AllowEmpty = true } };
+                            ctx.Schema = new[] { new SpreadsheetApp.Core.AI.ColumnSchema { ColumnIndex = ctx.StartCol, ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.StartCol), Name = ctx.StartRow > 0 ? (_sheet.GetDisplay(ctx.StartRow - 1, ctx.StartCol) ?? string.Empty) : string.Empty, Type = GuessType(ctx.StartRow, ctx.StartCol, rowsHint: Math.Max(1, ctx.Rows)), AllowEmpty = true } };
                         }
                         catch { }
                     }
@@ -4216,6 +4305,8 @@ namespace SpreadsheetApp.UI
                 try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] BuildPlannerContext failed (agent): {ex}\n"); } catch { }
                 return (new SpreadsheetApp.Core.AI.AIPlan(), Array.Empty<string>());
             }
+            // Default to selection hard mode in automation
+            try { ctx.SelectionHardMode = true; } catch { }
             try
             {
                 if (!string.IsNullOrWhiteSpace(location))

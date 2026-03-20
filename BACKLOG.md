@@ -65,14 +65,14 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - Query command grammar — PARTIAL
   - Host‑side ObservationTools implemented for `selection_summary`, `unique_values`, `describe_column`, and safe `get_range` sampling (no side effects).
-  - Planner query intents not yet formalized as schema/tool‑calls (keep host‑driven loop for MVP).
+  - Planner query intents formalized: `selection_summary`, `profile_column`, `describe_column`, `unique_values`, `sample_rows`, and `count_where`. Provider now returns structured query intents parsed into the plan; host executes and appends transcript.
 
 - Planner integration for queries — PARTIAL
   - Host executes observations and augments the user prompt with a concise transcript before planning.
   - Cap results with top‑K uniques and first N row samples to control tokens.
 
-- **Schema/tool formalization — PARTIAL DONE**
-  - Formal query intents added to planner schema (unique_values, profile_column, sample_rows, selection_summary) and parsed; host executes them and builds a transcript. Further expansion/UX polish still planned.
+- **Schema/tool formalization — DONE (expanded)**
+  - Added `describe_column` and `count_where` query intents alongside `selection_summary`, `profile_column`, `unique_values`, and `sample_rows`. Provider schema and parser updated; AgentLoop executes and logs concise observations.
 
 - UI transcript of observations — DONE (first pass)
   - Chat pane renders an observations section above the plan when agent loop is used. Transcript exported by Test Runner.
@@ -93,8 +93,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - UX — DONE (first pass)
   - Chat toggle “Use Agent Loop (MVP)” and transcript section; Test Runner `ai_agent` action with transcript export.
 
-- **Agent Loop 0.2 — DONE (first pass)**
+- **Agent Loop 0.2 — DONE (expanded)**
   - Two-phase loop implemented: planner returns query intents, host executes and appends transcript, then requests final write plan. Falls back to built-in observations when queries are unavailable (e.g., Mock).
+  - New queries supported: `describe_column` and `count_where`.
 
 - Demo dataset — DONE (first pass)
   - `test_29_ai_agent_city_cleanup.workbook.json` added; uses messy City data for normalization.
@@ -142,6 +143,19 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - **AI Action Log counters — PLANNED**
   - Track last plan latency, estimated tokens and total writes; show in status bar/debug view.
+
+---
+
+## Recently Completed (2026‑03‑20)
+
+- Selection hard mode default for Test Runner — DONE
+  - Automation now enables selection hard mode by default, ensuring out‑of‑bounds writes are dropped before apply.
+
+- Plan preview rationales — DONE
+  - Planner may include an optional `rationale` per command; Chat pane displays reasons under each planned action.
+
+- Test Runner observations export — DONE
+  - For `ai_agent` steps, an `observations.json` file is exported with the observations transcript in structured JSON.
 
 ---
 

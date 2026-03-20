@@ -186,7 +186,12 @@ namespace SpreadsheetApp.UI.AI
                 }
                 else
                 {
-                    foreach (var cmd in plan.Commands) _lst.Items.Add(cmd.Summarize());
+                    foreach (var cmd in plan.Commands)
+                    {
+                        _lst.Items.Add(cmd.Summarize());
+                        string? rationale = TryGetRationale(cmd);
+                        if (!string.IsNullOrWhiteSpace(rationale)) _lst.Items.Add("  reason: " + rationale);
+                    }
                     int writeCount = 0;
                     writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
                     writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
@@ -211,6 +216,36 @@ namespace SpreadsheetApp.UI.AI
                 _btnPlan.Enabled = true;
                 _lblStatus.Visible = false;
             }
+        }
+
+        private static string? TryGetRationale(IAICommand cmd)
+        {
+            try
+            {
+                switch (cmd)
+                {
+                    case SetValuesCommand sv: return sv.Rationale;
+                    case SetFormulaCommand sf: return sf.Rationale;
+                    case SetTitleCommand st: return st.Rationale;
+                    case ClearRangeCommand cr: return cr.Rationale;
+                    case SortRangeCommand sr: return sr.Rationale;
+                    case CreateSheetCommand cs: return cs.Rationale;
+                    case RenameSheetCommand rn: return rn.Rationale;
+                    case InsertRowsCommand ir: return ir.Rationale;
+                    case DeleteRowsCommand dr: return dr.Rationale;
+                    case InsertColsCommand ic: return ic.Rationale;
+                    case DeleteColsCommand dc: return dc.Rationale;
+                    case DeleteSheetCommand ds: return ds.Rationale;
+                    case CopyRangeCommand cp: return cp.Rationale;
+                    case MoveRangeCommand mv: return mv.Rationale;
+                    case SetFormatCommand fm: return fm.Rationale;
+                    case SetValidationCommand svv: return svv.Rationale;
+                    case SetConditionalFormatCommand scf: return scf.Rationale;
+                    case TransformRangeCommand tr: return tr.Rationale;
+                    default: return null;
+                }
+            }
+            catch { return null; }
         }
 
         private AIContext ApplyUiPolicy(AIContext ctx, bool previewOnly)

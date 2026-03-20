@@ -156,5 +156,64 @@ namespace SpreadsheetApp.Core.AI
             }
             return arr;
         }
+
+        public static int CountWhere(Spreadsheet sheet, int startRow, int rows, (int ColumnIndex, string Op, string Value)[] filters)
+        {
+            if (filters == null || filters.Length == 0) return 0;
+            int count = 0;
+            rows = Math.Max(0, rows);
+            for (int r = 0; r < rows; r++)
+            {
+                bool match = true;
+                foreach (var f in filters)
+                {
+                    string raw = sheet.GetRaw(startRow + r, f.ColumnIndex) ?? string.Empty;
+                    string val = raw.Trim();
+                    string op = (f.Op ?? string.Empty).Trim().ToLowerInvariant();
+                    string cmp = (f.Value ?? string.Empty);
+                    bool thisMatch = false;
+                    // Numeric compare when possible
+                    bool isNumVal = double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out double dVal);
+                    bool isNumCmp = double.TryParse(cmp, NumberStyles.Float, CultureInfo.InvariantCulture, out double dCmp);
+                    switch (op)
+                    {
+                        case "eq":
+                        case "equals":
+                            thisMatch = string.Equals(val, cmp, StringComparison.OrdinalIgnoreCase);
+                            break;
+                        case "ne":
+                        case "not_equals":
+                            thisMatch = !string.Equals(val, cmp, StringComparison.OrdinalIgnoreCase);
+                            break;
+                        case "gt":
+                            if (isNumVal && isNumCmp) thisMatch = dVal > dCmp; else thisMatch = string.Compare(val, cmp, StringComparison.OrdinalIgnoreCase) > 0;
+                            break;
+                        case "ge":
+                        case "gte":
+                            if (isNumVal && isNumCmp) thisMatch = dVal >= dCmp; else thisMatch = string.Compare(val, cmp, StringComparison.OrdinalIgnoreCase) >= 0;
+                            break;
+                        case "lt":
+                            if (isNumVal && isNumCmp) thisMatch = dVal < dCmp; else thisMatch = string.Compare(val, cmp, StringComparison.OrdinalIgnoreCase) < 0;
+                            break;
+                        case "le":
+                        case "lte":
+                            if (isNumVal && isNumCmp) thisMatch = dVal <= dCmp; else thisMatch = string.Compare(val, cmp, StringComparison.OrdinalIgnoreCase) <= 0;
+                            break;
+                        case "contains":
+                            thisMatch = val.IndexOf(cmp, StringComparison.OrdinalIgnoreCase) >= 0;
+                            break;
+                        case "not_contains":
+                            thisMatch = val.IndexOf(cmp, StringComparison.OrdinalIgnoreCase) < 0;
+                            break;
+                        default:
+                            thisMatch = string.Equals(val, cmp, StringComparison.OrdinalIgnoreCase);
+                            break;
+                    }
+                    if (!thisMatch) { match = false; break; }
+                }
+                if (match) count++;
+            }
+            return count;
+        }
     }
 }

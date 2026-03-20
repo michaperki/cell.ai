@@ -169,10 +169,11 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Acceptance (MVP):
   - Agent can autonomously: (a) compute unique values for a column, (b) count blanks, (c) sample rows to infer patterns, (d) propose a `set_values`/`set_formula`/`clear_range` plan within the selection.
   - Demo on the NJ High Schools dataset: normalize city names column via read → plan → apply.
-- Status: IMPLEMENTED (first pass)
+- Status: IMPLEMENTED (expanded)
   - Host‑driven observations + agent loop integrated in Chat pane and Test Runner (`ai_agent` action).
+  - Query intents formalized: `selection_summary`, `profile_column`, `describe_column`, `unique_values`, `sample_rows`, `count_where`.
   - Test 29 added; applies values‑only writes within selection after transcript review.
-  - Next: expose queries to the planner as tool calls; expand observation library.
+  - Test Runner exports `observations.json` for `ai_agent` steps.
 - Follow‑ups:
   - Tool‑calling alignment (provider sees tools with JSON signatures) vs. host‑driven loop (planner emits query intents as structured JSON).
   - Extend query set (string profiles, regex match counts, histogram bins).
@@ -207,9 +208,9 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 ## Next Moves (Agentic Harness)
 
 - Agent Loop 0.2
-  - Formalize read/query intents (unique_values, profile_column, sample_rows, selection_summary) in the planner schema for traceability; still host‑executed, no writes.
-  - Two‑phase planning: first pass emits only query intents, host appends an observations transcript, second pass returns a write plan.
-  - Add optional per‑command “rationale” strings for preview only (no writes) to build trust.
+  - Formalize read/query intents (DONE) and extend set: `describe_column` and `count_where` (DONE).
+  - Two‑phase planning: first pass emits only query intents, host appends an observations transcript, second pass returns a write plan. (DONE, first pass)
+  - Per‑command “rationale” strings parsed and shown in Chat preview (first pass; optional, preview‑only).
 
 - Planner Robustness
   - Strict structural‑op gating: when prompt asks to insert/delete rows/cols, restrict AllowedCommands to those ops (avoid stray set_values), with optional single‑cell header write handled explicitly later.
@@ -217,8 +218,8 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
   - Typed schema hints v2: per‑column constraints (type, allow_empty, and lightweight hints like “latin alphabet”) passed through context and rendered in policy preview.
 
 - Deterministic Transform Tools
-  - Introduce a `transform_range` command supporting safe transforms (TRIM, PROPER, UPPER/LOWER, STRIP_PUNCT, NORMALIZE_PHONE, DEDUPE_IN_COLUMN). Deterministic, undo‑friendly, low token cost.
-  - City cleanup demo: a host‑side NORMALIZE_CITY map for common variants, falling back to AI when unknown.
+  - Introduce a `transform_range` command supporting safe transforms (TRIM, PROPER, UPPER/LOWER, STRIP_PUNCT, NORMALIZE_CITY). Deterministic, undo‑friendly, low token cost. — IMPLEMENTED (first pass)
+  - City cleanup: `NORMALIZE_CITY` trims, collapses whitespace, and applies Title Case deterministically.
 
 - UX — Plan Preview
   - Plan simulator overlay highlighting affected cells (green add, yellow modify, red clear) before apply; “Apply” uses the simulated diff.

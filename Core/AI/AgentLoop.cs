@@ -73,6 +73,18 @@ namespace SpreadsheetApp.Core.AI
                             transcript.Add(sb.ToString());
                             break;
                         }
+                        case DescribeColumnQuery dc:
+                        {
+                            int dataStartRow = sr;
+                            try { if (sr > 0) { var above = sheet.GetRaw(sr - 1, dc.ColumnIndex); if (!string.IsNullOrWhiteSpace(above)) dataStartRow = sr; } } catch { }
+                            var prof = ObservationTools.ProfileColumn(sheet, dc.ColumnIndex, dataStartRow, rows, null);
+                            var sb = new StringBuilder();
+                            sb.Append($"Describe {prof.ColumnLetter}: non-empty={prof.NonEmpty}, empty={prof.Empties}");
+                            if (prof.MostlyNumeric) sb.Append($", min={prof.Min?.ToString() ?? "-"} max={prof.Max?.ToString() ?? "-"} mean={prof.Mean?.ToString("0.###") ?? "-"}");
+                            else if (prof.TopExamples.Length > 0) sb.Append($", examples: {string.Join(" | ", prof.TopExamples)}");
+                            transcript.Add(sb.ToString());
+                            break;
+                        }
                         case UniqueValuesQuery uq:
                         {
                             var uniques = ObservationTools.UniqueValues(sheet, uq.ColumnIndex, sr, rows, topK: uq.TopK > 0 ? uq.TopK : 10);
@@ -92,6 +104,24 @@ namespace SpreadsheetApp.Core.AI
                             int cc = Math.Min(Math.Max(1, s.Cols), cols);
                             var sample = ObservationTools.GetRange(sheet, sr, sc, rr, cc);
                             for (int r = 0; r < rr; r++) transcript.Add($"Row {sr + r + 1}: {string.Join(" | ", sample[r])}");
+                            break;
+                        }
+                        case CountWhereQuery cw:
+                        {
+                            try
+                            {
+                                var filters = new System.Collections.Generic.List<(int, string, string)>();
+                                foreach (var f in cw.Filters)
+                                {
+                                    int col = Math.Max(0, f.ColumnIndex);
+                                    filters.Add((col, f.Op ?? "eq", f.Value ?? string.Empty));
+                                }
+                                int cnt = ObservationTools.CountWhere(sheet, sr, rows, filters.ToArray());
+                                var parts = new System.Collections.Generic.List<string>();
+                                foreach (var f in cw.Filters) parts.Add($"{SpreadsheetApp.Core.CellAddress.ColumnIndexToName(f.ColumnIndex)} {f.Op} '{f.Value}'");
+                                transcript.Add($"Count where: {string.Join(" & ", parts)} => {cnt}");
+                            }
+                            catch { }
                             break;
                         }
                     }
