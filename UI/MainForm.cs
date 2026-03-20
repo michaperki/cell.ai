@@ -102,7 +102,7 @@ namespace SpreadsheetApp.UI
             }
             if (keyData == (Keys.Control | Keys.D)) { FillDown(); return true; }
             if (keyData == (Keys.Control | Keys.R)) { FillRight(); return true; }
-            if (keyData == (Keys.Control | Keys.Shift | Keys.C)) { ToggleChatPane(); return true; }
+            if (keyData == (Keys.Control | Keys.Shift | Keys.C)) { OpenChatAssistant(); return true; }
             if (keyData == (Keys.Control | Keys.Shift | Keys.F)) { _ = SmartSchemaFillAsync(); return true; }
             return base.ProcessCmdKey(ref msg, keyData);
         }

@@ -73,7 +73,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Cancelation immediate; UI never blocks; memory/CPU overhead minimal.
 
 ### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (expanded)
-- UX: docked side panel with chat (toggle via AI > Toggle Docked Chat Pane or Ctrl+Shift+C); messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step. A pop‑out window version remains available.
+- UX: docked side panel with chat (open via AI > Open Chat or Ctrl+Shift+C); messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step. The docked pane is the single chat surface; no pop‑out.
 - Command grammar now includes:
   - `set_values(range, values2d)`
   - `set_formula(range, formulas2d)`

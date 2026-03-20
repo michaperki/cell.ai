@@ -9,7 +9,7 @@ This file tracks follow-ups and refinements discovered while implementing the en
 ## Active — AI / Chat UX
 
 - **Docked Chat Pane — DONE**
-  - Added a right-side docked Chat panel with Plan/Revise/Apply and rolling history. Toggle via AI > Toggle Docked Chat Pane or Ctrl+Shift+C. Pop-out window remains available.
+  - Added a right-side docked Chat panel with Plan/Revise/Apply and rolling history. Open via AI > Open Chat or Ctrl+Shift+C. This is the only chat surface; the pop-out window was removed.
 
 - **Chat closes on Apply (bug/UX) — DONE**
   - Chat now stays open after Apply; input clears and an “Applied …” summary is appended so users can continue multi‑turn flows.

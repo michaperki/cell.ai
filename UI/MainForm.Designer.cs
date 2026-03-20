@@ -272,8 +272,8 @@ namespace SpreadsheetApp.UI
             aiEnableInlineToolStripMenuItem.CheckedChanged += (_, __) => ToggleInlineSuggestions(aiEnableInlineToolStripMenuItem.Checked);
             aiAcceptInlineToolStripMenuItem = new ToolStripMenuItem("Apply AI Changes") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.I };
             aiAcceptInlineToolStripMenuItem.Click += (_, __) => AcceptInlineSuggestion();
-            aiToggleChatPaneToolStripMenuItem = new ToolStripMenuItem("Toggle Docked Chat Pane") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C };
-            aiToggleChatPaneToolStripMenuItem.Click += (_, __) => ToggleChatPane();
+            aiToggleChatPaneToolStripMenuItem = new ToolStripMenuItem("Open Chat") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C };
+            aiToggleChatPaneToolStripMenuItem.Click += (_, __) => OpenChatAssistant();
             aiSettingsToolStripMenuItem = new ToolStripMenuItem("Settings...");
             aiSettingsToolStripMenuItem.Click += (_, __) => OpenAiSettings();
             // AI menu (add Schema Fill)

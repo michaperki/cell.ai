@@ -29,7 +29,7 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
   - Async Save/Load methods added (UI still sync)
 
 - UI — Docked Chat Pane
-  - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Toggle via AI menu or Ctrl+Shift+C. Kept the pop-out Chat window as an option.
+  - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Open via AI > Open Chat or Ctrl+Shift+C. This is now the single chat surface; the former pop-out window was removed.
 
 ## Hurdles and How We Solved Them
 1) Dependent cells not updating after edit
@@ -659,7 +659,7 @@ Fixes
 - Typed schema hint: when a column header contains “Transliteration”, the schema preview notes “latin alphabet” to steer providers away from Hebrew script in that column (improves Test 16).
 
 Decision
-- Unify chat surfaces. Make the docked pane the canonical chat UI; the “Open Chat…” command will focus/toggle it. If a pop‑out is retained, it should host the same ChatAssistantView and share a ChatSession to avoid divergence.
+- Unify chat surfaces. The docked pane is the canonical chat UI; the “Open Chat” command focuses the pane. The pop‑out window has been removed to avoid duplicate logic.
 
 Validation (E2E 16–19 re‑run)
 - Test 18: append‑only constraints surfaced; step 2 produced outputs in B5:D6 while preserving earlier rows (structural + intent pass).
