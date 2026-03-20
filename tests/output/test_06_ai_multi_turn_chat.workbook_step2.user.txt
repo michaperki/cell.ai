@@ -1,1 +1,0 @@
-Sheet=MultiTurn; Selection=(3,D); Rows=4; Cols=1; Title=. Instruction=now add a tax column in d with 10% of amount..

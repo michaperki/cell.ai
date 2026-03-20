@@ -1,1 +1,0 @@
-Mock planner: deterministic heuristics without external provider.

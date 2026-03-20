@@ -1,1 +1,0 @@
-Sheet=MultiTurn; Selection=(6,A); Rows=1; Cols=5; Title=2023-10-02. Instruction=add a total row summing amount and tax columns..

@@ -1,1 +1,0 @@
-Sheet=MultiTurn; Selection=(3,A); Rows=4; Cols=3; Title=. Instruction=create an expense table with columns: date, description, amount in a3:c3 with 3 sample rows..
