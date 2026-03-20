@@ -184,6 +184,16 @@ namespace SpreadsheetApp.UI
             catch { }
             try { if (show) _chatPane?.FocusInput(); } catch { }
             try { UpdateAiMenuItemsState(); } catch { }
+            // Refresh policy preview when pane becomes visible
+            try
+            {
+                if (show && _chatPane != null)
+                {
+                    var ctx = BuildPlannerContext();
+                    _chatPane.RefreshPolicy(ctx);
+                }
+            }
+            catch { }
         }
 
         private void OpenDocsViewer()
@@ -559,6 +569,16 @@ namespace SpreadsheetApp.UI
             UpdateStatus();
             HideGhostSuggestions();
             if (_aiInlineEnabled) ScheduleInlineSuggestion();
+            // Keep the docked chat pane policy in sync with current selection
+            try
+            {
+                if (_chatDockHost != null && _chatDockHost.Visible && _chatPane != null)
+                {
+                    var ctx = BuildPlannerContext();
+                    _chatPane.RefreshPolicy(ctx);
+                }
+            }
+            catch { }
         }
 
         private void UpdateStatus()
@@ -2517,8 +2537,9 @@ namespace SpreadsheetApp.UI
         private void AddSheet(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) name = $"Sheet{_sheets.Count + 1}";
+            name = GetUniqueSheetName(name.Trim());
             _sheets.Add(new Spreadsheet(DefaultRows, DefaultCols));
-            _sheetNames.Add(name.Trim());
+            _sheetNames.Add(name);
             _undos.Add(new UndoManager());
             _activeSheetIndex = _sheets.Count - 1;
             _sheet = _sheets[_activeSheetIndex];
@@ -2530,13 +2551,29 @@ namespace SpreadsheetApp.UI
         {
             if (index < 0 || index > _sheets.Count) index = _sheets.Count;
             if (string.IsNullOrWhiteSpace(name)) name = $"Sheet{index + 1}";
+            name = GetUniqueSheetName(name.Trim());
             _sheets.Insert(index, new Spreadsheet(DefaultRows, DefaultCols));
-            _sheetNames.Insert(index, name.Trim());
+            _sheetNames.Insert(index, name);
             _undos.Insert(index, new UndoManager());
             _activeSheetIndex = index;
             _sheet = _sheets[_activeSheetIndex];
             _undo = _undos[_activeSheetIndex];
             InitializeSheet(_sheet);
+        }
+
+        private string GetUniqueSheetName(string baseName)
+        {
+            // Ensure no duplicate sheet names; auto-suffix " (2)", " (3)", ...
+            string name = string.IsNullOrWhiteSpace(baseName) ? "Sheet" : baseName;
+            if (!_sheetNames.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase))) return name;
+            int i = 2;
+            while (true)
+            {
+                string candidate = $"{name} ({i})";
+                if (!_sheetNames.Any(n => string.Equals(n, candidate, StringComparison.OrdinalIgnoreCase))) return candidate;
+                i++;
+                if (i > 1000) return Guid.NewGuid().ToString("N");
+            }
         }
 
         private void RemoveSheetAt(int index)

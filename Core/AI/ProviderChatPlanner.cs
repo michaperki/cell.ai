@@ -342,7 +342,16 @@ namespace SpreadsheetApp.Core.AI
                         if (count > 0) sb.Append(',');
                         sb.Append(' ').Append(col.ColumnLetter);
                         if (!string.IsNullOrWhiteSpace(col.Name)) sb.Append('=').Append(col.Name);
-                        sb.Append(" (").Append(col.Type)
+                        string typeDisplay = col.Type;
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(col.Name) && col.Name.IndexOf("transliteration", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                typeDisplay = string.IsNullOrWhiteSpace(typeDisplay) ? "text, latin alphabet" : (typeDisplay + ", latin alphabet");
+                            }
+                        }
+                        catch { }
+                        sb.Append(" (").Append(typeDisplay)
                           .Append(col.AllowEmpty ? ", optional)" : ", required)");
                         count++;
                     }
@@ -651,6 +660,23 @@ namespace SpreadsheetApp.Core.AI
                 else if (!ctx.WritePolicy.AllowInputWritesForExistingRows && ctx.WritePolicy.AllowInputWritesForEmptyRows)
                     sb.Append($"Do not modify existing values in input column {letter}; writing new inputs only to empty rows in selection is allowed. ");
             }
+            // Emphasize append-only and selection-row-only behaviors when applicable
+            try
+            {
+                int r1 = ctx.StartRow + 1;
+                int r2 = ctx.StartRow + Math.Max(1, ctx.Rows);
+                if (r2 >= r1)
+                {
+                    sb.Append($"Write outputs only for rows {r1}-{r2} within the selection; do not modify other rows. ");
+                }
+                if (ctx.WritePolicy?.InputColumnIndex != null && ctx.WritePolicy.AllowInputWritesForEmptyRows && !ctx.WritePolicy.AllowInputWritesForExistingRows)
+                {
+                    string letter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.WritePolicy.InputColumnIndex.Value);
+                    sb.Append($"Append-only for input column {letter}: add new inputs only in empty cells within rows {r1}-{r2}; do not change existing inputs.");
+                    sb.Append(' ');
+                }
+            }
+            catch { }
             sb.Append($"Expected per-row width: {expectedWidth}. ");
             // Violations list
             sb.Append("Problems: ");

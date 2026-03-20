@@ -22,6 +22,7 @@ namespace SpreadsheetApp.UI.AI
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Visible = false };
         private readonly ListBox _lst = new() { Dock = DockStyle.Fill };
         private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 28, Enabled = false };
+        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 56, ReadOnly = true, BackColor = SystemColors.Info, Font = new Font("Consolas", 8.5f) };
 
         private AIPlan? _currentPlan;
         private readonly System.Collections.Generic.List<ChatMessage> _history = new();
@@ -43,6 +44,7 @@ namespace SpreadsheetApp.UI.AI
             container.Controls.Add(_btnRevise);
             container.Controls.Add(_lblStatus);
             container.Controls.Add(_btnReset);
+            container.Controls.Add(_policy);
             container.Controls.Add(_input);
             Controls.Add(container);
 
@@ -83,6 +85,7 @@ namespace SpreadsheetApp.UI.AI
             };
 
             if (!string.IsNullOrWhiteSpace(initialPrompt)) _input.Text = initialPrompt;
+            try { var ctx0 = _getContext(); _policy.Text = BuildPolicyPreview(ctx0); } catch { }
             if (autoPlan) _ = DoPlanAsync();
         }
 
@@ -97,6 +100,11 @@ namespace SpreadsheetApp.UI.AI
             if (autoPlan) _ = DoPlanAsync();
         }
 
+        public void RefreshPolicy(AIContext ctx)
+        {
+            try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
+        }
+
         private async Task DoPlanAsync()
         {
             _btnPlan.Enabled = false; _btnApply.Enabled = false; _currentPlan = null;
@@ -108,6 +116,7 @@ namespace SpreadsheetApp.UI.AI
                 try { var s = Environment.GetEnvironmentVariable("AI_PLAN_TIMEOUT_SEC"); if (!string.IsNullOrWhiteSpace(s)) timeoutSec = Math.Max(5, int.Parse(s)); } catch { }
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
                 var ctx = _getContext();
+                try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
                 // Include rolling conversation
                 ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_history);
                 var plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
@@ -148,6 +157,76 @@ namespace SpreadsheetApp.UI.AI
                 _lblStatus.Visible = false;
             }
         }
+
+        private static string BuildPolicyPreview(AIContext ctx)
+        {
+            var sb = new System.Text.StringBuilder();
+            // Selection summary
+            string start = SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol);
+            sb.Append($"Selection {start} · {Math.Max(1, ctx.Rows)}x{Math.Max(1, ctx.Cols)}");
+            // Allowed commands
+            try
+            {
+                if (ctx.AllowedCommands != null && ctx.AllowedCommands.Length > 0)
+                {
+                    sb.Append("  |  Allowed: ");
+                    for (int i = 0; i < ctx.AllowedCommands.Length; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        sb.Append(ctx.AllowedCommands[i]);
+                    }
+                }
+            }
+            catch { }
+            // Writable columns and input policy
+            try
+            {
+                var wp = ctx.WritePolicy;
+                if (wp != null)
+                {
+                    if (wp.WritableColumns != null && wp.WritableColumns.Length > 0)
+                    {
+                        sb.Append("  |  Writable: ");
+                        for (int i = 0; i < wp.WritableColumns.Length; i++)
+                        {
+                            if (i > 0) sb.Append(',');
+                            sb.Append(SpreadsheetApp.Core.CellAddress.ColumnIndexToName(wp.WritableColumns[i]));
+                        }
+                    }
+                    if (wp.InputColumnIndex != null)
+                    {
+                        string letter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(wp.InputColumnIndex.Value);
+                        sb.Append("  |  Input: ");
+                        if (!wp.AllowInputWritesForExistingRows && !wp.AllowInputWritesForEmptyRows)
+                            sb.Append(letter).Append(" read-only");
+                        else if (!wp.AllowInputWritesForExistingRows && wp.AllowInputWritesForEmptyRows)
+                            sb.Append(letter).Append(" append-only (empty rows)");
+                        else
+                            sb.Append(letter).Append(" writable");
+                    }
+                }
+            }
+            catch { }
+            // Schema (list a few columns)
+            try
+            {
+                var schema = ctx.Schema;
+                if (schema != null && schema.Length > 0)
+                {
+                    sb.Append("\r\nSchema: ");
+                    int shown = 0;
+                    for (int i = 0; i < schema.Length && shown < 6; i++)
+                    {
+                        if (shown > 0) sb.Append("; ");
+                        var col = schema[i];
+                        sb.Append(col.ColumnLetter);
+                        if (!string.IsNullOrWhiteSpace(col.Name)) sb.Append('=').Append(col.Name);
+                        shown++;
+                    }
+                }
+            }
+            catch { }
+            return sb.ToString();
+        }
     }
 }
-

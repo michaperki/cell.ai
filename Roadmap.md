@@ -26,6 +26,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
 - Expanded number formatting presets and alignment tweaks.
 - Undo polish: coalesce rapid edits; grouped actions state reflected in menu enable/disable.
 - Async adoption: extend to CSV import/export and workbook flows; add guard flags and progress affordances.
+- Unique sheet name guard: prevent duplicate names when creating sheets (auto‑suffix).
 - **UI modernization (low-cost visual polish):**
   - Grid: flat borders, modern selection accent, subtle alternating row colors, single-horizontal cell borders.
   - Headers: flat-styled column/row headers with custom background instead of 3D sunken default.
@@ -136,8 +137,15 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Privacy switch: global “Allow AI” toggle with per‑workbook preference.
 
 ### Near-term Additions
-- Schema/policy preview in Chat UI: show mapped columns (letters), allowed commands, and write policy before applying a plan.
+- Schema/policy preview in Chat UI — IMPLEMENTED
+  - Shows selection shape, AllowedCommands, Writable columns, input‑column rule, and a short schema list.
+  - Available in both pop‑out assistant and docked chat pane; docked pane refreshes on selection change.
 - Planner revise loop: IMPLEMENTED — on width/policy mismatch, the planner automatically requests a corrected plan instead of relying only on cropping.
+
+- Chat surface unification — PLANNED (short‑term)
+  - Make the docked chat pane the canonical surface. “Open Chat…” focuses/toggles the pane.
+  - Optional pop‑out wraps the same ChatAssistantView + shared ChatSession (no duplicate logic/state).
+  - Deprecate the separate code path in the form to reduce confusion and maintenance.
 
 ### Technical Foundation
 - Providers: Mock, OpenAI (`OpenAIProvider`), Anthropic (`AnthropicProvider`), optional External POST (`ExternalApiProvider`).
@@ -158,15 +166,18 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Unit tests for parser, functions, I/O, and formatting.
 - **E2E Test Suite**: 16 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
  - Structural assertions: after each applied step, assert that all modified cells are within the requested selection; optional schema-aware checks can be enabled for stricter validation.
+ - Docked chat pane policy preview now stays in sync with the grid selection and on open/close.
 
 ### Planner Robustness (In Progress)
 - Plan parser tolerates typed values in `set_values` and coerces to strings.
 - Workbook summary includes `HeaderRowIndex`, `DataRowCountExcludingHeader`, and `UsedTopLeft/UsedBottomRight` to improve general reasoning.
 - Test Runner sanitizes AI plans to selection bounds during automation to prevent out‑of‑range writes.
- - Values-only enforcement for chat plans: block `set_title`/`set_formula` when the prompt explicitly requires `set_values` only; clear biasing Title hints in such cases.
- - Selection sanitization handles ragged `set_values` arrays by intersecting per row and compacting rows with no overlap; prevents header duplication by dropping a header-echo first row.
- - AllowedCommands + WritePolicy (new): pass explicit allowed command types and per‑selection write policies (writable columns, input‑column rules) through AIContext to the planner; filter disallowed commands post‑parse.
- - Schema in context (new): include a compact, typed schema for the target selection (column headers, exact per‑row width) to reduce ambiguity and improve plan shape fidelity.
+- Values-only enforcement for chat plans: block `set_title`/`set_formula` when the prompt explicitly requires `set_values` only; clear biasing Title hints in such cases.
+- Selection sanitization handles ragged `set_values` arrays by intersecting per row and compacting rows with no overlap; prevents header duplication by dropping a header-echo first row.
+- AllowedCommands + WritePolicy (new): pass explicit allowed command types and per‑selection write policies (writable columns, input‑column rules) through AIContext to the planner; filter disallowed commands post‑parse.
+- Schema in context (new): include a compact, typed schema for the target selection (column headers, exact per‑row width) to reduce ambiguity and improve plan shape fidelity.
+- Append‑only revise guidance — IMPLEMENTED: revision prompts include row bounds and explicit input‑column append‑only wording (helps Test 18).
+- Typed schema hint for Transliteration — IMPLEMENTED: when a column name contains “Transliteration”, include “latin alphabet” in the schema preview to improve content fidelity (helps Test 16).
 
 ## File Format Versioning
 - Introduced `formatVersion` (1) for workbook JSON; loader auto-detects workbook vs single-sheet for backward compatibility.

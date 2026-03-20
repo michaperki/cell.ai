@@ -1,1 +1,16 @@
-{"commands":[{"type":"set_values","start":{"row":7,"col":"A"},"values":[["פקד"],["שפט"],["ברך"]]},{"type":"set_values","start":{"row":7,"col":"B"},"values":[["paqad"],["shapat"],["barakh"]]},{"type":"set_values","start":{"row":7,"col":"C"},"values":[["פָּקַד"],["שָׁפַט"],["בֵּרַךְ"]]},{"type":"set_values","start":{"row":7,"col":"D"},"values":[["יָפְקִיד"],["יָשְׁפֹּט"],["יְבָרֵךְ"]]},{"type":"set_values","start":{"row":7,"col":"E"},"values":[["פקדון"],["שֹׁפֵט"],["בְּרָכָה"]]},{"type":"set_values","start":{"row":7,"col":"F"},"values":[[""],[""],["בְּרָכָה"]]},{"type":"set_values","start":{"row":7,"col":"G"},"values":[[""],["שֹׁפְטָן"],["בָּרוּךְ"]]},{"type":"set_values","start":{"row":7,"col":"H"},"values":[[""],["שֹׁפְטָנִית"],["בְּרוּכָה"]]},{"type":"set_values","start":{"row":7,"col":"I"},"values":[["מנהיגות"],["משפט"],["ברכה"]]}]}
+{
+  "commands": [
+    {
+      "type": "set_values",
+      "start": {
+        "row": 7,
+        "col": "A"
+      },
+      "values": [
+        ["פקד", "פקד", "יפקד", "פקד", "", "", "", "פקידה"],
+        ["שׁפט", "שׁפט", "ישׁפט", "שׁפט", "", "", "", "שׁפיטה"],
+        ["ברך", "ברך", "יברך", "ברכה", "ברכת", "", "", "ברכת"]
+      ]
+    }
+  ]
+}

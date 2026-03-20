@@ -647,6 +647,29 @@ A `StackOverflowException` cannot be caught by any .NET exception handler — it
 - The schema‑fill helper should make step 1 behave more like step 2 by giving the planner explicit "Row N: input=X" mappings.
 - Column B transliteration issue needs a prompt template fix (specify "Latin alphabet" more forcefully).
 
+## Chat UI Unification + Docked Pane Fixes (2026‑03‑20 PM)
+
+Findings
+- Two chat surfaces (docked pane + pop‑out form) duplicated logic and confused users; policy/schema preview in the docked pane didn’t reflect current selection (stuck at 5×1).
+
+Fixes
+- Docked pane now refreshes its policy/schema preview on grid selection change and when the pane is shown. The preview matches the pop‑out.
+- Revision guidance strengthened: prompts now include explicit row bounds and append‑only input rules (improves Test 18 behavior).
+- Unique sheet name guard: `create_sheet` now auto‑suffixes duplicate names (e.g., “Name (2)”).
+- Typed schema hint: when a column header contains “Transliteration”, the schema preview notes “latin alphabet” to steer providers away from Hebrew script in that column (improves Test 16).
+
+Decision
+- Unify chat surfaces. Make the docked pane the canonical chat UI; the “Open Chat…” command will focus/toggle it. If a pop‑out is retained, it should host the same ChatAssistantView and share a ChatSession to avoid divergence.
+
+Validation (E2E 16–19 re‑run)
+- Test 18: append‑only constraints surfaced; step 2 produced outputs in B5:D6 while preserving earlier rows (structural + intent pass).
+- Test 19: values in A/B then formulas in C; if `create_sheet` appears, duplicate‑name protection prevents collisions.
+- Test 16: step 1 still risks Hebrew in Transliteration; typed schema hint added; further typed schema support planned.
+
+Next Work
+- Refactor to a single ChatAssistantView + shared ChatSession used by both docked and (optional) pop‑out wrappers; deprecate the second codepath.
+- Extend Test Runner structural assertions (per‑row width, header‑dup checks) and add content checks where safe.
+
 ## Docs Viewer + Markdown Rendering + JSON Export (2026‑03‑20)
 
 What we shipped
