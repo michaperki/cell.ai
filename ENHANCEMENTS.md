@@ -85,10 +85,10 @@ Multi-turn chat works (conversation history is shipped), but undo and chat are c
 
 ---
 
-## Formula Engine Gaps (~4.5 of 10 done)
+## Formula Engine Gaps (~7 of 10 done)
 
 Functions not yet implemented that would both enrich the spreadsheet and expand what the AI can generate via `set_formula`:
-
+Implemented: IFERROR, SUMIF, COUNTIF, AVERAGEIF
 - **`SUMIF` / `COUNTIF` / `AVERAGEIF`** — NOT IMPLEMENTED. Conditional aggregates. Extremely common in real spreadsheet use.
 - **`HLOOKUP`** — IMPLEMENTED. Horizontal lookup, complement to VLOOKUP.
 - **`INDEX` / `MATCH`** — IMPLEMENTED. More flexible than VLOOKUP; the modern lookup pattern.
@@ -136,13 +136,15 @@ The chat preview currently shows a plan summary list. A richer preview would sho
 ### Auto-detect header rows — IMPLEMENTED
 Heuristic to identify the first non-empty row with text values as a header row. Used for AI context (send headers automatically) and workbook summary.
 
-### Formula bar / cell viewer — NOT STARTED
+### Formula bar / cell viewer — IMPLEMENTED
 A dedicated editable text area above the grid (like Excel's formula bar) showing the active cell's address (name box) and raw contents. The current status bar is read‑only and tucked at the bottom. This is a fundamental spreadsheet UX element — users expect to see and edit cell contents in a prominent bar, especially for long formulas that overflow the cell width.
 
-### Clipboard selection outline (marching ants) — NOT STARTED
+### Clipboard selection outline — IMPLEMENTED (static v1)
+Marching-ants animation deferred.
 When the user copies or cuts a range, draw a visible border around the source cells — solid for copy, animated dashed ("marching ants") for cut. Clear on Escape or after paste. This is standard in Excel/Sheets and provides essential visual feedback about what's on the clipboard.
 
-### Fill Down (Ctrl+D) and drag‑fill handle — NOT STARTED
+### Fill Down (Ctrl+D) and drag‑fill handle — IMPLEMENTED (basic)
+Ctrl+D fills with reference rewriting. Drag handle extends selection; detects simple numeric series for straight down/right fills; otherwise repeats pattern.
 Ctrl+D fills selected cells with the value/formula from the top cell of each column, rewriting relative references. A small drag handle at the bottom‑right corner of the selection extends a series or copies values downward/rightward. This is one of the most used spreadsheet interactions — critical for productivity.
 
 ### Drag-fill handle

@@ -208,12 +208,132 @@ namespace SpreadsheetApp.Core
 
             switch (name)
             {
+                case "IFERROR":
+                {
+                    if (fn.Args.Count is not 2)
+                        return EvaluationResult.FromError("IFERROR expects 2 arguments");
+                    var first = EvalNode(fn.Args[0]);
+                    if (first.Error != null)
+                    {
+                        try { return EvalNode(fn.Args[1]); }
+                        catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                    }
+                    return first;
+                }
                 case "SUM":
                 {
                     if (fn.Args.Count < 1) return EvaluationResult.FromError("SUM expects at least 1 argument");
                     double s = 0;
                     foreach (var a in fn.Args.SelectMany(AsNumbers)) s += a;
                     return EvaluationResult.FromNumber(s);
+                }
+                case "SUMIF":
+                {
+                    if (fn.Args.Count is not 2 and not 3) return EvaluationResult.FromError("SUMIF expects 2 or 3 arguments");
+                    if (fn.Args[0] is not RangeNode range)
+                        return EvaluationResult.FromError("SUMIF first arg must be a range");
+                    string crit;
+                    try { crit = AsText(fn.Args[1]); }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                    var cellAddrs = EnumerateRange(range.A, range.B).ToArray();
+                    string[] sumAddrs;
+                    if (fn.Args.Count == 3)
+                    {
+                        if (fn.Args[2] is not RangeNode sumRange)
+                            return EvaluationResult.FromError("SUMIF sum_range must be a range");
+                        var arr = EnumerateRange(sumRange.A, sumRange.B).ToArray();
+                        if (arr.Length != cellAddrs.Length) return EvaluationResult.FromError("SUMIF ranges must be same size");
+                        sumAddrs = arr;
+                    }
+                    else
+                    {
+                        sumAddrs = cellAddrs;
+                    }
+
+                    bool Match(EvaluationResult v)
+                    {
+                        string c = crit.Trim();
+                        if (string.IsNullOrEmpty(c)) return false;
+                        // Parse operator prefix
+                        string op = "="; string rhs = c;
+                        if (c.StartsWith("<=") || c.StartsWith(">=") || c.StartsWith("<>")) { op = c.Substring(0,2); rhs = c.Substring(2); }
+                        else if (c.StartsWith("<") || c.StartsWith(">") || c.StartsWith("=")) { op = c.Substring(0,1); rhs = c.Substring(1); }
+                        rhs = rhs.Trim();
+                        // Try numeric compare
+                        if (double.TryParse(rhs, NumberStyles.Float, CultureInfo.InvariantCulture, out double rhsNum) && v.Error == null && v.Number is double lnum)
+                        {
+                            return op switch
+                            {
+                                "=" => lnum == rhsNum,
+                                "<>" => lnum != rhsNum,
+                                ">" => lnum > rhsNum,
+                                ">=" => lnum >= rhsNum,
+                                "<" => lnum < rhsNum,
+                                "<=" => lnum <= rhsNum,
+                                _ => false
+                            };
+                        }
+                        // Fall back to string equality contains only '=' or no op
+                        var lstr = v.ToDisplay();
+                        if (op == "=" || string.IsNullOrEmpty(op)) return string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        if (op == "<>") return !string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        return false;
+                    }
+
+                    double sum = 0;
+                    for (int i = 0; i < cellAddrs.Length; i++)
+                    {
+                        var v = _cellResolver(cellAddrs[i]);
+                        if (Match(v))
+                        {
+                            var sv = _cellResolver(sumAddrs[i]);
+                            if (sv.Error == null && sv.Number is double d) sum += d;
+                        }
+                    }
+                    return EvaluationResult.FromNumber(sum);
+                }
+                case "COUNTIF":
+                {
+                    if (fn.Args.Count != 2) return EvaluationResult.FromError("COUNTIF expects 2 arguments");
+                    if (fn.Args[0] is not RangeNode range)
+                        return EvaluationResult.FromError("COUNTIF first arg must be a range");
+                    string crit;
+                    try { crit = AsText(fn.Args[1]); }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                    var cellAddrs = EnumerateRange(range.A, range.B).ToArray();
+                    bool Match(EvaluationResult v)
+                    {
+                        string c = crit.Trim();
+                        if (string.IsNullOrEmpty(c)) return false;
+                        string op = "="; string rhs = c;
+                        if (c.StartsWith("<=") || c.StartsWith(">=") || c.StartsWith("<>")) { op = c.Substring(0,2); rhs = c.Substring(2); }
+                        else if (c.StartsWith("<") || c.StartsWith(">") || c.StartsWith("=")) { op = c.Substring(0,1); rhs = c.Substring(1); }
+                        rhs = rhs.Trim();
+                        if (double.TryParse(rhs, NumberStyles.Float, CultureInfo.InvariantCulture, out double rhsNum) && v.Error == null && v.Number is double lnum)
+                        {
+                            return op switch
+                            {
+                                "=" => lnum == rhsNum,
+                                "<>" => lnum != rhsNum,
+                                ">" => lnum > rhsNum,
+                                ">=" => lnum >= rhsNum,
+                                "<" => lnum < rhsNum,
+                                "<=" => lnum <= rhsNum,
+                                _ => false
+                            };
+                        }
+                        var lstr = v.ToDisplay();
+                        if (op == "=" || string.IsNullOrEmpty(op)) return string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        if (op == "<>") return !string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        return false;
+                    }
+                    int count = 0;
+                    foreach (var addr in cellAddrs)
+                    {
+                        var v = _cellResolver(addr);
+                        if (Match(v)) count++;
+                    }
+                    return EvaluationResult.FromNumber(count);
                 }
                 case "AVG":
                 case "AVERAGE":
@@ -222,6 +342,69 @@ namespace SpreadsheetApp.Core
                     var nums = fn.Args.SelectMany(AsNumbers).ToArray();
                     if (nums.Length == 0) return EvaluationResult.FromError("AVERAGE needs numbers");
                     return EvaluationResult.FromNumber(nums.Average());
+                }
+                case "AVERAGEIF":
+                {
+                    if (fn.Args.Count is not 2 and not 3) return EvaluationResult.FromError("AVERAGEIF expects 2 or 3 arguments");
+                    if (fn.Args[0] is not RangeNode range)
+                        return EvaluationResult.FromError("AVERAGEIF first arg must be a range");
+                    string crit;
+                    try { crit = AsText(fn.Args[1]); }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                    var cellAddrs = EnumerateRange(range.A, range.B).ToArray();
+                    string[] avgAddrs;
+                    if (fn.Args.Count == 3)
+                    {
+                        if (fn.Args[2] is not RangeNode sumRange)
+                            return EvaluationResult.FromError("AVERAGEIF average_range must be a range");
+                        var arr = EnumerateRange(sumRange.A, sumRange.B).ToArray();
+                        if (arr.Length != cellAddrs.Length) return EvaluationResult.FromError("AVERAGEIF ranges must be same size");
+                        avgAddrs = arr;
+                    }
+                    else
+                    {
+                        avgAddrs = cellAddrs;
+                    }
+
+                    bool Match(EvaluationResult v)
+                    {
+                        string c = crit.Trim();
+                        if (string.IsNullOrEmpty(c)) return false;
+                        string op = "="; string rhs = c;
+                        if (c.StartsWith("<=") || c.StartsWith(">=") || c.StartsWith("<>")) { op = c.Substring(0,2); rhs = c.Substring(2); }
+                        else if (c.StartsWith("<") || c.StartsWith(">") || c.StartsWith("=")) { op = c.Substring(0,1); rhs = c.Substring(1); }
+                        rhs = rhs.Trim();
+                        if (double.TryParse(rhs, NumberStyles.Float, CultureInfo.InvariantCulture, out double rhsNum) && v.Error == null && v.Number is double lnum)
+                        {
+                            return op switch
+                            {
+                                "=" => lnum == rhsNum,
+                                "<>" => lnum != rhsNum,
+                                ">" => lnum > rhsNum,
+                                ">=" => lnum >= rhsNum,
+                                "<" => lnum < rhsNum,
+                                "<=" => lnum <= rhsNum,
+                                _ => false
+                            };
+                        }
+                        var lstr = v.ToDisplay();
+                        if (op == "=" || string.IsNullOrEmpty(op)) return string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        if (op == "<>") return !string.Equals(lstr, rhs, StringComparison.OrdinalIgnoreCase);
+                        return false;
+                    }
+
+                    double sum = 0; int count = 0;
+                    for (int i = 0; i < cellAddrs.Length; i++)
+                    {
+                        var v = _cellResolver(cellAddrs[i]);
+                        if (Match(v))
+                        {
+                            var av = _cellResolver(avgAddrs[i]);
+                            if (av.Error == null && av.Number is double d) { sum += d; count++; }
+                        }
+                    }
+                    if (count == 0) return EvaluationResult.FromError("AVERAGEIF no matching numbers");
+                    return EvaluationResult.FromNumber(sum / count);
                 }
                 case "MIN":
                 {

@@ -670,7 +670,7 @@ Next Work
 - Refactor to a single ChatAssistantView + shared ChatSession used by both docked and (optional) pop‑out wrappers; deprecate the second codepath.
 - Extend Test Runner structural assertions (per‑row width, header‑dup checks) and add content checks where safe.
 
-## Docs Viewer + Markdown Rendering + JSON Export (2026‑03‑20)
+## Docs Viewer + Markdown Rendering + JSON Export (2026-03-20)
 
 What we shipped
 - Added a lightweight Docs Viewer (Help > View Docs…) that lists root‑level Markdown files and renders them as HTML in‑app.
@@ -685,10 +685,34 @@ Hurdles / fixes
 Rationale
 - Keep it minimal and offline so it’s easy to experiment with and doesn’t add package dependencies. JSON export provides a simple path to integrate docs elsewhere if desired.
 
-Follow‑ups
-- Anchor navigation within the full document and auto‑scroll to a selected section.
+Follow-ups
+- Anchor navigation within the full document and auto-scroll to a selected section.
 - Option to include nested docs (e.g., `tests/TEST_INDEX.md`) and a configurable include list.
-- Basic link hygiene: open external links in the system browser and keep in‑app view sandboxed.
+- Basic link hygiene: open external links in the system browser and keep in-app view sandboxed.
+
+## Core UX: Fill Down/Right + Clipboard Outline + Schema Fill v1 (2026-03-20)
+
+What we shipped
+- Fill Down (Ctrl+D): copies the top cell per selected column down to the rest of the selection. Relative references are rewritten via the existing paste-rewrite path; absolute anchors are preserved. Bulk undo + incremental repaint.
+- Fill Right (Ctrl+R): copies the leftmost cell per selected row rightward with the same rewrite semantics. Bulk undo + incremental repaint.
+- Drag‑fill handle (basic): small square at the bottom‑right of the selection; drag to extend the selection down/right/diagonally. For straight down/right extensions, detects simple numeric series from the last two values and increments accordingly; otherwise applies a repeating pattern with reference rewrite. Bulk undo + incremental repaint. More series types (dates, weekdays) are deferred.
+- Clipboard selection outline (static v1): solid border for Copy; dashed border for Cut. Clears on Escape and Paste. Implemented via a lightweight overlay in the grid's Paint handler. Marching ants animation is deferred to the roadmap.
+- Schema Fill v1 (menu action): AI > Fill Selected From Schema… triggers a values-only plan using headers as schema and the input column to the left, sanitized to the selection, applied as one grouped undo. Single-shot for small ranges; batching/drag gesture comes later.
+
+Files
+- Fill Down/Right and outline: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+- Schema Fill v1 action: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+- Tests: `tests/test_20_fill_down.workbook.json`, `tests/test_21_ai_schema_single_shot.workbook.json`, and `tests/TEST_INDEX.md` updated.
+
+Notes
+- Reference rewriting leverages the same code paths used for Copy/Paste to ensure consistency (handles single refs and ranges, respects string literals, preserves `$` anchors).
+- Outline rendering is intentionally simple for now to avoid perf regressions. An animated border can be added with a small timer updating DashOffset.
+
+Environment constraint / partner note
+- Frustration acknowledged: asking to "run a smoke test" is not actionable here since the app builds and runs only in your Windows environment, and I cannot build or run it myself from this sandbox. Going forward, I’ll assume you will execute validation locally and I’ll focus on delivering ready-to-run changes with concise in-app verification steps.
+
+Formula engine updates
+- Implemented IFERROR, SUMIF, COUNTIF, and AVERAGEIF with range-size validation and comparison parsing (supports =, <>, <, <=, >, >= against numbers or strings).
 ## E2E Results — New Tests 17–19 (2026‑03‑20)
 
 Test 17 — Append-only multi‑turn

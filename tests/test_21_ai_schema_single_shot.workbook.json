@@ -1,0 +1,19 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "SchemaFill",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Item",
+        "B1": "Category",
+        "C1": "Notes",
+        "A2": "Hammer",
+        "A3": "Nails",
+        "A4": "Screwdriver"
+      }
+    }
+  ]
+}
+

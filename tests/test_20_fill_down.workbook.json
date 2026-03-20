@@ -1,0 +1,19 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "FillDownRight",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Qty",
+        "B1": "Price",
+        "C1": "Total",
+        "A2": "2",
+        "B2": "3",
+        "C2": "=A2+B2"
+      }
+    }
+  ]
+}
+

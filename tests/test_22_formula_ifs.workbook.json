@@ -1,0 +1,27 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Formulas_IFS",
+      "Rows": 40,
+      "Columns": 10,
+      "Cells": {
+        "A1": "Val",
+        "B1": "Grp",
+        "A2": "1",
+        "A3": "2",
+        "A4": "3",
+        "A5": "",
+        "B2": "X",
+        "B3": "Y",
+        "B4": "X",
+        "C2": "=IFERROR(1/0, 42)",
+        "C3": "=IFERROR(5, 0)",
+        "D2": "=SUMIF(B2:B4, \"X\", A2:A4)",
+        "D3": "=COUNTIF(B2:B4, \"Y\")",
+        "D4": "=AVERAGEIF(B2:B4, \"X\", A2:A4)"
+      }
+    }
+  ]
+}
+

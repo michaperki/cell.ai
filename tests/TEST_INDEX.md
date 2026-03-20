@@ -20,6 +20,9 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 | 14 | test_14_ai_complex_plan | AI | Multi-command plan (set_values + set_formula in one shot) |
 | 15 | test_15_ai_workbook_context | AI | AI reasoning across multiple sheets using workbook summary |
 | 16 | test_16_ai_hebrew_roots | AI | Hebrew morphology fill: headers as schema + roots as input; multi-turn append |
+| 20 | test_20_fill_down | UX | Keyboard Fill Down/Right; verify formula rewriting and bulk apply |
+| 21 | test_21_ai_schema_single_shot | AI | Single-shot schema-driven values-only fill for a small selection |
+| 22 | test_22_formula_ifs | Engine | IFERROR, SUMIF, COUNTIF, AVERAGEIF sample formulas |
 
 ## How to use
 

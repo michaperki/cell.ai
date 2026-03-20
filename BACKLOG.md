@@ -109,14 +109,14 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - Clear contents for multi-cell selections — DONE
   - Delete/Backspace clears selection with a single bulk undo action; guarded prompt for formulas; incremental repaint in place.
 
-- **Formula bar / cell viewer — NOT STARTED**
-  - Add an editable text area above the grid showing the active cell address (name box) and raw contents. Editing commits back to the cell. Replaces the need to squint at the bottom status bar for cell content.
+- Formula bar / cell viewer — DONE
+  - Implemented top formula bar with name box; synced to selection and editable with Enter/Tab commit.
 
-- **Clipboard selection outline — NOT STARTED**
-  - Draw a visible border around copied/cut source cells (solid for copy, dashed/marching ants for cut). Clear on Escape or paste. Standard spreadsheet visual feedback.
+- Clipboard selection outline — DONE (static v1)
+  - Solid border for Copy, dashed for Cut; clears on Escape and Paste; drawn in grid Paint. Marching-ants animation is deferred (roadmap).
 
-- **Fill Down (Ctrl+D) + drag‑fill handle — NOT STARTED**
-  - Ctrl+D fills selection from the top cell per column with reference rewriting. Drag handle at selection corner extends series or copies downward/rightward. Fundamental spreadsheet productivity feature.
+- Fill Down (Ctrl+D) — DONE; Fill Right (Ctrl+R) — DONE; Drag‑fill handle — DONE (basic)
+  - Keyboard-first and drag-handle implementations with reference rewriting for formulas and ranges; grouped undo and incremental repaint. Series detection/increments remain in backlog.
 
 ---
 
@@ -150,7 +150,10 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ## Active — Structured Batch Fill (MVP: Hebrew roots)
 
-- **AI drag‑to‑fill gesture — NOT STARTED**
+- Schema Fill v1 (menu action) — DONE (single-shot)
+  - AI > Fill Selected From Schema… generates a values-only set_values plan for the current selection using headers as schema and the input column to the left. Single-shot ≤40 rows; sanitized to selection; composite undo.
+
+- AI drag‑to‑fill gesture — NOT STARTED
   - Select empty output range; system detects header row + input column; fires AI request(s); fills. Single-shot for ≤40 rows, batched beyond that.
 
 - **Batch orchestration — NOT STARTED**

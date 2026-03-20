@@ -163,7 +163,21 @@ namespace SpreadsheetApp.UI
             // editToolStripMenuItem
             editToolStripMenuItem.Name = "editToolStripMenuItem";
             editToolStripMenuItem.Text = "Edit";
-            editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { undoToolStripMenuItem, redoToolStripMenuItem, new ToolStripSeparator(), copyToolStripMenuItem, pasteToolStripMenuItem, cutToolStripMenuItem, new ToolStripSeparator(), findToolStripMenuItem, replaceToolStripMenuItem, new ToolStripSeparator(), clearContentsToolStripMenuItem, recalcToolStripMenuItem });
+            // Edit menu items (with Fill Down/Right)
+            var fillDownToolStripMenuItem = new ToolStripMenuItem("Fill Down") { ShortcutKeys = Keys.Control | Keys.D };
+            fillDownToolStripMenuItem.Click += (_, __) => FillDown();
+            var fillRightToolStripMenuItem = new ToolStripMenuItem("Fill Right") { ShortcutKeys = Keys.Control | Keys.R };
+            fillRightToolStripMenuItem.Click += (_, __) => FillRight();
+            editToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] {
+                undoToolStripMenuItem, redoToolStripMenuItem,
+                new ToolStripSeparator(),
+                copyToolStripMenuItem, pasteToolStripMenuItem, cutToolStripMenuItem,
+                new ToolStripSeparator(),
+                fillDownToolStripMenuItem, fillRightToolStripMenuItem,
+                new ToolStripSeparator(),
+                findToolStripMenuItem, replaceToolStripMenuItem,
+                new ToolStripSeparator(),
+                clearContentsToolStripMenuItem, recalcToolStripMenuItem });
             editToolStripMenuItem.DropDownOpening += (_, __) => UpdateAiMenuItemsState();
 
             // undoToolStripMenuItem
@@ -264,7 +278,10 @@ namespace SpreadsheetApp.UI
             aiOpenChatToolStripMenuItem.Click += (_, __) => OpenChatAssistant();
             aiSettingsToolStripMenuItem = new ToolStripMenuItem("Settings...");
             aiSettingsToolStripMenuItem.Click += (_, __) => OpenAiSettings();
-            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
+            // AI menu (add Schema Fill)
+            var aiSchemaFillToolStripMenuItem = new ToolStripMenuItem("Fill Selected From Schema...");
+            aiSchemaFillToolStripMenuItem.Click += async (_, __) => await FillSelectedFromSchemaAsync();
+            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiSchemaFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
             menuStrip1.Items.Add(aiToolStripMenuItem);
 
             // testToolStripMenuItem
@@ -391,6 +408,11 @@ namespace SpreadsheetApp.UI
             grid.SelectionChanged += Grid_SelectionChanged;
             grid.KeyDown += Grid_KeyDown;
             grid.DataError += (s, e) => { e.ThrowException = false; };
+            grid.Paint += (s, e) => Grid_Paint(e);
+            grid.MouseDown += Grid_MouseDown;
+            grid.MouseMove += Grid_MouseMove;
+            grid.MouseUp += Grid_MouseUp;
+            grid.MouseDoubleClick += Grid_MouseDoubleClick;
 
             // statusStrip1
             statusStrip1.Dock = DockStyle.Bottom;

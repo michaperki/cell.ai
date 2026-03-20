@@ -48,10 +48,20 @@ namespace SpreadsheetApp.UI
         private readonly System.Collections.Generic.Dictionary<string, string[]> _aiInlineCache = new();
         private SpreadsheetApp.Core.AppSettings _settings = SpreadsheetApp.Core.AppSettings.Load();
         private bool _suppressFormulaBarSync;
+        // Clipboard selection outline (copy/cut visual)
+        private bool _clipboardOutlineVisible;
+        private bool _clipboardOutlineIsCut;
+        private int _outlineTop, _outlineLeft, _outlineBottom, _outlineRight;
         // Docked Chat pane
         private System.Windows.Forms.Panel? _chatDockHost;
         private System.Windows.Forms.Splitter? _chatDockSplitter;
         private SpreadsheetApp.UI.AI.ChatAssistantPanel? _chatPane;
+        // Drag-fill handle + preview state
+        private bool _dragFillActive;
+        private bool _dragFillPreview;
+        private System.Drawing.Rectangle _dragHandleRect;
+        private int _selTop, _selLeft, _selBottom, _selRight;
+        private int _previewTop, _previewLeft, _previewBottom, _previewRight;
 
         public MainForm()
         {
@@ -88,6 +98,8 @@ namespace SpreadsheetApp.UI
                 OpenGenerateFill();
                 return true;
             }
+            if (keyData == (Keys.Control | Keys.D)) { FillDown(); return true; }
+            if (keyData == (Keys.Control | Keys.R)) { FillRight(); return true; }
             if (keyData == (Keys.Control | Keys.Shift | Keys.C)) { ToggleChatPane(); return true; }
             return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -579,6 +591,8 @@ namespace SpreadsheetApp.UI
                 }
             }
             catch { }
+            // Redraw to update drag handle
+            try { grid.Invalidate(); } catch { }
         }
 
         private void UpdateStatus()
@@ -698,19 +712,7 @@ namespace SpreadsheetApp.UI
         {
             if (grid.CurrentCell == null) return;
             // Compute rectangular selection bounds (or current cell if single)
-            int top = grid.CurrentCell.RowIndex, left = grid.CurrentCell.ColumnIndex, bottom = top, right = left;
-            var cells = grid.SelectedCells;
-            if (cells != null && cells.Count > 1)
-            {
-                foreach (DataGridViewCell cell in cells)
-                {
-                    if (cell == null) continue;
-                    top = Math.Min(top, cell.RowIndex);
-                    left = Math.Min(left, cell.ColumnIndex);
-                    bottom = Math.Max(bottom, cell.RowIndex);
-                    right = Math.Max(right, cell.ColumnIndex);
-                }
-            }
+            TryGetSelectionBounds(out int top, out int left, out int bottom, out int right);
             var sb = new System.Text.StringBuilder();
             var vals2d = new System.Collections.Generic.List<string[]>();
             for (int r = top; r <= bottom; r++)
@@ -748,6 +750,8 @@ namespace SpreadsheetApp.UI
                 Clipboard.SetDataObject(dobj, true);
             }
             catch { /* ignore */ }
+            // Show copy outline
+            ShowClipboardOutline(top, left, bottom, right, isCut: false);
         }
 
         private void PasteCell()
@@ -896,6 +900,8 @@ namespace SpreadsheetApp.UI
                 try { RefreshDirtyOrFull(affected); } catch { }
             }
             try { UpdateAiMenuItemsState(); } catch { }
+            // Clear copy/cut outline after paste
+            ClearClipboardOutline();
         }
 
         private static bool TryParseCellRefWithAnchors(string s, ref int i, out int row, out int col, out bool absCol, out bool absRow, out int tokenStart, out int tokenEnd)
@@ -1012,10 +1018,14 @@ namespace SpreadsheetApp.UI
         {
             if (grid.CurrentCell == null) return;
             // Copy current selection to clipboard
+            // Capture selection bounds before contents are cleared
+            TryGetSelectionBounds(out int top, out int left, out int bottom, out int right);
             CopyCell();
             // Then clear selected cells (with confirmation for formulas)
             ClearSelectedCells();
             try { UpdateAiMenuItemsState(); } catch { }
+            // Show cut outline (dashed)
+            ShowClipboardOutline(top, left, bottom, right, isCut: true);
         }
 
         // Keyboard navigation: Enter down, Tab right when not editing
@@ -1031,6 +1041,13 @@ namespace SpreadsheetApp.UI
             if (_aiInlineEnabled && _aiGhostPanel != null && _aiGhostPanel.Visible && e.KeyCode == Keys.Escape)
             {
                 e.Handled = true; e.SuppressKeyPress = true; HideGhostSuggestions(); return;
+            }
+            if (e.KeyCode == Keys.Escape)
+            {
+                e.Handled = true; e.SuppressKeyPress = true;
+                _dragFillActive = false; _dragFillPreview = false; try { grid.Invalidate(); } catch { }
+                ClearClipboardOutline();
+                return;
             }
             // Clear contents of all selected cells with Delete/Backspace
             if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
@@ -1154,6 +1171,99 @@ namespace SpreadsheetApp.UI
                 }
             }
             catch { }
+        }
+
+        // --- Fill Down / Fill Right ---
+        private void FillDown()
+        {
+            if (grid.CurrentCell == null) return;
+            if (grid.IsCurrentCellInEditMode) return;
+            TryGetSelectionBounds(out int top, out int left, out int bottom, out int right);
+            if (bottom <= top) return; // nothing to fill down
+            var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
+            _suppressRecord = true;
+            try
+            {
+                for (int c = left; c <= right; c++)
+                {
+                    string src = _sheet.GetRaw(top, c) ?? string.Empty;
+                    for (int r = top + 1; r <= bottom; r++)
+                    {
+                        string newRaw = src;
+                        int dr = r - top; int dc = 0;
+                        if (!string.IsNullOrEmpty(newRaw))
+                        {
+                            if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                            {
+                                try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                            }
+                            else if (LooksLikeCellRefOrRange(newRaw))
+                            {
+                                try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                            }
+                        }
+                        string? oldRaw = _sheet.GetRaw(r, c);
+                        if (oldRaw == newRaw) continue;
+                        _sheet.SetRaw(r, c, newRaw);
+                        edits.Add((r, c, oldRaw, newRaw));
+                        foreach (var ac in _sheet.RecalculateDirty(r, c)) affected.Add(ac);
+                    }
+                }
+            }
+            finally { _suppressRecord = false; }
+            if (edits.Count > 0)
+            {
+                _undo.RecordBulk(edits);
+                try { RefreshDirtyOrFull(affected); } catch { }
+                try { UpdateAiMenuItemsState(); } catch { }
+            }
+        }
+
+        private void FillRight()
+        {
+            if (grid.CurrentCell == null) return;
+            if (grid.IsCurrentCellInEditMode) return;
+            TryGetSelectionBounds(out int top, out int left, out int bottom, out int right);
+            if (right <= left) return; // nothing to fill right
+            var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
+            _suppressRecord = true;
+            try
+            {
+                for (int r = top; r <= bottom; r++)
+                {
+                    string src = _sheet.GetRaw(r, left) ?? string.Empty;
+                    for (int c = left + 1; c <= right; c++)
+                    {
+                        string newRaw = src;
+                        int dr = 0; int dc = c - left;
+                        if (!string.IsNullOrEmpty(newRaw))
+                        {
+                            if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                            {
+                                try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                            }
+                            else if (LooksLikeCellRefOrRange(newRaw))
+                            {
+                                try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                            }
+                        }
+                        string? oldRaw = _sheet.GetRaw(r, c);
+                        if (oldRaw == newRaw) continue;
+                        _sheet.SetRaw(r, c, newRaw);
+                        edits.Add((r, c, oldRaw, newRaw));
+                        foreach (var ac in _sheet.RecalculateDirty(r, c)) affected.Add(ac);
+                    }
+                }
+            }
+            finally { _suppressRecord = false; }
+            if (edits.Count > 0)
+            {
+                _undo.RecordBulk(edits);
+                try { RefreshDirtyOrFull(affected); } catch { }
+                try { UpdateAiMenuItemsState(); } catch { }
+            }
         }
 
         // --- Find / Replace ---
@@ -1469,6 +1579,320 @@ namespace SpreadsheetApp.UI
             catch { }
         }
 
+        // --- Selection bounds helper ---
+        private bool TryGetSelectionBounds(out int top, out int left, out int bottom, out int right)
+        {
+            if (grid.CurrentCell == null)
+            {
+                top = left = bottom = right = 0; return false;
+            }
+            top = grid.CurrentCell.RowIndex; left = grid.CurrentCell.ColumnIndex; bottom = top; right = left;
+            var cells = grid.SelectedCells;
+            if (cells != null && cells.Count > 1)
+            {
+                foreach (DataGridViewCell cell in cells)
+                {
+                    if (cell == null) continue;
+                    top = Math.Min(top, cell.RowIndex);
+                    left = Math.Min(left, cell.ColumnIndex);
+                    bottom = Math.Max(bottom, cell.RowIndex);
+                    right = Math.Max(right, cell.ColumnIndex);
+                }
+            }
+            return true;
+        }
+
+        // --- Clipboard outline drawing ---
+        private void ShowClipboardOutline(int top, int left, int bottom, int right, bool isCut)
+        {
+            _outlineTop = Math.Max(0, top);
+            _outlineLeft = Math.Max(0, left);
+            _outlineBottom = Math.Max(_outlineTop, bottom);
+            _outlineRight = Math.Max(_outlineLeft, right);
+            _clipboardOutlineIsCut = isCut;
+            _clipboardOutlineVisible = true;
+            try { grid.Invalidate(); } catch { }
+        }
+
+        private void ClearClipboardOutline()
+        {
+            if (!_clipboardOutlineVisible) return;
+            _clipboardOutlineVisible = false;
+            try { grid.Invalidate(); } catch { }
+        }
+
+        private void Grid_Paint(PaintEventArgs e)
+        {
+            // Clipboard outline
+            if (_clipboardOutlineVisible)
+            {
+                try
+                {
+                    var tl = grid.GetCellDisplayRectangle(_outlineLeft, _outlineTop, true);
+                    var br = grid.GetCellDisplayRectangle(_outlineRight, _outlineBottom, true);
+                    if (tl.Width > 0 && tl.Height > 0 && br.Width > 0 && br.Height > 0)
+                    {
+                        var rect = System.Drawing.Rectangle.FromLTRB(tl.Left, tl.Top, br.Right - 1, br.Bottom - 1);
+                        using var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0, 120, 215), 2f);
+                        if (_clipboardOutlineIsCut) pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                        e.Graphics.DrawRectangle(pen, rect);
+                    }
+                }
+                catch { }
+            }
+            // Drag-fill handle & preview
+            try
+            {
+                if (TryGetSelectionBounds(out int top, out int left, out int bottom, out int right))
+                {
+                    var brCell = grid.GetCellDisplayRectangle(right, bottom, true);
+                    if (brCell.Width > 0 && brCell.Height > 0)
+                    {
+                        var handle = new System.Drawing.Rectangle(brCell.Right - 7, brCell.Bottom - 7, 7, 7);
+                        _dragHandleRect = handle;
+                        using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0, 120, 215));
+                        e.Graphics.FillRectangle(brush, handle);
+                    }
+                }
+                if (_dragFillPreview)
+                {
+                    var tl = grid.GetCellDisplayRectangle(_previewLeft, _previewTop, true);
+                    var br = grid.GetCellDisplayRectangle(_previewRight, _previewBottom, true);
+                    if (tl.Width > 0 && tl.Height > 0 && br.Width > 0 && br.Height > 0)
+                    {
+                        var rect = System.Drawing.Rectangle.FromLTRB(tl.Left, tl.Top, br.Right - 1, br.Bottom - 1);
+                        using var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(0, 120, 215));
+                        pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
+                        e.Graphics.DrawRectangle(pen, rect);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void Grid_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (_dragHandleRect.Contains(e.Location))
+            {
+                if (!TryGetSelectionBounds(out _selTop, out _selLeft, out _selBottom, out _selRight)) return;
+                _dragFillActive = true;
+                _dragFillPreview = false;
+                try { grid.Capture = true; } catch { }
+            }
+        }
+
+        private void Grid_MouseMove(object? sender, MouseEventArgs e)
+        {
+            try { if (_dragHandleRect.Contains(e.Location)) grid.Cursor = Cursors.Cross; else if (!_dragFillActive) grid.Cursor = Cursors.Default; } catch { }
+            if (!_dragFillActive) return;
+            var hit = grid.HitTest(e.X, e.Y);
+            if (hit.RowIndex < 0 || hit.ColumnIndex < 0) { _dragFillPreview = false; try { grid.Invalidate(); } catch { } return; }
+            int r = Math.Min(Math.Max(0, hit.RowIndex), _sheet.Rows - 1);
+            int c = Math.Min(Math.Max(0, hit.ColumnIndex), _sheet.Columns - 1);
+            int pt = Math.Min(_selTop, r);
+            int pl = Math.Min(_selLeft, c);
+            int pb = Math.Max(_selBottom, r);
+            int pr = Math.Max(_selRight, c);
+            bool extends = (pb > _selBottom) || (pr > _selRight) || (pt < _selTop) || (pl < _selLeft);
+            _dragFillPreview = extends;
+            if (extends)
+            {
+                _previewTop = pt; _previewLeft = pl; _previewBottom = pb; _previewRight = pr;
+            }
+            try { grid.Invalidate(); } catch { }
+        }
+
+        private void Grid_MouseUp(object? sender, MouseEventArgs e)
+        {
+            if (!_dragFillActive) return;
+            try { grid.Capture = false; } catch { }
+            _dragFillActive = false;
+            if (!_dragFillPreview)
+            {
+                _dragFillPreview = false; try { grid.Invalidate(); } catch { } return;
+            }
+            int t = _previewTop, l = _previewLeft, b = _previewBottom, r = _previewRight;
+            ApplyDragFill(t, l, b, r);
+            try { grid.Invalidate(); } catch { }
+        }
+
+        private void Grid_MouseDoubleClick(object? sender, MouseEventArgs e)
+        {
+            if (!_dragHandleRect.Contains(e.Location)) return;
+            // Determine reference column for boundary detection (prefer the input column to the left)
+            if (!TryGetSelectionBounds(out _selTop, out _selLeft, out _selBottom, out _selRight)) return;
+            int refCol = _selLeft > 0 ? _selLeft - 1 : _selLeft;
+            int r = _selBottom + 1;
+            while (r < _sheet.Rows)
+            {
+                var raw = _sheet.GetRaw(r, refCol) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(raw)) break;
+                r++;
+            }
+            int targetBottom = r - 1;
+            if (targetBottom <= _selBottom) return; // nothing to extend
+            ApplyDragFill(_selTop, _selLeft, targetBottom, _selRight);
+            try { grid.Invalidate(); } catch { }
+        }
+
+        private void ApplyDragFill(int t, int l, int b, int r)
+        {
+            var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
+            var affected = new HashSet<(int r, int c)>();
+            _suppressRecord = true;
+            try
+            {
+                // Determine extension orientation for series detection
+                bool downOnly = (l == _selLeft && r == _selRight && t == _selTop && b > _selBottom);
+                bool rightOnly = (t == _selTop && b == _selBottom && l == _selLeft && r > _selRight);
+                if (downOnly)
+                {
+                    // Column-wise series detection on numeric values; fallback to pattern copy
+                    int baseTop = _selTop, baseBottom = _selBottom;
+                    for (int c = _selLeft; c <= _selRight; c++)
+                    {
+                        bool hasFormula = false;
+                        var nums = new List<double>();
+                        for (int rr = baseTop; rr <= baseBottom; rr++)
+                        {
+                            var raw = _sheet.GetRaw(rr, c) ?? string.Empty;
+                            if (!string.IsNullOrEmpty(raw) && raw.StartsWith("=", StringComparison.Ordinal)) { hasFormula = true; break; }
+                            var v = _sheet.GetValue(rr, c);
+                            if (v.Error == null && v.Number is double d) nums.Add(d);
+                        }
+                        double? step = null; double? last = null;
+                        if (!hasFormula && nums.Count >= 2)
+                        {
+                            // Use last two numeric values to compute step
+                            last = nums[^1]; step = nums[^1] - nums[^2];
+                        }
+                        for (int rr = baseBottom + 1; rr <= b; rr++)
+                        {
+                            string? oldRaw = _sheet.GetRaw(rr, c);
+                            string newRaw;
+                            if (step.HasValue && last.HasValue)
+                            {
+                                double k = rr - baseBottom;
+                                double val = last.Value + step.Value * k;
+                                newRaw = val.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                            }
+                            else
+                            {
+                                // Fallback: copy last row with rewrite
+                                int sr = baseBottom; int sc = c; int dr = rr - sr; int dc = 0;
+                                var src = _sheet.GetRaw(sr, sc) ?? string.Empty;
+                                newRaw = src;
+                                if (!string.IsNullOrEmpty(newRaw))
+                                {
+                                    if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                                        try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                                    else if (LooksLikeCellRefOrRange(newRaw))
+                                        try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                                }
+                            }
+                            if (oldRaw == newRaw) continue;
+                            _sheet.SetRaw(rr, c, newRaw);
+                            edits.Add((rr, c, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rr, c)) affected.Add(ac);
+                        }
+                    }
+                }
+                else if (rightOnly)
+                {
+                    // Row-wise series detection; fallback to pattern copy
+                    int baseLeft = _selLeft, baseRight = _selRight;
+                    for (int rrow = _selTop; rrow <= _selBottom; rrow++)
+                    {
+                        bool hasFormula = false;
+                        var nums = new List<double>();
+                        for (int cc = baseLeft; cc <= baseRight; cc++)
+                        {
+                            var raw = _sheet.GetRaw(rrow, cc) ?? string.Empty;
+                            if (!string.IsNullOrEmpty(raw) && raw.StartsWith("=", StringComparison.Ordinal)) { hasFormula = true; break; }
+                            var v = _sheet.GetValue(rrow, cc);
+                            if (v.Error == null && v.Number is double d) nums.Add(d);
+                        }
+                        double? step = null; double? last = null;
+                        if (!hasFormula && nums.Count >= 2)
+                        {
+                            last = nums[^1]; step = nums[^1] - nums[^2];
+                        }
+                        for (int cc = baseRight + 1; cc <= r; cc++)
+                        {
+                            string? oldRaw = _sheet.GetRaw(rrow, cc);
+                            string newRaw;
+                            if (step.HasValue && last.HasValue)
+                            {
+                                double k = cc - baseRight;
+                                double val = last.Value + step.Value * k;
+                                newRaw = val.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                            }
+                            else
+                            {
+                                int sr = rrow; int sc = baseRight; int dr = 0; int dc = cc - sc;
+                                var src = _sheet.GetRaw(sr, sc) ?? string.Empty;
+                                newRaw = src;
+                                if (!string.IsNullOrEmpty(newRaw))
+                                {
+                                    if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                                        try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                                    else if (LooksLikeCellRefOrRange(newRaw))
+                                        try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                                }
+                            }
+                            if (oldRaw == newRaw) continue;
+                            _sheet.SetRaw(rrow, cc, newRaw);
+                            edits.Add((rrow, cc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rrow, cc)) affected.Add(ac);
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback: repeating pattern with rewrite for formulas/ranges
+                    int baseH = _selBottom - _selTop + 1;
+                    int baseW = _selRight - _selLeft + 1;
+                    for (int rr = t; rr <= b; rr++)
+                    {
+                        for (int cc = l; cc <= r; cc++)
+                        {
+                            if (rr >= _selTop && rr <= _selBottom && cc >= _selLeft && cc <= _selRight) continue;
+                            int sr = _selTop + ((rr - _selTop) % baseH + baseH) % baseH;
+                            int sc = _selLeft + ((cc - _selLeft) % baseW + baseW) % baseW;
+                            string src = _sheet.GetRaw(sr, sc) ?? string.Empty;
+                            string newRaw = src;
+                            int dr = rr - sr; int dc = cc - sc;
+                            if (!string.IsNullOrEmpty(newRaw))
+                            {
+                                if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                                {
+                                    try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                                }
+                                else if (LooksLikeCellRefOrRange(newRaw))
+                                {
+                                    try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                                }
+                            }
+                            string? oldRaw = _sheet.GetRaw(rr, cc);
+                            if (oldRaw == newRaw) continue;
+                            _sheet.SetRaw(rr, cc, newRaw);
+                            edits.Add((rr, cc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
+                        }
+                    }
+                }
+            }
+            finally { _suppressRecord = false; }
+            _dragFillPreview = false;
+            if (edits.Count > 0)
+            {
+                _undo.RecordBulk(edits);
+                try { RefreshDirtyOrFull(affected); } catch { }
+                try { UpdateAiMenuItemsState(); } catch { }
+            }
+        }
+
         private void ScheduleInlineSuggestion()
         {
             if (!_aiInlineEnabled) return;
@@ -1631,6 +2055,35 @@ namespace SpreadsheetApp.UI
             void apply(AIPlan plan) => ApplyPlan(plan);
             using var dlg = new ChatAssistantForm(_chatPlanner, getCtx, apply);
             dlg.ShowDialog(this);
+        }
+
+        // --- AI: Schema Fill (single-shot values-only) ---
+        private async System.Threading.Tasks.Task FillSelectedFromSchemaAsync()
+        {
+            if (!_settings.AiEnabled) { try { MessageBox.Show(this, "AI is disabled in Settings.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } return; }
+            if (!ProviderReady()) { try { MessageBox.Show(this, "No AI provider is configured.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } return; }
+            var ctx = BuildPlannerContext();
+            // Gate to values-only
+            ctx.AllowedCommands = new[] { "set_values" };
+            string prompt = "Fill the selected range from the input column using the headers as schema. Use set_values only. Do not modify headers or the input column. Return a single set_values sized exactly to the selection.";
+            int timeoutSec = 30;
+            try { var s = Environment.GetEnvironmentVariable("AI_PLAN_TIMEOUT_SEC"); if (!string.IsNullOrWhiteSpace(s)) timeoutSec = Math.Max(5, int.Parse(s)); } catch { }
+            SpreadsheetApp.Core.AI.AIPlan plan;
+            using (var cts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds(timeoutSec)))
+            {
+                try { plan = await _chatPlanner.PlanAsync(ctx, prompt, cts.Token).ConfigureAwait(true); }
+                catch (Exception ex)
+                {
+                    try { MessageBox.Show(this, $"Planning failed: {ex.Message}", "AI", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+                    return;
+                }
+            }
+            // Sanitize to current selection bounds before apply
+            int minR, minC, maxR, maxC;
+            TryGetSelectionBounds(out minR, out minC, out maxR, out maxC);
+            try { plan = SanitizePlanToBounds(plan, minR, minC, maxR, maxC); } catch { }
+            if (plan.Commands.Count == 0) { try { MessageBox.Show(this, "No changes suggested.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } return; }
+            ApplyPlan(plan);
         }
 
         private AIContext BuildPlannerContext()
