@@ -1717,7 +1717,6 @@ namespace SpreadsheetApp.UI
                 // Global enable/disable
                 bool providerReady = ProviderReady();
                 aiGenerateFillToolStripMenuItem.Enabled = _settings.AiEnabled && providerReady;
-                aiOpenChatToolStripMenuItem.Enabled = _settings.AiEnabled; // pop-out window
                 aiToggleChatPaneToolStripMenuItem.Enabled = _settings.AiEnabled;
                 aiEnableInlineToolStripMenuItem.Enabled = _settings.AiEnabled && providerReady;
                 if (!_settings.AiEnabled || !providerReady)
@@ -2207,10 +2206,16 @@ namespace SpreadsheetApp.UI
         private void OpenChatAssistant()
         {
             if (!_settings.AiEnabled) { MessageBox.Show(this, "AI is disabled in Settings.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            Func<AIContext> getCtx = () => BuildPlannerContext();
-            void apply(AIPlan plan) => ApplyPlan(plan);
-            using var dlg = new ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply);
-            dlg.ShowDialog(this);
+            if (_chatDockHost == null || _chatDockSplitter == null)
+            {
+                try { CreateDockedChatPane(); } catch { }
+            }
+            if (_chatDockHost != null)
+            {
+                _chatDockHost.Visible = true;
+                if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
+                try { _chatPane?.FocusInput(); } catch { }
+            }
         }
 
         // --- AI: Schema Fill (single-shot values-only) ---
