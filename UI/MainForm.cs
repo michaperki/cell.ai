@@ -2822,6 +2822,45 @@ namespace SpreadsheetApp.UI
                                 for (int c = 0; c < cols; c++) sel[r][c] = _sheet.GetDisplay(rStart + r, cStart + c);
                             }
                             ctx.SelectionValues = sel;
+
+                            // Recompute WritePolicy and Schema to match the overridden selection shape
+                            try
+                            {
+                                var policy = new SpreadsheetApp.Core.AI.SelectionWritePolicy();
+                                var writable = new System.Collections.Generic.List<int>();
+                                for (int dc = 0; dc < cols; dc++)
+                                {
+                                    int abs = cStart + dc; if (abs >= 0 && abs < _sheet.Columns) writable.Add(abs);
+                                }
+                                policy.WritableColumns = writable.ToArray();
+                                int inputCol = cStart > 0 ? cStart - 1 : cStart;
+                                if (inputCol >= 0 && inputCol < _sheet.Columns)
+                                {
+                                    policy.InputColumnIndex = inputCol;
+                                    bool inputInsideSelection = (inputCol >= cStart && inputCol < cStart + cols);
+                                    policy.AllowInputWritesForExistingRows = false;
+                                    policy.AllowInputWritesForEmptyRows = inputInsideSelection;
+                                }
+                                policy.HeaderRowReadOnly = true;
+                                ctx.WritePolicy = policy;
+
+                                var schemas = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ColumnSchema>();
+                                for (int dc = 0; dc < cols; dc++)
+                                {
+                                    int abs = cStart + dc; if (abs < 0 || abs >= _sheet.Columns) continue;
+                                    var col = new SpreadsheetApp.Core.AI.ColumnSchema
+                                    {
+                                        ColumnIndex = abs,
+                                        ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs),
+                                        Name = rStart > 0 ? (_sheet.GetDisplay(rStart - 1, abs) ?? string.Empty) : string.Empty,
+                                        Type = "text",
+                                        AllowEmpty = true
+                                    };
+                                    schemas.Add(col);
+                                }
+                                ctx.Schema = schemas.Count > 0 ? schemas.ToArray() : null;
+                            }
+                            catch { }
                         }
                     }
                     else if (Core.CellAddress.TryParse(loc, out int rr, out int cc))
@@ -2830,6 +2869,22 @@ namespace SpreadsheetApp.UI
                         ctx.StartRow = Math.Max(0, Math.Min(_sheet.Rows - 1, rr));
                         ctx.StartCol = Math.Max(0, Math.Min(_sheet.Columns - 1, cc));
                         ctx.Title = ctx.StartRow > 0 ? (_sheet.GetRaw(ctx.StartRow - 1, ctx.StartCol) ?? string.Empty) : string.Empty;
+                        // For single-cell anchors, also align WritePolicy/Schema to 1x1
+                        try
+                        {
+                            ctx.Rows = Math.Max(1, ctx.Rows);
+                            ctx.Cols = Math.Max(1, ctx.Cols);
+                            var policy = new SpreadsheetApp.Core.AI.SelectionWritePolicy
+                            {
+                                WritableColumns = new[] { ctx.StartCol },
+                                InputColumnIndex = ctx.StartCol > 0 ? ctx.StartCol - 1 : ctx.StartCol,
+                                AllowInputWritesForExistingRows = false,
+                                AllowInputWritesForEmptyRows = (ctx.StartCol == (ctx.StartCol > 0 ? ctx.StartCol - 1 : ctx.StartCol))
+                            };
+                            ctx.WritePolicy = policy;
+                            ctx.Schema = new[] { new SpreadsheetApp.Core.AI.ColumnSchema { ColumnIndex = ctx.StartCol, ColumnLetter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.StartCol), Name = ctx.StartRow > 0 ? (_sheet.GetDisplay(ctx.StartRow - 1, ctx.StartCol) ?? string.Empty) : string.Empty, Type = "text", AllowEmpty = true } };
+                        }
+                        catch { }
                     }
                 }
             }
@@ -2854,13 +2909,26 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
-            // AllowedCommands (explicit gating) derived from prompt when present
+            // AllowedCommands (explicit gating) derived from prompt when present or via light heuristics
             try
             {
                 string p = prompt ?? string.Empty;
                 if (p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("Use set_values only", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     ctx.AllowedCommands = new[] { "set_values" };
+                }
+                else
+                {
+                    // Heuristic: if the instruction clearly asks to fill/write simple values (numbers/text/lists)
+                    // and does NOT mention structural/advanced ops, restrict to set_values to reduce accidental formulas.
+                    string low = p.ToLowerInvariant();
+                    bool mentionsFormula = low.Contains("formula") || low.Contains("=a") || low.Contains("=sum") || low.Contains("sum(") || low.Contains("average(") || low.Contains("total row");
+                    bool mentionsStructural = low.Contains("sort") || low.Contains("rename") || low.Contains("create sheet") || low.Contains("clear ") || low.Contains("insert ") || low.Contains("delete ") || low.Contains("title");
+                    bool simpleFillIntent = (low.Contains("fill") || low.Contains("write") || low.Contains("list") || low.Contains("pairs") || low.Contains("numbers") || low.Contains("values"));
+                    if (simpleFillIntent && !mentionsFormula && !mentionsStructural)
+                    {
+                        ctx.AllowedCommands = new[] { "set_values" };
+                    }
                 }
             }
             catch { }

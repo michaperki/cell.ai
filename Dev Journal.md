@@ -241,7 +241,7 @@ Validation
   - Step 2: policy allows writes to A for empty rows 7..9 while keeping prior rows read‑only. Plan stays within A7:I9.
 
 Follow-ups queued
-- Planner revise loop: when the plan width/policy mismatches, request a repair instead of only cropping. Logged in BACKLOG.
+- Planner revise loop: when the plan width/policy mismatches, request a repair instead of only cropping. Logged in BACKLOG. — Implemented below.
 - Chat UI schema/policy preview: surface AllowedCommands, writable columns, and input-column rules pre-apply. Logged in ROADMAP/BACKLOG.
 - Typed schema (optional): enable simple content-class hints (e.g., transliteration ASCII) to guide providers without overfitting to domains. Logged in BACKLOG.
 
@@ -253,8 +253,49 @@ Follow-ups queued
 
 2) Undo/Redo menu state sync
     - Problem: Edit → Undo/Redo enable state could lag until another UI event.
-    
+
 ## Test Suite Automation + Multi‑turn Chat Learnings (2026‑03‑19)
+
+## Planner Revise Loop (2026‑03‑20)
+
+What we added
+- ProviderChatPlanner now validates returned plans against the active selection bounds, AllowedCommands, WritePolicy (writable columns and input‑column rules), and expected per‑row width (selection width or schema length).
+- On violations (e.g., writes outside selection, non‑writable columns, disallowed command types, ragged row widths), it issues a single automatic “revision” request to the provider. The revision message includes:
+  - A compact constraints summary (bounds, allowed commands, writable columns, input‑column rules, expected width)
+  - A short list of the first few detected problems
+  - The prior plan JSON for grounding
+- The corrected plan (if returned) is parsed and filtered again before being surfaced to the UI/Test Runner. If the provider cannot repair, we fall back to the original plan (the Test Runner still sanitizes to selection bounds during automation).
+
+Why
+- Reduces silent no‑ops and crop-induced surprises seen in tests (e.g., step‑2 of formula auto‑route writing to column A instead of C). Moves us from “sanitize and hope” to “enforce and repair”.
+
+Notes
+- One revision pass is performed to keep latency predictable. This integrates cleanly with the existing AllowedCommands/WritePolicy/Schema path from the earlier policy refactor.
+
+## Validation Snapshot (2026‑03‑20, Tests 19/18/16)
+
+Summary
+- Test 19 (formula_autoroute):
+  - Result: PASS. Step 2 now emits set_values with strings beginning with '=' (e.g., "=A2+B2") in C2:C4, which evaluate as formulas. No cycles or math errors.
+  - Cause of prior replans: planner wrote formulas into B (self‑reference) and later returned plain numbers. Fixed by (a) simple‑fill command gating to set_values and (b) values‑only formula guidance.
+
+- Test 18 (no_write_input_column):
+  - Step 1: IMPROVED. Returns a single 2D set_values aligned to B:D (header echo appears as first row; apply path drops it when it matches headers).
+  - Step 2: PARTIAL. Adds A5:A6 but did not reliably produce B5:D6 outputs on repair; out‑of‑selection writes were correctly rejected.
+  - Next: strengthen repair hinting for append‑rows (explicitly: "fill only the selected rows for outputs; do not touch earlier rows"), and consider a two‑phase prompt (first inputs A, then outputs B:D for the same row span) when the model struggles to co‑emit both.
+
+- Test 16 (hebrew_roots):
+  - Step 1: IMPROVED. Plan width matches selection (8); respects write policy. Header echo detected and dropped on apply. Some content quality is still mixed (transliteration vs script), to be handled by typed schema hints.
+  - Step 2: PARTIAL. Adds A7:A9; planner did not co‑emit B:I reliably on the first repair.
+
+What we changed in this pass
+- Recompute WritePolicy/Schema after Test Runner overrides location, avoiding mis‑stated writable columns in revision prompts.
+- Values‑only formula guidance: in set_values‑only mode, explicitly request formulas as strings starting with '=' and suppress set_formula messaging.
+- Heuristic command gating: for simple fills (no formulas/structural ops mentioned), restrict to set_values.
+
+Next incremental fixes
+- Add targeted repair phrasing for append scenarios: "Write outputs only in the selected rows (B..D for rows 5..6). Do not write to earlier rows." Include selection row span explicitly in the revision request.
+- Typed schema hints (e.g., transliteration ASCII vs Hebrew script) to improve Test 16 content fidelity.
 
 1) Removed in‑sheet instructions; added automated specs
    - Change: Eliminated A1 instruction text from all `tests/test_*.workbook.json` files to avoid contaminating AI context.
@@ -625,3 +666,37 @@ Follow‑ups
 - Anchor navigation within the full document and auto‑scroll to a selected section.
 - Option to include nested docs (e.g., `tests/TEST_INDEX.md`) and a configurable include list.
 - Basic link hygiene: open external links in the system browser and keep in‑app view sandboxed.
+## E2E Results — New Tests 17–19 (2026‑03‑20)
+
+Test 17 — Append-only multi‑turn
+- Step 1 (A2:D4):
+  - Plan: one set_values for A..C and set_formula in D with =B(row)*C(row).
+  - Applied: A2:D4 populated; D contains formulas; within bounds; no header edits.
+- Step 2 (A5:D6 append):
+  - Plan: set_values for A..C and set_formula in D for the two new rows; no changes to prior rows.
+  - Applied: A5:D6 filled; A2:D4 unchanged; within bounds.
+Observations: Pass (structural + intent). Minor: user prompt shows WritableColumns=A (should list A,B,C,D).
+
+Test 18 — No‑write to input column + append
+- Step 1 (B2:D4):
+  - Plan: set_values at B2:D4 but returned empty strings; no writes to A (as intended).
+  - Applied: sheet unchanged (content-wise); structurally within bounds.
+- Step 2 (A5:D6):
+  - Plan: set_values adds inputs in A5:A6 and fills B..D accordingly; existing rows untouched.
+  - Applied: delta/epsilon rows appended with outputs; no modification to A2:A4; within bounds.
+Observations: Structural pass; content for step 1 was empty (model choice). Policy respected (no A writes until append step).
+
+Test 19 — Formula auto‑route from set_values
+- Step 1 (A2:B4):
+  - Plan: included create_sheet + set_title + set_values and set_formula. Selection bounds kept data in range but created a duplicate sheet named “FormulaAuto”.
+  - Applied: two sheets now exist: original with headers; second with numbers at A2:B4.
+- Step 2 (C2:C4, set_values only, write =A2+B2 etc.):
+  - Plan: produced a set_values targeting A2:A4 (2/4/6), not C2:C4, and without '=' formulas.
+  - Applied: sanitized to selection bounds → no overlapping cells → effectively no changes.
+Observations: Structural guards prevented out‑of‑range writes; however, step 1 allowed create_sheet since not forbidden, causing a duplicate‑name sheet; step 2 did not demonstrate formula auto‑routing because the model did not emit '=' values into C under set_values.
+
+Follow‑ups from tests (queued)
+- Correct WritableColumns hint in the user prompt for multi‑column selections (currently shows only the first letter in some cases).
+- Tighten default AllowedCommands for narrow tasks (or pass an explicit allowlist per step) to prevent unintended create_sheet/set_title when not asked.
+- Optionally block duplicate‑name sheet creation unless explicitly requested, or auto‑rename/new sheet confirmation.
+- Consider a brief “revise” on policy/shape mismatch (e.g., step 19.2 targeting A instead of C) to elicit repair rather than silently dropping.

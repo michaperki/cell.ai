@@ -35,8 +35,17 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - **MockChatPlanner coverage — PARTIAL DONE**
   - Expanded to produce `set_formula`, `sort_range`, `clear_range`, `rename_sheet`, plus heuristics for expense tables, tax columns, and bonus columns. Further tuning still welcome.
 
-- **Planner revise loop — NOT STARTED**
-  - When model returns a plan with policy/shape violations (e.g., wrong width or writes to non-writable columns), automatically request a revised plan with a concise correction message instead of silently sanitizing.
+- **Planner revise loop — DONE**
+  - ProviderChatPlanner validates plans against selection bounds, AllowedCommands, WritePolicy (writable columns + input-column rules), and expected per-row width. On violations, it issues a single automatic revision request with a compact summary of problems and constraints, then applies the corrected plan if returned. Falls back gracefully if the provider cannot repair.
+
+- **Values-only formula guidance — DONE**
+  - In values-only mode, planner instructs: "When formulas are needed, write them as strings beginning with '=' inside set_values cells so they evaluate as formulas." Removes "use set_formula" guidance in this mode.
+
+- **Simple-fill command gating — DONE**
+  - For prompts that clearly ask to fill/write simple values and do not mention formulas or structural ops, automatically gate AllowedCommands=["set_values"]. Reduces accidental set_formula/set_title in basic scenarios (e.g., Test 19 step 1).
+
+- **Append-row repair phrasing — NOT STARTED**
+  - Add revision messaging that explicitly instructs: "Write outputs only for the selected rows; do not modify earlier rows." Helps Test 18 step 2 produce B:D for new inputs.
 
 - **Schema/policy preview in Chat UI — NOT STARTED**
   - Show the mapped columns (letters), AllowedCommands, and WritePolicy summary above the Plan/Apply actions to reduce surprises and catch over-constraints early.
@@ -135,6 +144,7 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Append-only multi-turn table (no overwrites between steps; fixed width, selection bounded).
   - No-write to input column unless explicitly allowed (two-step variant adding new inputs in empty rows only).
   - Formula auto-routing from set_values (values starting with `=` evaluate as formulas).
+  - Repair robustness for append-range outputs (explicit selection-row-only writes).
 
 ---
 

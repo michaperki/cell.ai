@@ -137,7 +137,7 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 
 ### Near-term Additions
 - Schema/policy preview in Chat UI: show mapped columns (letters), allowed commands, and write policy before applying a plan.
-- Planner revise loop: on width/policy mismatch, request an automatic plan repair instead of silently cropping.
+- Planner revise loop: IMPLEMENTED — on width/policy mismatch, the planner automatically requests a corrected plan instead of relying only on cropping.
 
 ### Technical Foundation
 - Providers: Mock, OpenAI (`OpenAIProvider`), Anthropic (`AnthropicProvider`), optional External POST (`ExternalApiProvider`).

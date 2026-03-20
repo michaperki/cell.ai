@@ -124,7 +124,18 @@ namespace SpreadsheetApp.Core.AI
             catch { }
             var schemaSection = TryBuildSchemaFillSection(context);
             if (!string.IsNullOrEmpty(schemaSection)) sbUsr.Append(schemaSection);
-            sbUsr.Append($" Instruction={(prompt ?? string.Empty)}. Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for plain text and set_formula for formulas; use sort_range for sorting.");
+            // Tailor guidance: avoid suggesting set_formula when values-only is in effect.
+            string guidance;
+            bool valuesOnlyMode = (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) || inferredValuesOnly;
+            if (valuesOnlyMode)
+            {
+                guidance = " Keep total writes <= 5000. Prefer list fills near the selection. When formulas are needed, write them as strings beginning with '=' inside set_values cells so they evaluate as formulas. Do not use set_title or set_formula.";
+            }
+            else
+            {
+                guidance = " Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for plain text and set_formula for formulas; use sort_range for sorting.";
+            }
+            sbUsr.Append($" Instruction={(prompt ?? string.Empty)}.{guidance}");
             string usr = sbUsr.ToString();
 
             string json = provider switch
@@ -154,6 +165,43 @@ namespace SpreadsheetApp.Core.AI
                 plan.RawJson = json;
                 plan.RawUser = usr;
                 plan.RawSystem = sys;
+
+                // Validate against selection bounds, schema width, and write policy. If violations exist, request one revision.
+                var violations = ValidatePlanAgainstContext(context, plan, allowedCmds, inferredValuesOnly, inferredNoTitles, out int expectedWidth);
+                if (violations.Count > 0)
+                {
+                    // Build a concise revision user message including constraints and first few violations
+                    var rev = BuildRevisionUserMessage(context, usr, allowedCmds, expectedWidth, violations, plan.RawJson ?? string.Empty);
+                    string json2 = provider switch
+                    {
+                        "OpenAI" => await CallOpenAIAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                        "Anthropic" => await CallAnthropicAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                        _ => string.Empty
+                    };
+                    if (!string.IsNullOrWhiteSpace(json2))
+                    {
+                        try
+                        {
+                            var doc2 = JsonDocument.Parse(json2);
+                            var plan2 = ParsePlan(doc2);
+                            if (allowedCmds != null && allowedCmds.Length > 0)
+                            {
+                                plan2.Commands.RemoveAll(c => !IsCommandAllowedByList(c, allowedCmds));
+                            }
+                            else if (inferredValuesOnly)
+                            {
+                                plan2.Commands.RemoveAll(c => c is not SetValuesCommand);
+                            }
+                            else if (inferredNoTitles)
+                            {
+                                plan2.Commands.RemoveAll(c => c is SetTitleCommand);
+                            }
+                            plan2.RawJson = json2; plan2.RawUser = rev; plan2.RawSystem = sys;
+                            return plan2;
+                        }
+                        catch { }
+                    }
+                }
                 return plan;
             }
             catch
@@ -402,6 +450,219 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
             return string.Empty;
+        }
+
+        private static System.Collections.Generic.List<string> ValidatePlanAgainstContext(AIContext ctx, AIPlan plan, string[]? allowedCmds, bool inferredValuesOnly, bool inferredNoTitles, out int expectedRowWidth)
+        {
+            var issues = new System.Collections.Generic.List<string>();
+            int r0 = Math.Max(0, ctx.StartRow);
+            int c0 = Math.Max(0, ctx.StartCol);
+            int r1 = r0 + Math.Max(1, ctx.Rows) - 1;
+            int c1 = c0 + Math.Max(1, ctx.Cols) - 1;
+            expectedRowWidth = Math.Max(1, ctx.Cols);
+
+            // Build quick lookups
+            var writable = new System.Collections.Generic.HashSet<int>();
+            bool hasWritable = false;
+            int? inputCol = null; bool allowInputExisting = false; bool allowInputEmpty = false;
+            if (ctx.WritePolicy != null)
+            {
+                if (ctx.WritePolicy.WritableColumns != null && ctx.WritePolicy.WritableColumns.Length > 0)
+                {
+                    foreach (var w in ctx.WritePolicy.WritableColumns) { if (w >= 0) { writable.Add(w); hasWritable = true; } }
+                }
+                inputCol = ctx.WritePolicy.InputColumnIndex;
+                allowInputExisting = ctx.WritePolicy.AllowInputWritesForExistingRows;
+                allowInputEmpty = ctx.WritePolicy.AllowInputWritesForEmptyRows;
+            }
+
+            // Helper to check if a given (row) inside selection has an existing input value
+            bool RowHasExistingInputInSelection(int rowZero)
+            {
+                try
+                {
+                    if (!inputCol.HasValue) return false;
+                    if (ctx.SelectionValues == null) return false;
+                    int selRow = rowZero - r0;
+                    if (selRow < 0 || selRow >= ctx.SelectionValues.Length) return false;
+                    int selCol = inputCol.Value - c0;
+                    if (selCol < 0 || ctx.SelectionValues[selRow] == null) return false;
+                    var line = ctx.SelectionValues[selRow];
+                    if (selCol >= line.Length) return false;
+                    var v = line[selCol] ?? string.Empty;
+                    return !string.IsNullOrWhiteSpace(v);
+                }
+                catch { return false; }
+            }
+
+            // Validate each command
+            foreach (var cmd in plan.Commands)
+            {
+                // Allowed commands guard (redundant with filter but adds explanation)
+                if (allowedCmds != null && allowedCmds.Length > 0 && !IsCommandAllowedByList(cmd, allowedCmds))
+                {
+                    issues.Add($"Command not allowed by policy: {DescribeType(cmd)}");
+                    continue;
+                }
+                if (inferredValuesOnly && cmd is not SetValuesCommand)
+                {
+                    issues.Add($"Only set_values allowed, found: {DescribeType(cmd)}");
+                    continue;
+                }
+                if (inferredNoTitles && cmd is SetTitleCommand)
+                {
+                    issues.Add("set_title not allowed for this request");
+                    continue;
+                }
+
+                if (cmd is SetValuesCommand sv)
+                {
+                    // Width check: require consistent width == expectedRowWidth
+                    for (int r = 0; r < sv.Values.Length; r++)
+                    {
+                        int w = sv.Values[r]?.Length ?? 0;
+                        if (w > 0 && w != expectedRowWidth)
+                        {
+                            issues.Add($"Row width {w} != expected {expectedRowWidth} in set_values");
+                            break;
+                        }
+                    }
+                    // Bounds + policy check (first violation only per category)
+                    bool oobNoted = false; bool nonWritableNoted = false; bool inputPolicyNoted = false;
+                    for (int r = 0; r < sv.Values.Length; r++)
+                    {
+                        int row = sv.StartRow + r;
+                        int cols = sv.Values[r]?.Length ?? 0;
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int col = sv.StartCol + c;
+                            if (!oobNoted && (row < r0 || row > r1 || col < c0 || col > c1))
+                            {
+                                issues.Add($"Writes outside selection at {SpreadsheetApp.Core.CellAddress.ToAddress(row, col)}");
+                                oobNoted = true;
+                            }
+                            if (!nonWritableNoted && hasWritable && !writable.Contains(col))
+                            {
+                                issues.Add($"Writes to non-writable column {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(col)}");
+                                nonWritableNoted = true;
+                            }
+                            if (!inputPolicyNoted && inputCol.HasValue && col == inputCol.Value)
+                            {
+                                bool hasExisting = RowHasExistingInputInSelection(row);
+                                if ((hasExisting && !allowInputExisting) || (!hasExisting && !allowInputEmpty))
+                                {
+                                    issues.Add($"Writes to input column {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(col)} in a row where policy forbids it");
+                                    inputPolicyNoted = true;
+                                }
+                            }
+                            if (oobNoted && nonWritableNoted && inputPolicyNoted) break;
+                        }
+                        if (oobNoted && nonWritableNoted && inputPolicyNoted) break;
+                    }
+                }
+                else if (cmd is SetFormulaCommand sf)
+                {
+                    int rows = sf.Formulas.Length; int cols = rows > 0 ? sf.Formulas[0].Length : 0;
+                    int a1 = sf.StartRow; int b1 = sf.StartCol; int a2 = a1 + rows - 1; int b2 = b1 + cols - 1;
+                    if (a1 < r0 || a2 > r1 || b1 < c0 || b2 > c1)
+                    {
+                        issues.Add("set_formula writes outside selection");
+                    }
+                    if (hasWritable)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int abs = b1 + c; if (!writable.Contains(abs)) { issues.Add($"set_formula uses non-writable column {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(abs)}"); break; }
+                        }
+                    }
+                }
+                else if (cmd is ClearRangeCommand cr)
+                {
+                    int a1 = cr.StartRow; int b1 = cr.StartCol; int a2 = a1 + Math.Max(1, cr.Rows) - 1; int b2 = b1 + Math.Max(1, cr.Cols) - 1;
+                    if (a1 < r0 || a2 > r1 || b1 < c0 || b2 > c1)
+                    {
+                        issues.Add("clear_range outside selection");
+                    }
+                }
+                else if (cmd is SortRangeCommand sr)
+                {
+                    int a1 = sr.StartRow; int b1 = sr.StartCol; int a2 = a1 + Math.Max(1, sr.Rows) - 1; int b2 = b1 + Math.Max(1, sr.Cols) - 1;
+                    if (a1 < r0 || a2 > r1 || b1 < c0 || b2 > c1)
+                    {
+                        issues.Add("sort_range outside selection");
+                    }
+                }
+            }
+            // De-duplicate messages to keep the revision prompt short
+            var dedup = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            var trimmed = new System.Collections.Generic.List<string>();
+            foreach (var i in issues) if (dedup.Add(i)) trimmed.Add(i);
+            // Limit to a handful to avoid long prompts
+            if (trimmed.Count > 6) trimmed = trimmed.GetRange(0, 6);
+            return trimmed;
+        }
+
+        private static string DescribeType(IAICommand cmd)
+        {
+            return cmd switch
+            {
+                SetValuesCommand => "set_values",
+                SetFormulaCommand => "set_formula",
+                SetTitleCommand => "set_title",
+                CreateSheetCommand => "create_sheet",
+                ClearRangeCommand => "clear_range",
+                RenameSheetCommand => "rename_sheet",
+                SortRangeCommand => "sort_range",
+                _ => cmd.GetType().Name
+            };
+        }
+
+        private static string BuildRevisionUserMessage(AIContext ctx, string originalUser, string[]? allowedCmds, int expectedWidth, System.Collections.Generic.List<string> violations, string priorPlanJson)
+        {
+            var sb = new StringBuilder();
+            // Carry the original context/user string for grounding
+            sb.Append(originalUser);
+            sb.Append(' ');
+            sb.Append("REVISION REQUEST: The previous plan violated constraints. Fix the issues below and return a corrected plan as strict JSON only. ");
+            // Constraints summary
+            sb.Append($"Selection bounds: start=({ctx.StartRow + 1},{SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.StartCol)}), Rows={Math.Max(1, ctx.Rows)}, Cols={Math.Max(1, ctx.Cols)}. ");
+            if (allowedCmds != null && allowedCmds.Length > 0)
+            {
+                sb.Append("Allowed command types: ");
+                for (int i = 0; i < allowedCmds.Length; i++) { if (i > 0) sb.Append(','); sb.Append(allowedCmds[i]); }
+                sb.Append(". ");
+            }
+            // Writable columns summary
+            if (ctx.WritePolicy?.WritableColumns != null && ctx.WritePolicy.WritableColumns.Length > 0)
+            {
+                sb.Append("Writable columns: ");
+                for (int i = 0; i < ctx.WritePolicy.WritableColumns.Length; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append(SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.WritePolicy.WritableColumns[i]));
+                }
+                sb.Append(". ");
+            }
+            if (ctx.WritePolicy?.InputColumnIndex != null)
+            {
+                string letter = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ctx.WritePolicy.InputColumnIndex.Value);
+                if (!ctx.WritePolicy.AllowInputWritesForExistingRows && !ctx.WritePolicy.AllowInputWritesForEmptyRows)
+                    sb.Append($"Do not write to input column {letter}. ");
+                else if (!ctx.WritePolicy.AllowInputWritesForExistingRows && ctx.WritePolicy.AllowInputWritesForEmptyRows)
+                    sb.Append($"Do not modify existing values in input column {letter}; writing new inputs only to empty rows in selection is allowed. ");
+            }
+            sb.Append($"Expected per-row width: {expectedWidth}. ");
+            // Violations list
+            sb.Append("Problems: ");
+            for (int i = 0; i < violations.Count; i++) { if (i > 0) sb.Append(" | "); sb.Append(violations[i]); }
+            sb.Append(". Reissue the full corrected plan now. No prose, no extra keys, JSON only.");
+            // Include previous plan JSON at the end for reference (helps some models repair precisely)
+            if (!string.IsNullOrWhiteSpace(priorPlanJson))
+            {
+                sb.Append(" PreviousPlan= ");
+                sb.Append(priorPlanJson);
+            }
+            return sb.ToString();
         }
 
         private static AIPlan ParsePlan(JsonDocument doc)
