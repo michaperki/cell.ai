@@ -33,7 +33,15 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
+            string sys;
+            if (context.RequestQueriesOnly)
+            {
+                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"queries\":[{\"type\":\"selection_summary\"},{\"type\":\"profile_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"unique_values\",\"col\":\"<letter or 1-based index>\",\"top\":<int optional>},{\"type\":\"sample_rows\",\"rows\":<int>,\"cols\":<int>]} } with no extra keys, no prose. Choose a small set of high-value queries to understand the selection (column uniqueness, profile, a few sample rows). Do not include write commands.";
+            }
+            else
+            {
+                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
+            }
 
             // Allowed commands and strengthened constraints
             string[]? allowedCmds = null;
@@ -41,6 +49,18 @@ namespace SpreadsheetApp.Core.AI
             // Back-compat: infer valuesOnly/noTitles from prompt if no explicit policy was provided
             bool inferredValuesOnly = (prompt ?? string.Empty).IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
             bool inferredNoTitles = inferredValuesOnly || (prompt ?? string.Empty).IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || (prompt ?? string.Empty).IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            // Structural-op strict gating: if caller didn't supply AllowedCommands, infer a minimal set from the prompt.
+            if (allowedCmds == null)
+            {
+                var inferredAllowed = InferAllowedCommandsFromPrompt(prompt ?? string.Empty);
+                if (inferredAllowed != null && inferredAllowed.Length > 0)
+                {
+                    allowedCmds = inferredAllowed;
+                    // When we strictly gate to structural ops, ensure valuesOnly mode does not bias toward set_values
+                    inferredValuesOnly = false;
+                }
+            }
             if (allowedCmds != null)
             {
                 // Emit an explicit AllowedCommands list into the system message
@@ -122,12 +142,15 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
             catch { }
-            // Include FillMapping only for schema/table fills (pure set_values intent)
+            // Include FillMapping only for schema/table fills (pure set_values intent) and only when not in query mode
             bool includeFillMapping = false;
             try
             {
-                if (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) includeFillMapping = true;
-                else if (allowedCmds == null && inferredValuesOnly) includeFillMapping = true;
+                if (!context.RequestQueriesOnly)
+                {
+                    if (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) includeFillMapping = true;
+                    else if (allowedCmds == null && inferredValuesOnly) includeFillMapping = true;
+                }
             }
             catch { }
             if (includeFillMapping)
@@ -139,7 +162,11 @@ namespace SpreadsheetApp.Core.AI
             // Tailor guidance: if explicit AllowedCommands provided, avoid generic hints that bias toward set_values
             string guidance;
             bool valuesOnlyMode = (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) || inferredValuesOnly;
-            if (allowedCmds != null && allowedCmds.Length > 0)
+            if (context.RequestQueriesOnly)
+            {
+                guidance = " Return only a small set of queries to better understand the data; avoid any write commands.";
+            }
+            else if (allowedCmds != null && allowedCmds.Length > 0)
             {
                 var sb = new System.Text.StringBuilder();
                 sb.Append(" Keep total writes <= 5000. Use only these commands: ");
@@ -169,6 +196,12 @@ namespace SpreadsheetApp.Core.AI
             {
                 var doc = JsonDocument.Parse(json);
                 var plan = ParsePlan(doc);
+                // If this was query-only mode, return immediately after parsing queries
+                if (context.RequestQueriesOnly)
+                {
+                    plan.RawJson = json; plan.RawUser = usr; plan.RawSystem = sys;
+                    return plan;
+                }
                 // Filter disallowed command types: explicit AllowedCommands first, then inferred guards
                 if (allowedCmds != null && allowedCmds.Length > 0)
                 {
@@ -222,6 +255,11 @@ namespace SpreadsheetApp.Core.AI
                         catch { }
                     }
                 }
+                // Selection hard mode: drop any write commands that touch outside the selection
+                if (context.SelectionHardMode)
+                {
+                    ApplySelectionHardMode(context, plan);
+                }
                 return plan;
             }
             catch
@@ -234,8 +272,81 @@ namespace SpreadsheetApp.Core.AI
                     try { var s = json.Substring(i1, i2 - i1 + 1); var doc = JsonDocument.Parse(s); var plan = ParsePlan(doc); plan.RawJson = s; plan.RawUser = usr; plan.RawSystem = sys; return plan; }
                     catch { }
                 }
+                // If parsing fails, return empty plan
                 return new AIPlan();
             }
+        }
+
+        private static void ApplySelectionHardMode(AIContext ctx, AIPlan plan)
+        {
+            int r0 = Math.Max(0, ctx.StartRow);
+            int c0 = Math.Max(0, ctx.StartCol);
+            int r1 = r0 + Math.Max(1, ctx.Rows) - 1;
+            int c1 = c0 + Math.Max(1, ctx.Cols) - 1;
+            bool IsOob(int row, int col) => row < r0 || row > r1 || col < c0 || col > c1;
+            plan.Commands.RemoveAll(cmd =>
+            {
+                if (cmd is SetValuesCommand sv)
+                {
+                    int rows = sv.Values.Length; int cols = rows > 0 ? (sv.Values[0]?.Length ?? 0) : 0;
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < (sv.Values[r]?.Length ?? 0); c++)
+                        {
+                            if (IsOob(sv.StartRow + r, sv.StartCol + c)) return true;
+                        }
+                    }
+                    return false;
+                }
+                else if (cmd is SetFormulaCommand sf)
+                {
+                    int rows = sf.Formulas.Length; int cols = rows > 0 ? (sf.Formulas[0]?.Length ?? 0) : 0;
+                    int a1 = sf.StartRow; int b1 = sf.StartCol; int a2 = a1 + rows - 1; int b2 = b1 + cols - 1;
+                    return (a1 < r0 || a2 > r1 || b1 < c0 || b2 > c1);
+                }
+                return false; // other command types allowed
+            });
+        }
+
+        private static string[]? InferAllowedCommandsFromPrompt(string prompt)
+        {
+            // Lowercase for simple keyword checks
+            var p = (prompt ?? string.Empty).ToLowerInvariant();
+            var list = new System.Collections.Generic.List<string>();
+
+            // Columns
+            bool mentionsInsertCol = p.Contains("insert column") || p.Contains("add column") || p.Contains("insert col ") || p.Contains("insert col:") || p.Contains("insert into column");
+            bool mentionsDeleteCol = p.Contains("delete column") || p.Contains("remove column") || p.Contains("del column") || p.Contains("del col");
+            if (mentionsInsertCol) list.Add("insert_cols");
+            if (mentionsDeleteCol) list.Add("delete_cols");
+
+            // Rows
+            bool mentionsInsertRow = p.Contains("insert row") || p.Contains("add row") || p.Contains("insert rows");
+            bool mentionsDeleteRow = p.Contains("delete row") || p.Contains("remove row") || p.Contains("delete rows");
+            if (mentionsInsertRow) list.Add("insert_rows");
+            if (mentionsDeleteRow) list.Add("delete_rows");
+
+            // Sort
+            if (p.Contains("sort ") || p.Contains("alphabetize") || p.Contains("order by")) list.Add("sort_range");
+
+            // Sheet deletion
+            if (p.Contains("delete sheet") || p.Contains("remove sheet")) list.Add("delete_sheet");
+
+            // Copy / Move
+            if (p.Contains("copy ") && p.Contains(" to ")) list.Add("copy_range");
+            if (p.Contains("move ") && p.Contains(" to ")) list.Add("move_range");
+
+            // Formatting tasks
+            if (p.Contains("bold ") || p.Contains("format ") || p.Contains("align ") || p.Contains("color ") || p.Contains("number format")) list.Add("set_format");
+
+            // Validation tasks
+            if (p.Contains("dropdown") || p.Contains("data validation") || p.Contains("allowed values") || p.Contains("between ")) list.Add("set_validation");
+
+            // Conditional formatting
+            if (p.Contains("highlight ") || p.Contains("conditional format") || p.Contains(">=") || p.Contains("<=") || p.Contains("threshold")) list.Add("set_conditional_format");
+
+            // If we inferred nothing structural, return null to keep default behavior
+            return list.Count > 0 ? list.ToArray() : null;
         }
 
         private static string? TryBuildSchemaFillSection(AIContext context)
@@ -735,6 +846,50 @@ namespace SpreadsheetApp.Core.AI
         {
             var plan = new AIPlan();
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return plan;
+            // Queries (optional)
+            if (doc.RootElement.TryGetProperty("queries", out var queries) && queries.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var q in queries.EnumerateArray())
+                {
+                    try
+                    {
+                        if (!q.TryGetProperty("type", out var qt)) continue;
+                        string? qtype = qt.GetString()?.Trim().ToLowerInvariant();
+                        switch (qtype)
+                        {
+                            case "selection_summary":
+                                plan.Queries.Add(new SelectionSummaryQuery());
+                                break;
+                            case "profile_column":
+                                {
+                                    var pq = new ProfileColumnQuery();
+                                    if (q.TryGetProperty("col", out var colEl)) pq.ColumnIndex = ParseColumnIndex(colEl);
+                                    if (q.TryGetProperty("rows", out var rr) && rr.ValueKind == JsonValueKind.Number) pq.Rows = SafeInt(rr, 0);
+                                    plan.Queries.Add(pq);
+                                    break;
+                                }
+                            case "unique_values":
+                                {
+                                    var uq = new UniqueValuesQuery();
+                                    if (q.TryGetProperty("col", out var colEl)) uq.ColumnIndex = ParseColumnIndex(colEl);
+                                    if (q.TryGetProperty("top", out var top) && top.ValueKind == JsonValueKind.Number) uq.TopK = SafeInt(top, 10);
+                                    plan.Queries.Add(uq);
+                                    break;
+                                }
+                            case "sample_rows":
+                                {
+                                    var sq = new SampleRowsQuery();
+                                    if (q.TryGetProperty("rows", out var r) && r.ValueKind == JsonValueKind.Number) sq.Rows = SafeInt(r, 5);
+                                    if (q.TryGetProperty("cols", out var c) && c.ValueKind == JsonValueKind.Number) sq.Cols = SafeInt(c, 6);
+                                    plan.Queries.Add(sq);
+                                    break;
+                                }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            // Commands (optional)
             if (!doc.RootElement.TryGetProperty("commands", out var cmds) || cmds.ValueKind != JsonValueKind.Array) return plan;
             foreach (var cmd in cmds.EnumerateArray())
             {
@@ -1019,6 +1174,26 @@ namespace SpreadsheetApp.Core.AI
                 catch { }
             }
             return plan;
+        }
+
+        private static int ParseColumnIndex(JsonElement el)
+        {
+            // Accept a string letter (e.g., "B") or 1-based numeric index
+            try
+            {
+                if (el.ValueKind == JsonValueKind.String)
+                {
+                    string s = el.GetString() ?? string.Empty;
+                    if (SpreadsheetApp.Core.CellAddress.TryParse((s + "1").ToUpperInvariant(), out int _, out int col)) return col;
+                }
+                else if (el.ValueKind == JsonValueKind.Number)
+                {
+                    int idx = SafeInt(el, 1) - 1;
+                    return Math.Max(0, idx);
+                }
+            }
+            catch { }
+            return 0;
         }
 
         private static void ParseStart(JsonElement start, out int rowZero, out int colZero)

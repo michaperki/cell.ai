@@ -48,6 +48,46 @@ namespace SpreadsheetApp.Core.AI
         public string? RawUser { get; set; }
         // Optional system prompt (schema/rules) for debugging
         public string? RawSystem { get; set; }
+        // Optional: query intents for observation phase (two-phase agent loop)
+        public List<IQueryIntent> Queries { get; } = new();
+    }
+
+    public enum QueryIntentType { SelectionSummary, ProfileColumn, UniqueValues, SampleRows }
+
+    public interface IQueryIntent
+    {
+        QueryIntentType Type { get; }
+        string Summarize();
+    }
+
+    public sealed class SelectionSummaryQuery : IQueryIntent
+    {
+        public QueryIntentType Type => QueryIntentType.SelectionSummary;
+        public string Summarize() => "selection_summary";
+    }
+
+    public sealed class ProfileColumnQuery : IQueryIntent
+    {
+        public QueryIntentType Type => QueryIntentType.ProfileColumn;
+        public int ColumnIndex { get; set; } // 0-based absolute column index
+        public int? Rows { get; set; }
+        public string Summarize() => $"profile_column {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ColumnIndex)}";
+    }
+
+    public sealed class UniqueValuesQuery : IQueryIntent
+    {
+        public QueryIntentType Type => QueryIntentType.UniqueValues;
+        public int ColumnIndex { get; set; } // 0-based absolute column index
+        public int TopK { get; set; } = 10;
+        public string Summarize() => $"unique_values {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(ColumnIndex)} top={TopK}";
+    }
+
+    public sealed class SampleRowsQuery : IQueryIntent
+    {
+        public QueryIntentType Type => QueryIntentType.SampleRows;
+        public int Rows { get; set; } = 5;
+        public int Cols { get; set; } = 6;
+        public string Summarize() => $"sample_rows {Rows}x{Cols}";
     }
 
     public sealed class CreateSheetCommand : IAICommand

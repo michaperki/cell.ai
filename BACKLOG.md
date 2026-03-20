@@ -45,7 +45,13 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - For prompts that clearly ask to fill/write simple values and do not mention formulas or structural ops, automatically gate AllowedCommands=["set_values"]. Reduces accidental set_formula/set_title in basic scenarios (e.g., Test 19 step 1).
 
 - **Append-row repair phrasing — NOT STARTED**
-  - Add revision messaging that explicitly instructs: "Write outputs only for the selected rows; do not modify earlier rows." Helps Test 18 step 2 produce B:D for new inputs.
+  - Add revision + first-plan messaging that explicitly instructs: "Write outputs only for the selected rows; do not modify earlier rows (rows R1–R2)." Helps Test 18 step 2 produce B:D for new inputs.
+
+- **Structural-op strict gating — PLANNED**
+  - When the prompt requests insert/delete rows/cols, restrict AllowedCommands to those structural ops to prevent unintended `set_values` writes. If header text is requested, handle via a separate single-cell write.
+
+- **Policy quick toggles — PLANNED**
+  - In the chat pane, surface one-click toggles for Input column policy (read-only / append-only-empty / writable) and selection hard mode (no out-of-bounds writes, even after revisions).
 
 - **Schema/policy preview in Chat UI — NOT STARTED**
   - Show the mapped columns (letters), AllowedCommands, and WritePolicy summary above the Plan/Apply actions to reduce surprises and catch over-constraints early.
@@ -65,6 +71,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Host executes observations and augments the user prompt with a concise transcript before planning.
   - Cap results with top‑K uniques and first N row samples to control tokens.
 
+- **Schema/tool formalization — PARTIAL DONE**
+  - Formal query intents added to planner schema (unique_values, profile_column, sample_rows, selection_summary) and parsed; host executes them and builds a transcript. Further expansion/UX polish still planned.
+
 - UI transcript of observations — DONE (first pass)
   - Chat pane renders an observations section above the plan when agent loop is used. Transcript exported by Test Runner.
 
@@ -83,6 +92,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - UX — DONE (first pass)
   - Chat toggle “Use Agent Loop (MVP)” and transcript section; Test Runner `ai_agent` action with transcript export.
+
+- **Agent Loop 0.2 — DONE (first pass)**
+  - Two-phase loop implemented: planner returns query intents, host executes and appends transcript, then requests final write plan. Falls back to built-in observations when queries are unavailable (e.g., Mock).
 
 - Demo dataset — DONE (first pass)
   - `test_29_ai_agent_city_cleanup.workbook.json` added; uses messy City data for normalization.
@@ -112,6 +124,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - Workbook summary header detection — DONE
   - Heuristic picks the first non-empty text-dominant row.
 
+- **Workbook-level recalc across sheets — PLANNED**
+  - Simple pass to recalc all sheets when necessary; later, a global dependency graph.
+
 ---
 
 ## Active — Docs / Tools
@@ -120,10 +135,13 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Help > View Docs… renders root‑level Markdown via a lightweight offline converter.
   - Help > Export Docs JSON writes `docs/docs_index.json`; also available via `--export-docs` CLI.
 
-- Follow‑ups
+- Follow-ups
   - Anchor navigation inside a full-file render; auto‑scroll to the selected section.
   - Configurable include paths (e.g., include `tests/TEST_INDEX.md` and nested docs).
   - External link handling: open in system browser; keep viewer sandboxed.
+
+- **AI Action Log counters — PLANNED**
+  - Track last plan latency, estimated tokens and total writes; show in status bar/debug view.
 
 ---
 
@@ -135,6 +153,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - Async I/O adoption — DONE (CSV)
   - Import/Export CSV now async with busy guards; pattern matches Open/Save async.
+
+- **Persist Freeze Panes — PLANNED**
+  - Store per-sheet Freeze Top Row / First Column in workbook JSON and restore on load.
 
 ---
 
@@ -151,6 +172,9 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 - Fill Down (Ctrl+D) — DONE; Fill Right (Ctrl+R) — DONE; Drag‑fill handle — DONE (basic)
   - Keyboard-first and drag-handle implementations with reference rewriting for formulas and ranges; grouped undo and incremental repaint. Series detection/increments remain in backlog.
+
+- **Plan simulator overlay — PLANNED**
+  - Visual diff (green add, yellow modify, red clear) before apply; use the simulated diff for apply.
 
 ---
 
@@ -179,6 +203,8 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - No-write to input column unless explicitly allowed (two-step variant adding new inputs in empty rows only).
   - Formula auto-routing from set_values (values starting with `=` evaluate as formulas).
   - Repair robustness for append-range outputs (explicit selection-row-only writes).
+  - Agent Loop two-phase flow (queries then writes) with transcript assertions.
+  - Structural-op gating scenarios (insert/delete rows/cols) to ensure no stray `set_values`.
 
 ---
 

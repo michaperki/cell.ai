@@ -837,6 +837,29 @@ Next Work
 - Refactor to a single ChatAssistantView + shared ChatSession used by both docked and (optional) pop‑out wrappers; deprecate the second codepath.
 - Extend Test Runner structural assertions (per‑row width, header‑dup checks) and add content checks where safe.
 
+## Two‑Phase Agent Loop + Query Schema (2026‑03‑20 PM)
+
+What we shipped
+- Formal query intents in the planner schema: selection_summary, profile_column, unique_values, sample_rows. The planner can now return a top‑level `{"queries":[...]}` block when `AIContext.RequestQueriesOnly=true`.
+- Host‑controlled two‑phase Agent Loop:
+  1) Phase 1: request queries only, execute them deterministically via ObservationTools, and build an Observations transcript.
+  2) Phase 2: send original prompt + transcript; planner returns write commands which we sanitize and apply.
+- Fallback: when queries are unavailable (e.g., Mock), we use the previous single‑phase built‑in observations.
+
+Safety and UX
+- Selection Hard Mode: when enabled in context (and via Chat pane toggle), the planner drops any out‑of‑bounds set_values/set_formula writes after parsing.
+- Chat pane adds policy toggles (input column policy + selection hard mode) and a "Copy Observations" button for convenient sharing of the transcript.
+
+Tests
+- Added `test_30_ai_agent_observe.workbook.json` and spec to run `ai_agent` with apply=false on a small 3‑column dataset; the Test Runner logs an Observations section and asserts it is present.
+- Updated `test_29_ai_agent_city_cleanup` flow benefits from two‑phase loop: the transcript lists uniques/profile first, then the plan is proposed within selection bounds.
+
+Persistence
+- Freeze Panes state (top row / first column) is now persisted per sheet in workbook JSON and re‑applied on load.
+
+Notes
+- Query coverage can be expanded (e.g., `count_where`, `describe_column`) and per‑command rationales can be surfaced in the plan preview in a later pass.
+
 ## Docs Viewer + Markdown Rendering + JSON Export (2026-03-20)
 
 What we shipped

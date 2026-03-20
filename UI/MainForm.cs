@@ -342,6 +342,7 @@ namespace SpreadsheetApp.UI
             _freezeTopRow = !_freezeTopRow;
             if (grid.Rows.Count > 0)
                 grid.Rows[0].Frozen = _freezeTopRow;
+            try { _sheet.FreezeTopRow = _freezeTopRow; } catch { }
         }
 
         private void ToggleFreezeFirstColumn()
@@ -349,6 +350,7 @@ namespace SpreadsheetApp.UI
             _freezeFirstCol = !_freezeFirstCol;
             if (grid.Columns.Count > 0)
                 grid.Columns[0].Frozen = _freezeFirstCol;
+            try { _sheet.FreezeFirstColumn = _freezeFirstCol; } catch { }
         }
 
         private void OpenDocsViewer()
@@ -420,6 +422,15 @@ namespace SpreadsheetApp.UI
             UpdateStatus();
             RefreshTabs();
             try { UpdateAiMenuItemsState(); } catch { }
+            // Apply persisted freeze panes
+            try
+            {
+                _freezeTopRow = _sheet.FreezeTopRow;
+                _freezeFirstCol = _sheet.FreezeFirstColumn;
+                if (grid.Rows.Count > 0) grid.Rows[0].Frozen = _freezeTopRow;
+                if (grid.Columns.Count > 0) grid.Columns[0].Frozen = _freezeFirstCol;
+            }
+            catch { }
         }
 
         private void WireCrossSheetResolver(Spreadsheet sheet)

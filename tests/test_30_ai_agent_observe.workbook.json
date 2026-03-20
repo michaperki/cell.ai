@@ -1,0 +1,36 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Data",
+      "Rows": 50,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Item",
+        "B1": "Qty",
+        "C1": "Price",
+
+        "A2": "Pencil",
+        "B2": "10",
+        "C2": "0.99",
+
+        "A3": "Notebook",
+        "B3": "5",
+        "C3": "2.49",
+
+        "A4": "Eraser",
+        "B4": "3",
+        "C4": "0.79",
+
+        "A5": "Marker",
+        "B5": "12",
+        "C5": "1.29",
+
+        "A6": "Glue",
+        "B6": "2",
+        "C6": "3.50"
+      }
+    }
+  ]
+}
+

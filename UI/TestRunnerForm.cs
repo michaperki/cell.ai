@@ -398,6 +398,10 @@ namespace SpreadsheetApp.UI
                             Log("    Observations:\r\n");
                             foreach (var line in transcript) Log($"      - {line}\r\n");
                         }
+                        else
+                        {
+                            Log("    ASSERTION FAILED: no observations returned by agent loop.\r\n");
+                        }
                         if (plan.Commands.Count == 0)
                         {
                             Log("    -> No changes suggested.\r\n");

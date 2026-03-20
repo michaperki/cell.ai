@@ -202,7 +202,49 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Unit tests for parser, functions, I/O, and formatting.
 - **E2E Test Suite**: 28 `.workbook.json` files in `tests/` covering AI commands (insert/delete cols, copy/move range, delete_sheet, set_format, set_validation, set_conditional_format), formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
  - Structural assertions: after each applied step, assert that all modified cells are within the requested selection; optional schema-aware checks can be enabled for stricter validation.
- - Docked chat pane policy preview now stays in sync with the grid selection and on open/close.
+- Docked chat pane policy preview now stays in sync with the grid selection and on open/close.
+
+## Next Moves (Agentic Harness)
+
+- Agent Loop 0.2
+  - Formalize read/query intents (unique_values, profile_column, sample_rows, selection_summary) in the planner schema for traceability; still host‑executed, no writes.
+  - Two‑phase planning: first pass emits only query intents, host appends an observations transcript, second pass returns a write plan.
+  - Add optional per‑command “rationale” strings for preview only (no writes) to build trust.
+
+- Planner Robustness
+  - Strict structural‑op gating: when prompt asks to insert/delete rows/cols, restrict AllowedCommands to those ops (avoid stray set_values), with optional single‑cell header write handled explicitly later.
+  - Stronger append‑only phrasing in first plan and revision messages: “Write outputs only for selected rows; do not modify earlier rows,” with explicit row bounds.
+  - Typed schema hints v2: per‑column constraints (type, allow_empty, and lightweight hints like “latin alphabet”) passed through context and rendered in policy preview.
+
+- Deterministic Transform Tools
+  - Introduce a `transform_range` command supporting safe transforms (TRIM, PROPER, UPPER/LOWER, STRIP_PUNCT, NORMALIZE_PHONE, DEDUPE_IN_COLUMN). Deterministic, undo‑friendly, low token cost.
+  - City cleanup demo: a host‑side NORMALIZE_CITY map for common variants, falling back to AI when unknown.
+
+- UX — Plan Preview
+  - Plan simulator overlay highlighting affected cells (green add, yellow modify, red clear) before apply; “Apply” uses the simulated diff.
+  - Chat pane: keep policy/schema panel and add mini transcript for Agent Loop with copy‑to‑clipboard.
+
+- Observation Tools Expansion
+  - Multi‑column profiling (5–10 cols): type mix, empties, min/max/mean, top examples; top‑K duplicates per column.
+  - Outlier scan (z‑score) for numeric columns and casing consistency buckets for text.
+
+- Safety & Policy
+  - Write caps per apply (cells/commands) with clear prompts and AI Action Log entries.
+  - “Selection hard mode” toggle: refuse writes outside bounds even after revisions.
+  - Quick toggles for input‑column policy (read‑only, append‑only empty, writable) surfaced in chat pane.
+
+- Batch Schema Fill (resume)
+  - Wire progress UI/cancellation around batch filler; per‑batch retry/backoff; lightweight cost estimate dialog from row count × schema.
+
+- Core Spreadsheet
+  - Workbook‑level recalc across sheets (simple full‑workbook pass for now).
+  - Persist Freeze Panes per sheet in workbook format (save/load).
+  - Conditional formatting rule engine (persistent) as a later step; keep immediate‑apply MVP.
+
+- Testing & Observability
+  - Unit tests for ObservationTools and planner validator (bounds, schema width, input policy).
+  - E2E: agent_city_cleanup asserts on normalization rate and selection‑bounded writes; append‑only scenarios.
+  - Status counters: last plan latency/tokens/writes and incremental‑repaint fallback rate.
 
 ### Planner Robustness (In Progress)
 - Plan parser tolerates typed values in `set_values` and coerces to strings.

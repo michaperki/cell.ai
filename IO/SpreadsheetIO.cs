@@ -22,6 +22,8 @@ namespace SpreadsheetApp.IO
             public Dictionary<string, string> Cells { get; set; } = new();
             public Dictionary<string, FormatData>? Formats { get; set; }
             public Dictionary<string, ValidationData>? Validations { get; set; }
+            public bool FreezeTopRow { get; set; }
+            public bool FreezeFirstColumn { get; set; }
         }
 
         private class FormatData
@@ -56,6 +58,8 @@ namespace SpreadsheetApp.IO
             public Dictionary<string, string> Cells { get; set; } = new();
             public Dictionary<string, FormatData>? Formats { get; set; }
             public Dictionary<string, ValidationData>? Validations { get; set; }
+            public bool FreezeTopRow { get; set; }
+            public bool FreezeFirstColumn { get; set; }
         }
 
         public static void SaveWorkbookToFile(System.Collections.Generic.IReadOnlyList<Spreadsheet> sheets, System.Collections.Generic.IReadOnlyList<string> names, string path)
@@ -64,7 +68,7 @@ namespace SpreadsheetApp.IO
             for (int i = 0; i < sheets.Count; i++)
             {
                 var s = sheets[i];
-                var ws = new WorkbookSheet { Name = (i < names.Count ? names[i] : $"Sheet{i + 1}"), Rows = s.Rows, Columns = s.Columns };
+                var ws = new WorkbookSheet { Name = (i < names.Count ? names[i] : $"Sheet{i + 1}"), Rows = s.Rows, Columns = s.Columns, FreezeTopRow = s.FreezeTopRow, FreezeFirstColumn = s.FreezeFirstColumn };
                 for (int r = 0; r < s.Rows; r++)
                 {
                     for (int c = 0; c < s.Columns; c++)
@@ -171,6 +175,8 @@ namespace SpreadsheetApp.IO
                             }
                         }
                         sheet.Recalculate();
+                        // Freeze panes (optional)
+                        try { sheet.FreezeTopRow = ws.FreezeTopRow; sheet.FreezeFirstColumn = ws.FreezeFirstColumn; } catch { }
                         wb.Sheets.Add(sheet);
                         wb.Names.Add(ws.Name ?? $"Sheet{wb.Names.Count + 1}");
                     }
@@ -201,7 +207,7 @@ namespace SpreadsheetApp.IO
             for (int i = 0; i < sheets.Count; i++)
             {
                 var s = sheets[i];
-                var ws = new WorkbookSheet { Name = (i < names.Count ? names[i] : $"Sheet{i + 1}"), Rows = s.Rows, Columns = s.Columns };
+                var ws = new WorkbookSheet { Name = (i < names.Count ? names[i] : $"Sheet{i + 1}"), Rows = s.Rows, Columns = s.Columns, FreezeTopRow = s.FreezeTopRow, FreezeFirstColumn = s.FreezeFirstColumn };
                 for (int r = 0; r < s.Rows; r++)
                 {
                     for (int c = 0; c < s.Columns; c++)
@@ -305,6 +311,7 @@ namespace SpreadsheetApp.IO
                             }
                         }
                         sheet.Recalculate();
+                        try { sheet.FreezeTopRow = ws.FreezeTopRow; sheet.FreezeFirstColumn = ws.FreezeFirstColumn; } catch { }
                         wb.Sheets.Add(sheet);
                         wb.Names.Add(ws.Name ?? $"Sheet{wb.Names.Count + 1}");
                     }
@@ -329,7 +336,7 @@ namespace SpreadsheetApp.IO
         }
         public static void SaveToFile(Spreadsheet sheet, string path)
         {
-            var data = new SheetData { Rows = sheet.Rows, Columns = sheet.Columns };
+            var data = new SheetData { Rows = sheet.Rows, Columns = sheet.Columns, FreezeTopRow = sheet.FreezeTopRow, FreezeFirstColumn = sheet.FreezeFirstColumn };
             for (int r = 0; r < sheet.Rows; r++)
             {
                 for (int c = 0; c < sheet.Columns; c++)
@@ -387,6 +394,7 @@ namespace SpreadsheetApp.IO
             var sheet = new Spreadsheet(
                 data.Rows > 0 ? data.Rows : Spreadsheet.DefaultRows,
                 data.Columns > 0 ? data.Columns : Spreadsheet.DefaultCols);
+            try { sheet.FreezeTopRow = data.FreezeTopRow; sheet.FreezeFirstColumn = data.FreezeFirstColumn; } catch { }
             foreach (var kv in data.Cells)
             {
                 if (CellAddress.TryParse(kv.Key, out int r, out int c))
@@ -496,6 +504,7 @@ namespace SpreadsheetApp.IO
             var sheet = new Spreadsheet(
                 data.Rows > 0 ? data.Rows : Spreadsheet.DefaultRows,
                 data.Columns > 0 ? data.Columns : Spreadsheet.DefaultCols);
+            try { sheet.FreezeTopRow = data.FreezeTopRow; sheet.FreezeFirstColumn = data.FreezeFirstColumn; } catch { }
             foreach (var kv in data.Cells)
             {
                 if (CellAddress.TryParse(kv.Key, out int r, out int c))

@@ -87,6 +87,13 @@
     }
     ,
     {
+      "file": "test_30_ai_agent_observe.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Look at the selection and produce observations only (uniques, column profile, sample rows). Do not make any changes.", "location": "A1:C6", "apply": false }
+      ]
+    }
+    ,
+    {
       "file": "test_25_ai_copy_move_range.workbook.json",
       "steps": [
         { "action": "ai_chat", "prompt": "Copy A1:B3 to D1:E3. Adjust formulas and references appropriately.", "location": "A1:B3", "apply": true },

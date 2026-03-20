@@ -28,6 +28,12 @@ namespace SpreadsheetApp.Core.AI
 
         // Optional: concise schema for the active selection (headers and types)
         public ColumnSchema[]? Schema { get; set; }
+
+        // Optional: strict selection fencing. When true, the planner/UI should avoid and/or drop any writes outside the selection bounds.
+        public bool SelectionHardMode { get; set; }
+
+        // Optional: when true, the planner should produce only observation/query intents instead of write commands.
+        public bool RequestQueriesOnly { get; set; }
     }
 
     public sealed class ChatMessage

@@ -41,6 +41,8 @@ ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
 - Inline Suggestions: ghost overlay after a short pause when continuing a list; filters out items already present above; Apply/Dismiss buttons; Enter/Tab/Double‑click to accept.
 - Chat Assistant (Ctrl+Shift+C): docked right-side panel with plan → preview → apply; composite undo for multi‑command changes. This is the single chat surface; the former pop‑out window has been removed.
   - Values-only enforcement: when your prompt says “Use set_values only” (or “do not add titles”), the planner will filter out disallowed commands like `set_title` and `set_formula`, and the context will omit Title hints to avoid nudging the model to write titles.
+  - Agent Loop (two‑phase): enable “Use Agent Loop (MVP)” to let the assistant first run lightweight observations (uniques/profile/sample) and then propose a plan. Use “Copy Observations” to copy the transcript.
+  - Policy toggles: set Input column policy (read‑only / append‑only empty / writable) and “Selection hard mode” to strictly prevent any out‑of‑bounds writes.
 
 ## Troubleshooting
 
@@ -51,3 +53,7 @@ ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
 ## Notes on Limits and Timeouts
 - `ANTHROPIC_MAX_TOKENS` controls the Anthropic response budget for planning/fill (default 2048 if unset).
 - `AI_PLAN_TIMEOUT_SEC` sets the Chat planning timeout (default 30s); planning is cancellable.
+
+## Notes on Two‑Phase Planning
+- In the first phase, the planner returns `{"queries": [...]}` only; the host executes them and builds an Observations transcript.
+- In the second phase, the planner receives the original prompt plus Observations and returns `{"commands": [...]}`. All writes are still selection‑bounded and subject to the chosen policy and hard‑mode fencing.

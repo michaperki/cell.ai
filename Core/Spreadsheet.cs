@@ -12,6 +12,10 @@ namespace SpreadsheetApp.Core
         public int Rows { get; private set; }
         public int Columns { get; private set; }
 
+        // View preferences (persisted via workbook I/O)
+        public bool FreezeTopRow { get; set; }
+        public bool FreezeFirstColumn { get; set; }
+
         // Store only non-empty raw values
         private readonly Dictionary<(int r, int c), string> _raw = new();
 

@@ -20,14 +20,18 @@ namespace SpreadsheetApp.UI.AI
         private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 28 };
         private readonly CheckBox _chkAgent = new() { Text = "Use Agent Loop (MVP)", Dock = DockStyle.Top, Height = 20 };
         private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 24 };
+        private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Visible = false };
         private readonly ListBox _lst = new() { Dock = DockStyle.Fill };
         private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 28, Enabled = false };
         private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 56, ReadOnly = true, BackColor = SystemColors.Info, Font = new Font("Consolas", 8.5f) };
+        private readonly CheckBox _chkHardMode = new() { Text = "Selection hard mode (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
+        private readonly ComboBox _inputPolicy = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 22 };
 
         private AIPlan? _currentPlan;
         private readonly Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? _runAgentLoop;
+        private string[] _lastTranscript = Array.Empty<string>();
 
         public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false)
         {
@@ -46,10 +50,13 @@ namespace SpreadsheetApp.UI.AI
             container.Controls.Add(_btnApply);
             container.Controls.Add(_btnPlan);
             container.Controls.Add(_btnRevise);
+            container.Controls.Add(_btnCopyObs);
             container.Controls.Add(_chkAgent);
             container.Controls.Add(_lblStatus);
             container.Controls.Add(_btnReset);
             container.Controls.Add(_policy);
+            container.Controls.Add(_chkHardMode);
+            container.Controls.Add(_inputPolicy);
             container.Controls.Add(_input);
             Controls.Add(container);
 
@@ -62,6 +69,17 @@ namespace SpreadsheetApp.UI.AI
                     _session.AddUser(feedback);
                 }
                 await DoPlanAsync();
+            };
+            _btnCopyObs.Click += (_, __) =>
+            {
+                try
+                {
+                    if (_lastTranscript != null && _lastTranscript.Length > 0)
+                    {
+                        Clipboard.SetText(string.Join("\r\n", _lastTranscript));
+                    }
+                }
+                catch { }
             };
             _btnReset.Click += (_, __) => { _session.Clear(); _lst.Items.Add("History cleared."); };
             _btnApply.Click += (_, __) =>
@@ -89,6 +107,21 @@ namespace SpreadsheetApp.UI.AI
             };
 
             if (!string.IsNullOrWhiteSpace(initialPrompt)) _input.Text = initialPrompt;
+            // Initialize input policy options
+            try
+            {
+                _inputPolicy.Items.AddRange(new object[] { "Input read-only", "Append-only (empty rows)", "Writable" });
+                _inputPolicy.SelectedIndex = 1; // default append-only
+                _inputPolicy.SelectedIndexChanged += (_, __) =>
+                {
+                    try { var ctx = _getContext(); _policy.Text = BuildPolicyPreview(ApplyUiPolicy(ctx, previewOnly: true)); } catch { }
+                };
+                _chkHardMode.CheckedChanged += (_, __) =>
+                {
+                    try { var ctx = _getContext(); ctx.SelectionHardMode = _chkHardMode.Checked; _policy.Text = BuildPolicyPreview(ctx); } catch { }
+                };
+            }
+            catch { }
             try { var ctx0 = _getContext(); _policy.Text = BuildPolicyPreview(ctx0); } catch { }
             if (autoPlan) _ = DoPlanAsync();
         }
@@ -134,10 +167,13 @@ namespace SpreadsheetApp.UI.AI
                 }
                 else
                 {
+                    // Apply UI policy toggles before planning
+                    ctx = ApplyUiPolicy(ctx, previewOnly: false);
                     plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
                 }
                 _currentPlan = plan;
                 _lst.Items.Clear();
+                _lastTranscript = transcript;
                 if (useAgent && transcript.Length > 0)
                 {
                     _lst.Items.Add("Observations:");
@@ -175,6 +211,35 @@ namespace SpreadsheetApp.UI.AI
                 _btnPlan.Enabled = true;
                 _lblStatus.Visible = false;
             }
+        }
+
+        private AIContext ApplyUiPolicy(AIContext ctx, bool previewOnly)
+        {
+            try
+            {
+                var wp = ctx.WritePolicy ?? new SelectionWritePolicy();
+                switch (_inputPolicy.SelectedIndex)
+                {
+                    case 0: // read-only
+                        wp.AllowInputWritesForExistingRows = false;
+                        wp.AllowInputWritesForEmptyRows = false;
+                        break;
+                    case 1: // append-only
+                        wp.AllowInputWritesForExistingRows = false;
+                        wp.AllowInputWritesForEmptyRows = true;
+                        break;
+                    case 2: // writable
+                        wp.AllowInputWritesForExistingRows = true;
+                        wp.AllowInputWritesForEmptyRows = true;
+                        break;
+                    default:
+                        break;
+                }
+                ctx.WritePolicy = wp;
+                ctx.SelectionHardMode = _chkHardMode.Checked;
+            }
+            catch { }
+            return ctx;
         }
 
         private static string BuildPolicyPreview(AIContext ctx)

@@ -18,77 +18,122 @@ namespace SpreadsheetApp.Core.AI
 
         public static async Task<Result> RunAsync(IChatPlanner planner, Spreadsheet sheet, AIContext baseContext, string userPrompt, CancellationToken ct)
         {
-            // 1) Observe selection summary and column profile
             int sr = Math.Max(0, baseContext.StartRow);
             int sc = Math.Max(0, baseContext.StartCol);
             int rows = Math.Max(1, baseContext.Rows);
             int cols = Math.Max(1, baseContext.Cols);
             var transcript = new List<string>();
 
-            var sel = ObservationTools.SummarizeSelection(sheet, sr, sc, rows, cols);
-            transcript.Add($"Selection {sel.TopLeft} · {rows}x{cols} | non-empty rows: {sel.NonEmptyRowCount}");
-            if (sel.HeaderRow != null && sel.HeaderRow.Length > 0)
+            // Phase 1: ask the planner for query intents
+            var qctx = new AIContext
             {
-                // Show up to first 4 headers
-                var hdr = string.Join(", ", sel.HeaderRow.Length > 4 ? sel.HeaderRow[..4] : sel.HeaderRow);
-                transcript.Add($"Header: [{hdr}]");
-            }
+                SheetName = baseContext.SheetName,
+                StartRow = baseContext.StartRow,
+                StartCol = baseContext.StartCol,
+                Rows = baseContext.Rows,
+                Cols = baseContext.Cols,
+                Title = baseContext.Title,
+                SelectionValues = baseContext.SelectionValues,
+                NearbyValues = baseContext.NearbyValues,
+                Workbook = baseContext.Workbook,
+                Conversation = baseContext.Conversation,
+                AllowedCommands = new string[0],
+                WritePolicy = baseContext.WritePolicy,
+                Schema = baseContext.Schema,
+                RequestQueriesOnly = true
+            };
+            var qplan = await planner.PlanAsync(qctx, userPrompt, ct).ConfigureAwait(false);
 
-            // Target primary column = first column in selection
-            int dataStartRow = sr;
-            // If the cell above has a header, treat sr as first data row and show header separately
-            try { if (sr > 0) { var above = sheet.GetRaw(sr - 1, sc); if (!string.IsNullOrWhiteSpace(above)) dataStartRow = sr; } }
-            catch { }
-
-            var profile = ObservationTools.ProfileColumn(sheet, sc, dataStartRow, rows, sel.HeaderRow != null && sel.HeaderRow.Length > 0 ? sel.HeaderRow[0] : null);
-            var sb = new StringBuilder();
-            sb.Append($"Col {profile.ColumnLetter} '{profile.Header ?? ""}': non-empty={profile.NonEmpty}, empty={profile.Empties}");
-            if (profile.MostlyNumeric)
+            if (qplan.Queries.Count > 0)
             {
-                sb.Append($", numeric min={profile.Min?.ToString() ?? "-"} max={profile.Max?.ToString() ?? "-"} mean={profile.Mean?.ToString("0.###") ?? "-"}");
+                foreach (var q in qplan.Queries)
+                {
+                    switch (q)
+                    {
+                        case SelectionSummaryQuery:
+                        {
+                            var sel = ObservationTools.SummarizeSelection(sheet, sr, sc, rows, cols);
+                            transcript.Add($"Selection {sel.TopLeft} · {rows}x{cols} | non-empty rows: {sel.NonEmptyRowCount}");
+                            if (sel.HeaderRow != null && sel.HeaderRow.Length > 0)
+                            {
+                                var hdr = string.Join(", ", sel.HeaderRow.Length > 4 ? sel.HeaderRow[..4] : sel.HeaderRow);
+                                transcript.Add($"Header: [{hdr}]");
+                            }
+                            break;
+                        }
+                        case ProfileColumnQuery pc:
+                        {
+                            int dataStartRow = sr;
+                            try { if (sr > 0) { var above = sheet.GetRaw(sr - 1, pc.ColumnIndex); if (!string.IsNullOrWhiteSpace(above)) dataStartRow = sr; } } catch { }
+                            var prof = ObservationTools.ProfileColumn(sheet, pc.ColumnIndex, dataStartRow, rows, null);
+                            var sb = new StringBuilder();
+                            sb.Append($"Col {prof.ColumnLetter} '{prof.Header ?? ""}': non-empty={prof.NonEmpty}, empty={prof.Empties}");
+                            if (prof.MostlyNumeric) sb.Append($", numeric min={prof.Min?.ToString() ?? "-"} max={prof.Max?.ToString() ?? "-"} mean={prof.Mean?.ToString("0.###") ?? "-"}");
+                            else if (prof.TopExamples.Length > 0) sb.Append($", examples: {string.Join(" | ", prof.TopExamples)}");
+                            transcript.Add(sb.ToString());
+                            break;
+                        }
+                        case UniqueValuesQuery uq:
+                        {
+                            var uniques = ObservationTools.UniqueValues(sheet, uq.ColumnIndex, sr, rows, topK: uq.TopK > 0 ? uq.TopK : 10);
+                            var sb = new StringBuilder();
+                            sb.Append($"Uniques {uniques.ColumnLetter}: total={uniques.TotalUniques}, blanks={uniques.Blanks}");
+                            if (uniques.Top.Count > 0)
+                            {
+                                sb.Append(" | top: ");
+                                int k = 0; foreach (var (val, count) in uniques.Top) { if (k++ > 0) sb.Append(", "); string v = val.Length > 24 ? val.Substring(0, 24) + "…" : val; sb.Append($"'{v}'×{count}"); }
+                            }
+                            transcript.Add(sb.ToString());
+                            break;
+                        }
+                        case SampleRowsQuery s:
+                        {
+                            int rr = Math.Min(Math.Max(1, s.Rows), rows);
+                            int cc = Math.Min(Math.Max(1, s.Cols), cols);
+                            var sample = ObservationTools.GetRange(sheet, sr, sc, rr, cc);
+                            for (int r = 0; r < rr; r++) transcript.Add($"Row {sr + r + 1}: {string.Join(" | ", sample[r])}");
+                            break;
+                        }
+                    }
+                }
             }
             else
             {
-                if (profile.TopExamples.Length > 0) sb.Append($", examples: {string.Join(" | ", profile.TopExamples)}");
-            }
-            transcript.Add(sb.ToString());
-
-            // 2) Unique values for the primary column
-            var uniques = ObservationTools.UniqueValues(sheet, sc, dataStartRow, rows, topK: 10);
-            var uniqSb = new StringBuilder();
-            uniqSb.Append($"Uniques {uniques.ColumnLetter}: total={uniques.TotalUniques}, blanks={uniques.Blanks}");
-            if (uniques.Top.Count > 0)
-            {
-                uniqSb.Append(" | top: ");
-                int k = 0;
-                foreach (var (val, count) in uniques.Top)
+                // Fallback minimal observations
+                var sel = ObservationTools.SummarizeSelection(sheet, sr, sc, rows, cols);
+                transcript.Add($"Selection {sel.TopLeft} · {rows}x{cols} | non-empty rows: {sel.NonEmptyRowCount}");
+                if (sel.HeaderRow != null && sel.HeaderRow.Length > 0)
                 {
-                    if (k++ > 0) uniqSb.Append(", ");
-                    string v = val.Length > 24 ? val.Substring(0, 24) + "…" : val;
-                    uniqSb.Append($"'{v}'×{count}");
+                    var hdr = string.Join(", ", sel.HeaderRow.Length > 4 ? sel.HeaderRow[..4] : sel.HeaderRow);
+                    transcript.Add($"Header: [{hdr}]");
                 }
+                var prof = ObservationTools.ProfileColumn(sheet, sc, sr, rows, sel.HeaderRow != null && sel.HeaderRow.Length > 0 ? sel.HeaderRow[0] : null);
+                var sb = new StringBuilder();
+                sb.Append($"Col {prof.ColumnLetter} '{prof.Header ?? ""}': non-empty={prof.NonEmpty}, empty={prof.Empties}");
+                if (prof.MostlyNumeric) sb.Append($", numeric min={prof.Min?.ToString() ?? "-"} max={prof.Max?.ToString() ?? "-"} mean={prof.Mean?.ToString("0.###") ?? "-"}");
+                else if (prof.TopExamples.Length > 0) sb.Append($", examples: {string.Join(" | ", prof.TopExamples)}");
+                transcript.Add(sb.ToString());
+                var uniques = ObservationTools.UniqueValues(sheet, sc, sr, rows, topK: 10);
+                var us = new StringBuilder();
+                us.Append($"Uniques {uniques.ColumnLetter}: total={uniques.TotalUniques}, blanks={uniques.Blanks}");
+                if (uniques.Top.Count > 0)
+                {
+                    us.Append(" | top: ");
+                    int k = 0; foreach (var (val, count) in uniques.Top) { if (k++ > 0) us.Append(", "); string v = val.Length > 24 ? val.Substring(0, 24) + "…" : val; us.Append($"'{v}'×{count}"); }
+                }
+                transcript.Add(us.ToString());
+                int sampleRows = Math.Min(5, rows);
+                var sample = ObservationTools.GetRange(sheet, sr, sc, sampleRows, Math.Min(cols, 6));
+                for (int r = 0; r < sample.Length; r++) transcript.Add($"Row {sr + r + 1}: {string.Join(" | ", sample[r])}");
             }
-            transcript.Add(uniqSb.ToString());
 
-            // 3) Sample first few data rows in the selection (up to 5)
-            int sampleRows = Math.Min(5, rows);
-            var sample = ObservationTools.GetRange(sheet, sr, sc, sampleRows, Math.Min(cols, 6));
-            var sampleLines = new List<string>();
-            for (int r = 0; r < sample.Length; r++)
-            {
-                var line = string.Join(" | ", sample[r]);
-                sampleLines.Add($"Row {sr + r + 1}: {line}");
-            }
-            transcript.AddRange(sampleLines);
-
-            // Build an augmented user prompt including observations
+            // Phase 2: build augmented prompt and ask for writes
             var augUser = new StringBuilder();
             augUser.AppendLine(userPrompt.Trim());
             augUser.AppendLine();
-            augUser.AppendLine("Context:");
+            augUser.AppendLine("Observations:");
             foreach (var t in transcript) augUser.AppendLine("- " + t);
 
-            // Keep conversation history; otherwise same context
             var ctx = new AIContext
             {
                 SheetName = baseContext.SheetName,
@@ -103,9 +148,9 @@ namespace SpreadsheetApp.Core.AI
                 Conversation = baseContext.Conversation,
                 AllowedCommands = baseContext.AllowedCommands,
                 WritePolicy = baseContext.WritePolicy,
-                Schema = baseContext.Schema
+                Schema = baseContext.Schema,
+                RequestQueriesOnly = false
             };
-
             var plan = await planner.PlanAsync(ctx, augUser.ToString(), ct).ConfigureAwait(false);
             return new Result { Plan = plan, Transcript = transcript.ToArray() };
         }
