@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SpreadsheetApp.Core.AI
 {
-    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange, RenameSheet, SetFormula, SortRange, InsertRows, DeleteRows }
+    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange, RenameSheet, SetFormula, SortRange, InsertRows, DeleteRows, InsertCols, DeleteCols, DeleteSheet, CopyRange, MoveRange, SetFormat, SetValidation, SetConditionalFormat }
 
     public interface IAICommand
     {
@@ -105,5 +105,102 @@ namespace SpreadsheetApp.Core.AI
         public int At { get; set; }     // 0-based row index to start deleting
         public int Count { get; set; } = 1;
         public string Summarize() => $"Delete {Count} row(s) at row {At + 1}";
+    }
+
+    public sealed class InsertColsCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.InsertCols;
+        public int At { get; set; }     // 0-based column index to insert before
+        public int Count { get; set; } = 1;
+        public string Summarize() => $"Insert {Count} column(s) at col {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(At)}";
+    }
+
+    public sealed class DeleteColsCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.DeleteCols;
+        public int At { get; set; }     // 0-based column index to start deleting
+        public int Count { get; set; } = 1;
+        public string Summarize() => $"Delete {Count} column(s) at col {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(At)}";
+    }
+
+    public sealed class DeleteSheetCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.DeleteSheet;
+        // One of Index (1-based) or Name can be provided; if neither, applies to active.
+        public int? Index1 { get; set; }
+        public string? Name { get; set; }
+        public string Summarize() => $"Delete sheet {(Index1.HasValue ? Index1.ToString() : (Name ?? "(active)"))}";
+    }
+
+    public sealed class CopyRangeCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.CopyRange;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public int DestRow { get; set; }
+        public int DestCol { get; set; }
+        public string Summarize() => $"Copy {Rows}x{Cols} from {StartRow+1},{StartCol+1} to {DestRow+1},{DestCol+1}";
+    }
+
+    public sealed class MoveRangeCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.MoveRange;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public int DestRow { get; set; }
+        public int DestCol { get; set; }
+        public string Summarize() => $"Move {Rows}x{Cols} from {StartRow+1},{StartCol+1} to {DestRow+1},{DestCol+1}";
+    }
+
+    public sealed class SetFormatCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.SetFormat;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public bool? Bold { get; set; }
+        public int? ForeColorArgb { get; set; } // ARGB int, e.g., 0xFFRRGGBB
+        public int? BackColorArgb { get; set; }
+        public string? NumberFormat { get; set; }
+        public string? HAlign { get; set; } // left|center|right
+        public string Summarize()
+            => $"Format {Rows}x{Cols} at {StartRow+1},{StartCol+1} (bold={(Bold?.ToString() ?? "-")}, fore={(ForeColorArgb?.ToString("X") ?? "-")}, back={(BackColorArgb?.ToString("X") ?? "-")}, num={(NumberFormat ?? "-")}, align={(HAlign ?? "-")})";
+    }
+
+    public sealed class SetValidationCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.SetValidation;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public string Mode { get; set; } = "none"; // none|list|number_between
+        public bool AllowEmpty { get; set; } = true;
+        public double? Min { get; set; }
+        public double? Max { get; set; }
+        public string[]? AllowedList { get; set; }
+        public string Summarize() => $"Validation {Mode} at {StartRow+1},{StartCol+1} ({Rows}x{Cols})";
+    }
+
+    public sealed class SetConditionalFormatCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.SetConditionalFormat;
+        public int StartRow { get; set; }
+        public int StartCol { get; set; }
+        public int Rows { get; set; } = 1;
+        public int Cols { get; set; } = 1;
+        public string Operator { get; set; } = ">"; // >,>=,<,<=,==,!=
+        public double Threshold { get; set; }
+        public bool? Bold { get; set; }
+        public int? ForeColorArgb { get; set; }
+        public int? BackColorArgb { get; set; }
+        public string? NumberFormat { get; set; }
+        public string? HAlign { get; set; }
+        public string Summarize() => $"CondFmt {Operator}{Threshold} at {StartRow+1},{StartCol+1} ({Rows}x{Cols})";
     }
 }

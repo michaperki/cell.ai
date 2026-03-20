@@ -146,6 +146,37 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
   - Docked chat pane is now the only chat surface. “Toggle Chat” shows/hides the pane.
   - The former pop‑out window has been removed to reduce duplication and maintenance.
 
+### AI v0.3 — Observation Tools + Agent Loop (MVP)
+- Motivation: Close the gap between single‑shot planning and a Claude‑Code‑style loop. The agent must read before it writes.
+- Read/query commands (zero‑risk, no undo):
+  - `get_range(start_row, start_col, rows, cols)` → 2D values
+  - `sample_rows(start_row, end_row, cols[])` → 2D values
+  - `unique_values(col)` → distinct trimmed values with counts
+  - `count_where(filters[])` → integer count; filters are simple `col op value`
+  - `describe_column(col)` → type guess, empties %, min/max/mean (if numeric), top examples
+  - `selection_summary()` → headers, data row count, used bounds
+- Agent loop (host‑controlled, capped to 3 turns):
+  - Turn = observe → reason → (observe or propose plan). Queries execute immediately; mutations are buffered.
+  - The user provides intent (“clean city names”); the agent issues read commands to inspect data, then proposes a final plan.
+  - Apply occurs only after explicit user approval; all writes use a single composite undo.
+- Guardrails:
+  - All read ops are sandboxed to the active sheet/selection; no writes until final apply.
+  - AllowedCommands/WritePolicy still enforced on the final plan.
+  - Time/token budget per loop; cancel anytime.
+- UI/UX:
+  - Chat pane shows the loop transcript: queries and compact results (first N rows/aggregates).
+  - “Plan Candidate” section appears after the final reasoning step with Apply/Revise.
+- Acceptance (MVP):
+  - Agent can autonomously: (a) compute unique values for a column, (b) count blanks, (c) sample rows to infer patterns, (d) propose a `set_values`/`set_formula`/`clear_range` plan within the selection.
+  - Demo on the NJ High Schools dataset: normalize city names column via read → plan → apply.
+- Status: IMPLEMENTED (first pass)
+  - Host‑driven observations + agent loop integrated in Chat pane and Test Runner (`ai_agent` action).
+  - Test 29 added; applies values‑only writes within selection after transcript review.
+  - Next: expose queries to the planner as tool calls; expand observation library.
+- Follow‑ups:
+  - Tool‑calling alignment (provider sees tools with JSON signatures) vs. host‑driven loop (planner emits query intents as structured JSON).
+  - Extend query set (string profiles, regex match counts, histogram bins).
+
 ### Technical Foundation
 - Providers: Mock, OpenAI (`OpenAIProvider`), Anthropic (`AnthropicProvider`), optional External POST (`ExternalApiProvider`).
 - Env‑first config: `.env`/system env — OPENAI_API_KEY / ANTHROPIC_API_KEY; default model via OPENAI_MODEL / ANTHROPIC_MODEL.
@@ -155,6 +186,12 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - UI: `UI/AI/GenerateFillDialog.cs`, `UI/AI/ChatAssistantForm.cs`, AI menu entries + hotkeys; Settings + Test Connection.
 - Observability: manual Test Connection; future in‑app counters.
 
+### Custom Model Track (stretch)
+- Fine-tune or LoRA-adapt an open weights model on de‑identified, synthetic spreadsheet tasks (schema fills, formula authoring, range ops).
+- Training stack using publicly available building blocks (Hugging Face datasets/peft/TRL, vLLM/ORPO for preference tuning).
+- Tool-calling alignment: supervised traces of JSON plans mapped to commands; eval on our `tests/` suite through the Test Runner.
+- Deployment: local server or self-hosted endpoint with the same planner contract; fall back to OpenAI when unavailable.
+
 ### Test & Verification (AI)
 - Unit: shape enforcement, JSON parsing, selection‑bounded writes, undo integrity.
 - Scenario: grocery list single‑column fill; cancel mid‑request; preview accept; cache hit on repeat.
@@ -163,7 +200,7 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 ## Quality & Verification
 - Build gate and quick manual checklist per release.
 - Unit tests for parser, functions, I/O, and formatting.
-- **E2E Test Suite**: 16 `.workbook.json` files in `tests/` covering AI commands, formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
+- **E2E Test Suite**: 28 `.workbook.json` files in `tests/` covering AI commands (insert/delete cols, copy/move range, delete_sheet, set_format, set_validation, set_conditional_format), formula engine, undo/redo, I/O, and UX flows. Steps and prompts live in `tests/TEST_SPECS.json` and run via the Test Runner (Test menu). The runner can save after-step snapshots, dump provider plan JSON and the constructed user/system prompts, and logs a concise diff of changed cells per step. See `tests/TEST_INDEX.md`.
  - Structural assertions: after each applied step, assert that all modified cells are within the requested selection; optional schema-aware checks can be enabled for stricter validation.
  - Docked chat pane policy preview now stays in sync with the grid selection and on open/close.
 

@@ -1,0 +1,18 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "CondFmt",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Value",
+        "A2": "5",
+        "A3": "10",
+        "A4": "15",
+        "A5": "20"
+      }
+    }
+  ]
+}
+

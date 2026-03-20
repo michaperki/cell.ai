@@ -27,6 +27,9 @@ namespace SpreadsheetApp.Core
         // Cell formatting
         private readonly Dictionary<(int r, int c), CellFormat> _formats = new();
 
+        // Data validation rules (per cell)
+        private readonly Dictionary<(int r, int c), ValidationRule> _validations = new();
+
         // Optional resolver for cross-sheet references (Sheet name, row, col -> EvaluationResult)
         public Func<string, int, int, EvaluationResult>? CrossSheetResolver { get; set; }
 
@@ -107,6 +110,58 @@ namespace SpreadsheetApp.Core
         }
 
         public IEnumerable<KeyValuePair<(int r, int c), CellFormat>> GetAllFormats() => _formats;
+
+        // Enumerate all validation rules for persistence/inspection
+        public IEnumerable<KeyValuePair<(int r, int c), ValidationRule>> GetAllValidations() => _validations;
+
+        public ValidationRule? GetValidation(int row, int col)
+        {
+            _validations.TryGetValue((row, col), out var v);
+            return v;
+        }
+
+        public void SetValidation(int row, int col, ValidationRule? rule)
+        {
+            var key = (row, col);
+            if (rule == null || rule.IsEmpty()) _validations.Remove(key);
+            else _validations[key] = rule;
+        }
+
+        public bool TryValidate(int row, int col, string? raw, out string? error)
+        {
+            error = null;
+            if (!_validations.TryGetValue((row, col), out var rule) || rule == null) return true;
+            raw ??= string.Empty;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                if (rule.AllowEmpty) return true;
+                error = "Empty value is not allowed."; return false;
+            }
+            switch (rule.Mode)
+            {
+                case ValidationMode.None:
+                    return true;
+                case ValidationMode.NumberBetween:
+                {
+                    if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+                    { error = "Enter a number."; return false; }
+                    if (rule.Min.HasValue && d < rule.Min.Value) { error = $"Must be >= {rule.Min.Value}"; return false; }
+                    if (rule.Max.HasValue && d > rule.Max.Value) { error = $"Must be <= {rule.Max.Value}"; return false; }
+                    return true;
+                }
+                case ValidationMode.List:
+                {
+                    if (rule.AllowedList == null || rule.AllowedList.Length == 0) return true;
+                    foreach (var s in rule.AllowedList)
+                    {
+                        if (string.Equals(s?.Trim(), raw.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+                    }
+                    error = "Value not in allowed list."; return false;
+                }
+                default:
+                    return true;
+            }
+        }
 
         public void Recalculate()
         {

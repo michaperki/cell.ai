@@ -55,6 +55,40 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ---
 
+## Active — AI Observation Tools (new)
+
+- Query command grammar — PARTIAL
+  - Host‑side ObservationTools implemented for `selection_summary`, `unique_values`, `describe_column`, and safe `get_range` sampling (no side effects).
+  - Planner query intents not yet formalized as schema/tool‑calls (keep host‑driven loop for MVP).
+
+- Planner integration for queries — PARTIAL
+  - Host executes observations and augments the user prompt with a concise transcript before planning.
+  - Cap results with top‑K uniques and first N row samples to control tokens.
+
+- UI transcript of observations — DONE (first pass)
+  - Chat pane renders an observations section above the plan when agent loop is used. Transcript exported by Test Runner.
+
+- Tests — PARTIAL
+  - E2E added: `test_29_ai_agent_city_cleanup` (observe then apply). Unit coverage for ObservationTools still pending.
+
+---
+
+## Active — Agent Loop (MVP)
+
+- Loop controller — DONE (first pass)
+  - Host‑side loop (single observation phase → propose plan) wired in Chat pane and Test Runner.
+
+- Safety gating — DONE (first pass)
+  - Values‑only/no‑titles filtering honored in agent automation; plan is sanitized to selection before apply.
+
+- UX — DONE (first pass)
+  - Chat toggle “Use Agent Loop (MVP)” and transcript section; Test Runner `ai_agent` action with transcript export.
+
+- Demo dataset — DONE (first pass)
+  - `test_29_ai_agent_city_cleanup.workbook.json` added; uses messy City data for normalization.
+
+---
+
 ## Active — Infrastructure
 
 - Incremental recalc UI integration — DONE (gated)
@@ -148,7 +182,7 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ---
 
-## Active — Structured Batch Fill (MVP: Hebrew roots)
+## Active — Structured Batch Fill (MVP: Hebrew roots) — PAUSED (reprioritized behind v0.3 Agent Loop)
 
 - Schema Fill v1 (menu action) — DONE (single-shot)
   - AI > Fill Selected From Schema… generates a values-only set_values plan for the current selection using headers as schema and the input column to the left. Single-shot ≤40 rows; sanitized to selection; composite undo.
@@ -156,16 +190,16 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - AI drag‑to‑fill gesture — NOT STARTED
   - Select empty output range; system detects header row + input column; fires AI request(s); fills. Single-shot for ≤40 rows, batched beyond that.
 
-- **Batch orchestration — NOT STARTED**
+- **Batch orchestration — NOT STARTED (Paused)**
   - Split large fills into 20–50 row batches. Same system prompt + headers per batch (prompt‑cache friendly). Progress bar, cancel, per‑batch retry, incremental apply.
 
-- **Cost estimation dialog — NOT STARTED**
+- **Cost estimation dialog — NOT STARTED (Paused)**
   - Before batch fill, estimate tokens/cost from schema + row count. User confirms before proceeding.
 
-- **Anthropic Batch API integration — NOT STARTED (stretch)**
+- **Anthropic Batch API integration — NOT STARTED (stretch, Paused)**
   - For 1,000+ rows, submit async batch job at 50% cost. Poll completion, import results, resume on interruption.
 
-- **Prompt template for schema‑driven fill — NOT STARTED**
+- **Prompt template for schema‑driven fill — NOT STARTED (Paused)**
   - Current free‑form chat prompt doesn't reliably align output rows to input column values. Need a structured prompt template that explicitly maps each root (row) to its expected output columns. Discovered via Test 16 where the AI misaligned roots to rows and wrote Hebrew in the transliteration column.
 
 - **TestRunnerForm disposed‑object crash — FIXED**

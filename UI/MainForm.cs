@@ -130,7 +130,14 @@ namespace SpreadsheetApp.UI
             // instantiate chat panel
             Func<AIContext> getCtx = () => BuildPlannerContext();
             void apply(AIPlan plan) => ApplyPlan(plan);
-            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply);
+            async System.Threading.Tasks.Task<(AIPlan plan, string[] transcript)> runAgentAsync(string prompt, System.Threading.CancellationToken ct)
+            {
+                var ctx = BuildPlannerContext();
+                ctx.Conversation = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ChatMessage>(_chatSession.History);
+                var res = await SpreadsheetApp.Core.AI.AgentLoop.RunAsync(_chatPlanner, _sheet, ctx, prompt, ct).ConfigureAwait(true);
+                return (res.Plan, res.Transcript);
+            }
+            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply, runAgentAsync);
             _chatPane.Dock = DockStyle.Fill;
             _chatDockHost.Controls.Add(_chatPane);
 
@@ -445,6 +452,17 @@ namespace SpreadsheetApp.UI
             var cell = grid[e.ColumnIndex, e.RowIndex];
             var raw = cell.Value?.ToString() ?? string.Empty;
             var oldRaw = _sheet.GetRaw(e.RowIndex, e.ColumnIndex);
+            try
+            {
+                if (!_sheet.TryValidate(e.RowIndex, e.ColumnIndex, raw, out string? err))
+                {
+                    // Revert and notify
+                    cell.Value = oldRaw ?? string.Empty;
+                    MessageBox.Show(this, err ?? "Invalid value.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            catch { }
             _sheet.SetRaw(e.RowIndex, e.ColumnIndex, raw);
             if (!_suppressRecord)
             {
@@ -2544,6 +2562,8 @@ namespace SpreadsheetApp.UI
                             if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
                             string? oldRaw = _sheet.GetRaw(rr, cc);
                             string newRaw = set.Values[r][c] ?? string.Empty;
+                            // Enforce validation rules on AI writes
+                            try { if (!_sheet.TryValidate(rr, cc, newRaw, out _)) continue; } catch { }
                             _sheet.SetRaw(rr, cc, newRaw);
                             edits.Add((rr, cc, oldRaw, newRaw));
                             foreach (var ac in _sheet.RecalculateDirty(rr, cc)) affected.Add(ac);
@@ -2811,6 +2831,317 @@ namespace SpreadsheetApp.UI
                     for (int r = at; r < _sheet.Rows; r++)
                         for (int c = 0; c < _sheet.Columns; c++)
                             affected.Add((r, c));
+                }
+                else if (cmd is InsertColsCommand ic)
+                {
+                    int at = Math.Max(0, Math.Min(_sheet.Columns - 1, ic.At));
+                    int count = Math.Max(1, Math.Min(_sheet.Columns - at, ic.Count));
+                    // Shift from right to left to avoid overwrites
+                    for (int c = _sheet.Columns - 1; c >= at + count; c--)
+                    {
+                        int srcCol = c - count;
+                        for (int r = 0; r < _sheet.Rows; r++)
+                        {
+                            string? srcRaw = _sheet.GetRaw(r, srcCol);
+                            string? dstRaw = _sheet.GetRaw(r, c);
+                            if (srcRaw != dstRaw)
+                            {
+                                _sheet.SetRaw(r, c, srcRaw);
+                                edits.Add((r, c, dstRaw, srcRaw));
+                            }
+                            var srcFmt = _sheet.GetFormat(r, srcCol);
+                            _sheet.SetFormat(r, c, srcFmt);
+                        }
+                    }
+                    // Clear the inserted columns
+                    for (int c = at; c < at + count && c < _sheet.Columns; c++)
+                    {
+                        for (int r = 0; r < _sheet.Rows; r++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old))
+                            {
+                                _sheet.SetRaw(r, c, string.Empty);
+                                edits.Add((r, c, old, string.Empty));
+                            }
+                            _sheet.SetFormat(r, c, null);
+                        }
+                    }
+                    _sheet.Recalculate();
+                    for (int r = 0; r < _sheet.Rows; r++)
+                        for (int c = at; c < _sheet.Columns; c++)
+                            affected.Add((r, c));
+                }
+                else if (cmd is DeleteColsCommand dc)
+                {
+                    int at = Math.Max(0, Math.Min(_sheet.Columns - 1, dc.At));
+                    int count = Math.Max(1, Math.Min(_sheet.Columns - at, dc.Count));
+                    // Record old values for undo
+                    for (int c = at; c < at + count && c < _sheet.Columns; c++)
+                    {
+                        for (int r = 0; r < _sheet.Rows; r++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old)) edits.Add((r, c, old, string.Empty));
+                        }
+                    }
+                    // Shift columns left
+                    for (int c = at; c < _sheet.Columns - count; c++)
+                    {
+                        int srcCol = c + count;
+                        for (int r = 0; r < _sheet.Rows; r++)
+                        {
+                            string? srcRaw = _sheet.GetRaw(r, srcCol);
+                            string? dstRaw = _sheet.GetRaw(r, c);
+                            _sheet.SetRaw(r, c, srcRaw);
+                            if (srcRaw != dstRaw) edits.Add((r, c, dstRaw, srcRaw));
+                            var srcFmt = _sheet.GetFormat(r, srcCol);
+                            _sheet.SetFormat(r, c, srcFmt);
+                        }
+                    }
+                    // Clear the vacated columns at the far right
+                    for (int c = _sheet.Columns - count; c < _sheet.Columns; c++)
+                    {
+                        for (int r = 0; r < _sheet.Rows; r++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old))
+                            {
+                                _sheet.SetRaw(r, c, string.Empty);
+                                edits.Add((r, c, old, string.Empty));
+                            }
+                            _sheet.SetFormat(r, c, null);
+                        }
+                    }
+                    _sheet.Recalculate();
+                    for (int r = 0; r < _sheet.Rows; r++)
+                        for (int c = at; c < _sheet.Columns; c++)
+                            affected.Add((r, c));
+                }
+                else if (cmd is DeleteSheetCommand ds)
+                {
+                    int targetIndex = _activeSheetIndex;
+                    if (ds.Index1.HasValue)
+                    {
+                        targetIndex = Math.Max(0, Math.Min(_sheets.Count - 1, ds.Index1.Value - 1));
+                    }
+                    else if (!string.IsNullOrWhiteSpace(ds.Name))
+                    {
+                        int idx = _sheetNames.FindIndex(n => string.Equals(n, ds.Name, StringComparison.OrdinalIgnoreCase));
+                        if (idx >= 0) targetIndex = idx;
+                    }
+                    if (_sheets.Count <= 1)
+                    {
+                        MessageBox.Show(this, "Cannot remove the only sheet.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        RemoveSheetAt(targetIndex);
+                    }
+                }
+                else if (cmd is CopyRangeCommand copyCmd)
+                {
+                    int r0 = Math.Max(0, copyCmd.StartRow); int c0 = Math.Max(0, copyCmd.StartCol);
+                    int rows = Math.Max(1, copyCmd.Rows); int cols = Math.Max(1, copyCmd.Cols);
+                    int rd = Math.Max(0, copyCmd.DestRow); int cd = Math.Max(0, copyCmd.DestCol);
+                    int dRow = rd - r0; int dCol = cd - c0;
+                    // Snapshot source raw + format
+                    var raw = new string[rows][]; var fmts = new Core.CellFormat?[rows][];
+                    for (int r = 0; r < rows; r++)
+                    {
+                        raw[r] = new string[cols]; fmts[r] = new Core.CellFormat?[cols];
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int srcR = r0 + r, srcC = c0 + c;
+                            if (srcR >= 0 && srcR < _sheet.Rows && srcC >= 0 && srcC < _sheet.Columns)
+                            {
+                                raw[r][c] = _sheet.GetRaw(srcR, srcC) ?? string.Empty;
+                                fmts[r][c] = _sheet.GetFormat(srcR, srcC);
+                            }
+                            else { raw[r][c] = string.Empty; fmts[r][c] = null; }
+                        }
+                    }
+                    // Apply at destination with reference rewrite
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int tr = rd + r, tc = cd + c;
+                            if (tr < 0 || tr >= _sheet.Rows || tc < 0 || tc >= _sheet.Columns) continue;
+                            string src = raw[r][c] ?? string.Empty;
+                            string newRaw = src;
+                            if (!string.IsNullOrEmpty(src) && src.StartsWith("=", StringComparison.Ordinal))
+                            {
+                                try { newRaw = RewriteFormulaForPaste(src, dRow, dCol); } catch { newRaw = src; }
+                            }
+                            string? oldRaw = _sheet.GetRaw(tr, tc);
+                            _sheet.SetRaw(tr, tc, newRaw);
+                            edits.Add((tr, tc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(tr, tc)) affected.Add(ac);
+                            // Copy format too
+                            _sheet.SetFormat(tr, tc, fmts[r][c]);
+                        }
+                    }
+                }
+                else if (cmd is MoveRangeCommand moveCmd)
+                {
+                    int r0 = Math.Max(0, moveCmd.StartRow); int c0 = Math.Max(0, moveCmd.StartCol);
+                    int rows = Math.Max(1, moveCmd.Rows); int cols = Math.Max(1, moveCmd.Cols);
+                    int rd = Math.Max(0, moveCmd.DestRow); int cd = Math.Max(0, moveCmd.DestCol);
+                    int dRow = rd - r0; int dCol = cd - c0;
+                    var raw = new string[rows][]; var fmts = new Core.CellFormat?[rows][];
+                    for (int r = 0; r < rows; r++)
+                    {
+                        raw[r] = new string[cols]; fmts[r] = new Core.CellFormat?[cols];
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int srcR = r0 + r, srcC = c0 + c;
+                            raw[r][c] = _sheet.GetRaw(srcR, srcC) ?? string.Empty;
+                            fmts[r][c] = _sheet.GetFormat(srcR, srcC);
+                        }
+                    }
+                    // Write destination first
+                    var destSet = new System.Collections.Generic.HashSet<(int r, int c)>();
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int tr = rd + r, tc = cd + c;
+                            if (tr < 0 || tr >= _sheet.Rows || tc < 0 || tc >= _sheet.Columns) continue;
+                            string src = raw[r][c] ?? string.Empty;
+                            string newRaw = src;
+                            if (!string.IsNullOrEmpty(src) && src.StartsWith("=", StringComparison.Ordinal))
+                            {
+                                try { newRaw = RewriteFormulaForPaste(src, dRow, dCol); } catch { }
+                            }
+                            string? oldRaw = _sheet.GetRaw(tr, tc);
+                            _sheet.SetRaw(tr, tc, newRaw);
+                            edits.Add((tr, tc, oldRaw, newRaw));
+                            foreach (var ac in _sheet.RecalculateDirty(tr, tc)) affected.Add(ac);
+                            _sheet.SetFormat(tr, tc, fmts[r][c]);
+                            destSet.Add((tr, tc));
+                        }
+                    }
+                    // Clear source cells that are not overlapping destination mapping
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int srcR = r0 + r, srcC = c0 + c;
+                            int mappedR = srcR + dRow, mappedC = srcC + dCol;
+                            bool overlaps = destSet.Contains((mappedR, mappedC));
+                            if (!overlaps)
+                            {
+                                string? old = _sheet.GetRaw(srcR, srcC);
+                                if (!string.IsNullOrEmpty(old))
+                                {
+                                    _sheet.SetRaw(srcR, srcC, string.Empty);
+                                    edits.Add((srcR, srcC, old, string.Empty));
+                                    foreach (var ac in _sheet.RecalculateDirty(srcR, srcC)) affected.Add(ac);
+                                }
+                                _sheet.SetFormat(srcR, srcC, null);
+                            }
+                        }
+                    }
+                }
+                else if (cmd is SetFormatCommand fmt)
+                {
+                    int r0 = Math.Max(0, fmt.StartRow); int c0 = Math.Max(0, fmt.StartCol);
+                    int rows = Math.Max(1, fmt.Rows); int cols = Math.Max(1, fmt.Cols);
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r, cc = c0 + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            var cur = _sheet.GetFormat(rr, cc) ?? new CellFormat();
+                            if (fmt.Bold.HasValue) cur.Bold = fmt.Bold.Value;
+                            if (fmt.ForeColorArgb.HasValue) cur.ForeColorArgb = fmt.ForeColorArgb.Value;
+                            if (fmt.BackColorArgb.HasValue) cur.BackColorArgb = fmt.BackColorArgb.Value;
+                            if (!string.IsNullOrWhiteSpace(fmt.NumberFormat)) cur.NumberFormat = fmt.NumberFormat;
+                            if (!string.IsNullOrWhiteSpace(fmt.HAlign))
+                            {
+                                var s = fmt.HAlign!.Trim().ToLowerInvariant();
+                                cur.HAlign = s == "center" ? CellHAlign.Center : s == "right" ? CellHAlign.Right : CellHAlign.Left;
+                            }
+                            _sheet.SetFormat(rr, cc, cur);
+                            // Trigger repaint only; no value change
+                            grid.InvalidateCell(cc, rr);
+                        }
+                    }
+                }
+                else if (cmd is SetValidationCommand vcmd)
+                {
+                    int r0 = Math.Max(0, vcmd.StartRow); int c0 = Math.Max(0, vcmd.StartCol);
+                    int rows = Math.Max(1, vcmd.Rows); int cols = Math.Max(1, vcmd.Cols);
+                    var mode = (vcmd.Mode ?? "none").Trim().ToLowerInvariant();
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r, cc = c0 + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            SpreadsheetApp.Core.ValidationRule? rule = null;
+                            if (mode == "list")
+                            {
+                                rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.List, AllowEmpty = vcmd.AllowEmpty, AllowedList = vcmd.AllowedList };
+                            }
+                            else if (mode == "number_between")
+                            {
+                                rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.NumberBetween, AllowEmpty = vcmd.AllowEmpty, Min = vcmd.Min, Max = vcmd.Max };
+                            }
+                            else
+                            {
+                                rule = null; // clear
+                            }
+                            _sheet.SetValidation(rr, cc, rule);
+                        }
+                    }
+                }
+                else if (cmd is SetConditionalFormatCommand cfmt)
+                {
+                    int r0 = Math.Max(0, cfmt.StartRow); int c0 = Math.Max(0, cfmt.StartCol);
+                    int rows = Math.Max(1, cfmt.Rows); int cols = Math.Max(1, cfmt.Cols);
+                    string op = (cfmt.Operator ?? ">").Trim();
+                    double th = cfmt.Threshold;
+                    for (int r = 0; r < rows; r++)
+                    {
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int rr = r0 + r, cc = c0 + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            var val = _sheet.GetValue(rr, cc);
+                            bool match = false;
+                            if (val.Error == null && val.Number is double d)
+                            {
+                                match = op switch
+                                {
+                                    ">" => d > th,
+                                    ">=" => d >= th,
+                                    "<" => d < th,
+                                    "<=" => d <= th,
+                                    "==" => d == th,
+                                    "!=" => d != th,
+                                    _ => false
+                                };
+                            }
+                            if (match)
+                            {
+                                var cur = _sheet.GetFormat(rr, cc) ?? new CellFormat();
+                                if (cfmt.Bold.HasValue) cur.Bold = cfmt.Bold.Value;
+                                if (cfmt.ForeColorArgb.HasValue) cur.ForeColorArgb = cfmt.ForeColorArgb.Value;
+                                if (cfmt.BackColorArgb.HasValue) cur.BackColorArgb = cfmt.BackColorArgb.Value;
+                                if (!string.IsNullOrWhiteSpace(cfmt.NumberFormat)) cur.NumberFormat = cfmt.NumberFormat;
+                                if (!string.IsNullOrWhiteSpace(cfmt.HAlign))
+                                {
+                                    var s = cfmt.HAlign!.Trim().ToLowerInvariant();
+                                    cur.HAlign = s == "center" ? CellHAlign.Center : s == "right" ? CellHAlign.Right : CellHAlign.Left;
+                                }
+                                _sheet.SetFormat(rr, cc, cur);
+                                grid.InvalidateCell(cc, rr);
+                            }
+                        }
+                    }
                 }
             }
             if (edits.Count > 0 || sheetAddedIndex.HasValue)
@@ -3536,7 +3867,7 @@ namespace SpreadsheetApp.UI
 
         private void OpenTestRunner()
         {
-            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory, CaptureActiveSheetMap);
+            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, RunAgentStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory, CaptureActiveSheetMap);
             runner.ShowDialog(this);
         }
 
@@ -3727,7 +4058,7 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
-            // AllowedCommands (explicit gating) derived from prompt when present or via light heuristics
+            // AllowedCommands (explicit gating) derived from prompt when present or via heuristics
             try
             {
                 string p = prompt ?? string.Empty;
@@ -3737,15 +4068,56 @@ namespace SpreadsheetApp.UI
                 }
                 else
                 {
-                    // Heuristic: if the instruction clearly asks to fill/write simple values (numbers/text/lists)
-                    // and does NOT mention structural/advanced ops, restrict to set_values to reduce accidental formulas.
                     string low = p.ToLowerInvariant();
-                    bool mentionsFormula = low.Contains("formula") || low.Contains("=a") || low.Contains("=sum") || low.Contains("sum(") || low.Contains("average(") || low.Contains("total row");
-                    bool mentionsStructural = low.Contains("sort") || low.Contains("rename") || low.Contains("create sheet") || low.Contains("clear ") || low.Contains("insert ") || low.Contains("delete ") || low.Contains("title");
-                    bool simpleFillIntent = (low.Contains("fill") || low.Contains("write") || low.Contains("list") || low.Contains("pairs") || low.Contains("numbers") || low.Contains("values"));
-                    if (simpleFillIntent && !mentionsFormula && !mentionsStructural)
+                    // Structural ops
+                    bool wantsInsertCol = (low.Contains("insert") && (low.Contains("column") || low.Contains(" col")));
+                    bool wantsDeleteCol = (low.Contains("delete") && (low.Contains("column") || low.Contains(" col")));
+                    bool wantsCopy = low.Contains("copy ") && low.Contains(" to ");
+                    bool wantsMove = low.Contains("move ") && low.Contains(" to ");
+                    bool wantsFormat = low.Contains("set format") || low.Contains("format ") || low.Contains("bold") || low.Contains("alignment") || low.Contains("number format") || low.Contains("background") || low.Contains("fill color") || low.Contains("center alignment");
+                    bool wantsValidation = low.Contains("validation");
+                    bool wantsConditional = low.Contains("conditional format");
+
+                    if (wantsInsertCol)
                     {
-                        ctx.AllowedCommands = new[] { "set_values" };
+                        // Allow setting a specific header cell if explicitly requested; otherwise keep structural only
+                        bool mentionsHeaderCell = low.Contains(" b1") || low.Contains(" a1") || System.Text.RegularExpressions.Regex.IsMatch(low, @"\b[A-Za-z]+1\b");
+                        ctx.AllowedCommands = mentionsHeaderCell ? new[] { "insert_cols", "set_values" } : new[] { "insert_cols" };
+                    }
+                    else if (wantsDeleteCol)
+                    {
+                        ctx.AllowedCommands = new[] { "delete_cols" };
+                    }
+                    else if (wantsCopy && !wantsMove)
+                    {
+                        ctx.AllowedCommands = new[] { "copy_range" };
+                    }
+                    else if (wantsMove && !wantsCopy)
+                    {
+                        ctx.AllowedCommands = new[] { "move_range" };
+                    }
+                    else if (wantsFormat)
+                    {
+                        ctx.AllowedCommands = new[] { "set_format" };
+                    }
+                    else if (wantsValidation)
+                    {
+                        ctx.AllowedCommands = new[] { "set_validation" };
+                    }
+                    else if (wantsConditional)
+                    {
+                        ctx.AllowedCommands = new[] { "set_conditional_format" };
+                    }
+                    else
+                    {
+                        // Simple fill intent without structural mentions → set_values
+                        bool mentionsFormula = low.Contains("formula") || low.Contains("=a") || low.Contains("=sum") || low.Contains("sum(") || low.Contains("average(") || low.Contains("total row");
+                        bool mentionsStructural = low.Contains("sort") || low.Contains("rename") || low.Contains("create sheet") || low.Contains("clear ") || low.Contains("insert ") || low.Contains("delete ") || low.Contains("title");
+                        bool simpleFillIntent = (low.Contains("fill") || low.Contains("write") || low.Contains("list") || low.Contains("pairs") || low.Contains("numbers") || low.Contains("values"));
+                        if (simpleFillIntent && !mentionsFormula && !mentionsStructural)
+                        {
+                            ctx.AllowedCommands = new[] { "set_values" };
+                        }
                     }
                 }
             }
@@ -3813,6 +4185,127 @@ namespace SpreadsheetApp.UI
                 ApplyPlan(plan);
             }
             return plan;
+        }
+
+        public async System.Threading.Tasks.Task<(SpreadsheetApp.Core.AI.AIPlan plan, string[] transcript)> RunAgentStepAsync(string prompt, string? location, bool apply, System.Threading.CancellationToken ct)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(location))
+                {
+                    SetSelectionFromLocation(location!);
+                }
+            }
+            catch { }
+
+            AIContext ctx;
+            try { ctx = BuildPlannerContext(); }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] BuildPlannerContext failed (agent): {ex}\n"); } catch { }
+                return (new SpreadsheetApp.Core.AI.AIPlan(), Array.Empty<string>());
+            }
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(location))
+                {
+                    string loc = location!.Trim();
+                    if (loc.Contains(":", StringComparison.Ordinal))
+                    {
+                        var parts = loc.Split(':');
+                        if (parts.Length == 2 && Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                        {
+                            int rStart = Math.Max(0, Math.Min(r1, r2));
+                            int rEnd = Math.Min(_sheet.Rows - 1, Math.Max(r1, r2));
+                            int cStart = Math.Max(0, Math.Min(c1, c2));
+                            int cEnd = Math.Min(_sheet.Columns - 1, Math.Max(c1, c2));
+                            int rows = rEnd - rStart + 1;
+                            int cols = cEnd - cStart + 1;
+                            ctx.StartRow = rStart;
+                            ctx.StartCol = cStart;
+                            ctx.Rows = rows;
+                            ctx.Cols = cols;
+                            ctx.Title = rStart > 0 ? (_sheet.GetRaw(rStart - 1, cStart) ?? string.Empty) : string.Empty;
+                            var sel = new string[rows][];
+                            for (int r = 0; r < rows; r++)
+                            {
+                                sel[r] = new string[cols];
+                                for (int c = 0; c < cols; c++) sel[r][c] = _sheet.GetDisplay(rStart + r, cStart + c);
+                            }
+                            ctx.SelectionValues = sel;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // Include automation history into context
+            try { ctx.Conversation = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ChatMessage>(_automationHistory); } catch { }
+
+            SpreadsheetApp.Core.AI.AgentLoop.Result res;
+            try
+            {
+                res = await SpreadsheetApp.Core.AI.AgentLoop.RunAsync(_chatPlanner, _sheet, ctx, prompt ?? string.Empty, ct).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText("crash.log", $"[{DateTime.Now:o}] AgentLoop failed: {ex}\n"); } catch { }
+                return (new SpreadsheetApp.Core.AI.AIPlan(), Array.Empty<string>());
+            }
+
+            var plan = res.Plan ?? new SpreadsheetApp.Core.AI.AIPlan();
+
+            // Enforce values-only or no-titles constraints when explicitly requested in prompt
+            try
+            {
+                string p = (prompt ?? string.Empty);
+                bool valuesOnly = p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (valuesOnly)
+                {
+                    plan.Commands.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand);
+                }
+                else if (noTitles)
+                {
+                    plan.Commands.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand);
+                }
+            }
+            catch { }
+
+            // Mirror conversation history updates
+            try
+            {
+                var userMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "user", Content = prompt ?? string.Empty };
+                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
+                var asstMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "assistant", Content = asstSummary };
+                _automationHistory.Add(userMsg);
+                _automationHistory.Add(asstMsg);
+                if (_automationHistory.Count > 10) _automationHistory.RemoveRange(0, _automationHistory.Count - 10);
+            }
+            catch { }
+
+            if (apply && plan.Commands.Count > 0)
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(location) && location!.Contains(":", StringComparison.Ordinal))
+                    {
+                        var parts = location.Split(':');
+                        if (parts.Length == 2 && Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                        {
+                            int rStart = Math.Max(0, Math.Min(r1, r2));
+                            int rEnd = Math.Min(_sheet.Rows - 1, Math.Max(r1, r2));
+                            int cStart = Math.Max(0, Math.Min(c1, c2));
+                            int cEnd = Math.Min(_sheet.Columns - 1, Math.Max(c1, c2));
+                            plan = SanitizePlanToBounds(plan, rStart, cStart, rEnd, cEnd);
+                        }
+                    }
+                }
+                catch { }
+                ApplyPlan(plan);
+            }
+
+            return (plan, res.Transcript ?? Array.Empty<string>());
         }
 
         private SpreadsheetApp.Core.AI.AIPlan SanitizePlanToBounds(SpreadsheetApp.Core.AI.AIPlan plan, int rStart, int cStart, int rEnd, int cEnd)

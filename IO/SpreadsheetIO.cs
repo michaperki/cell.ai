@@ -21,6 +21,7 @@ namespace SpreadsheetApp.IO
             public int Columns { get; set; }
             public Dictionary<string, string> Cells { get; set; } = new();
             public Dictionary<string, FormatData>? Formats { get; set; }
+            public Dictionary<string, ValidationData>? Validations { get; set; }
         }
 
         private class FormatData
@@ -30,6 +31,15 @@ namespace SpreadsheetApp.IO
             public int? BackColorArgb { get; set; }
             public string? NumberFormat { get; set; }
             public string? HAlign { get; set; }
+        }
+
+        private class ValidationData
+        {
+            public string Mode { get; set; } = "none"; // none|list|number_between
+            public bool AllowEmpty { get; set; }
+            public double? Min { get; set; }
+            public double? Max { get; set; }
+            public string[]? AllowedList { get; set; }
         }
 
         private class WorkbookData
@@ -45,6 +55,7 @@ namespace SpreadsheetApp.IO
             public int Columns { get; set; }
             public Dictionary<string, string> Cells { get; set; } = new();
             public Dictionary<string, FormatData>? Formats { get; set; }
+            public Dictionary<string, ValidationData>? Validations { get; set; }
         }
 
         public static void SaveWorkbookToFile(System.Collections.Generic.IReadOnlyList<Spreadsheet> sheets, System.Collections.Generic.IReadOnlyList<string> names, string path)
@@ -77,6 +88,23 @@ namespace SpreadsheetApp.IO
                     };
                 }
                 if (formats.Count > 0) ws.Formats = formats;
+                // Validations
+                var vals = new Dictionary<string, ValidationData>();
+                foreach (var kv in s.GetAllValidations())
+                {
+                    string addr = CellAddress.ToAddress(kv.Key.r, kv.Key.c);
+                    var v = kv.Value;
+                    var vd = new ValidationData
+                    {
+                        Mode = v.Mode.ToString().ToLowerInvariant(),
+                        AllowEmpty = v.AllowEmpty,
+                        Min = v.Min,
+                        Max = v.Max,
+                        AllowedList = v.AllowedList
+                    };
+                    vals[addr] = vd;
+                }
+                if (vals.Count > 0) ws.Validations = vals;
                 wb.Sheets.Add(ws);
             }
             var opts = new JsonSerializerOptions { WriteIndented = true };
@@ -118,6 +146,27 @@ namespace SpreadsheetApp.IO
                                         HAlign = Enum.TryParse<Core.CellHAlign>(f.HAlign ?? "Left", out var ha) ? ha : Core.CellHAlign.Left
                                     };
                                     sheet.SetFormat(r, c, fmt);
+                                }
+                            }
+                        }
+                        if (ws.Validations != null)
+                        {
+                            foreach (var vk in ws.Validations)
+                            {
+                                if (CellAddress.TryParse(vk.Key, out int r, out int c))
+                                {
+                                    var v = vk.Value;
+                                    SpreadsheetApp.Core.ValidationRule? rule = null;
+                                    var mode = (v.Mode ?? "none").Trim().ToLowerInvariant();
+                                    if (mode == "list")
+                                    {
+                                        rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.List, AllowEmpty = v.AllowEmpty, AllowedList = v.AllowedList };
+                                    }
+                                    else if (mode == "number_between")
+                                    {
+                                        rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.NumberBetween, AllowEmpty = v.AllowEmpty, Min = v.Min, Max = v.Max };
+                                    }
+                                    sheet.SetValidation(r, c, rule);
                                 }
                             }
                         }
@@ -176,6 +225,21 @@ namespace SpreadsheetApp.IO
                     };
                 }
                 if (formats.Count > 0) ws.Formats = formats;
+                var vals = new Dictionary<string, ValidationData>();
+                foreach (var kv in s.GetAllValidations())
+                {
+                    string addr = CellAddress.ToAddress(kv.Key.r, kv.Key.c);
+                    var v = kv.Value;
+                    vals[addr] = new ValidationData
+                    {
+                        Mode = v.Mode.ToString().ToLowerInvariant(),
+                        AllowEmpty = v.AllowEmpty,
+                        Min = v.Min,
+                        Max = v.Max,
+                        AllowedList = v.AllowedList
+                    };
+                }
+                if (vals.Count > 0) ws.Validations = vals;
                 wb.Sheets.Add(ws);
             }
             var opts = new JsonSerializerOptions { WriteIndented = true };
@@ -216,6 +280,27 @@ namespace SpreadsheetApp.IO
                                         HAlign = Enum.TryParse<Core.CellHAlign>(f.HAlign ?? "Left", out var ha) ? ha : Core.CellHAlign.Left
                                     };
                                     sheet.SetFormat(r, c, fmt);
+                                }
+                            }
+                        }
+                        if (ws.Validations != null)
+                        {
+                            foreach (var vk in ws.Validations)
+                            {
+                                if (CellAddress.TryParse(vk.Key, out int r, out int c))
+                                {
+                                    var v = vk.Value;
+                                    SpreadsheetApp.Core.ValidationRule? rule = null;
+                                    var mode = (v.Mode ?? "none").Trim().ToLowerInvariant();
+                                    if (mode == "list")
+                                    {
+                                        rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.List, AllowEmpty = v.AllowEmpty, AllowedList = v.AllowedList };
+                                    }
+                                    else if (mode == "number_between")
+                                    {
+                                        rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.NumberBetween, AllowEmpty = v.AllowEmpty, Min = v.Min, Max = v.Max };
+                                    }
+                                    sheet.SetValidation(r, c, rule);
                                 }
                             }
                         }
@@ -273,6 +358,22 @@ namespace SpreadsheetApp.IO
                 };
             }
             if (formats.Count > 0) data.Formats = formats;
+            // Validations
+            var vals = new Dictionary<string, ValidationData>();
+            foreach (var kv in sheet.GetAllValidations())
+            {
+                string addr = CellAddress.ToAddress(kv.Key.r, kv.Key.c);
+                var v = kv.Value;
+                vals[addr] = new ValidationData
+                {
+                    Mode = v.Mode.ToString().ToLowerInvariant(),
+                    AllowEmpty = v.AllowEmpty,
+                    Min = v.Min,
+                    Max = v.Max,
+                    AllowedList = v.AllowedList
+                };
+            }
+            if (vals.Count > 0) data.Validations = vals;
 
             var opts = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(data, opts);
@@ -313,6 +414,27 @@ namespace SpreadsheetApp.IO
                     }
                 }
             }
+            if (data.Validations != null)
+            {
+                foreach (var vk in data.Validations)
+                {
+                    if (CellAddress.TryParse(vk.Key, out int r, out int c))
+                    {
+                        var v = vk.Value;
+                        SpreadsheetApp.Core.ValidationRule? rule = null;
+                        var mode = (v.Mode ?? "none").Trim().ToLowerInvariant();
+                        if (mode == "list")
+                        {
+                            rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.List, AllowEmpty = v.AllowEmpty, AllowedList = v.AllowedList };
+                        }
+                        else if (mode == "number_between")
+                        {
+                            rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.NumberBetween, AllowEmpty = v.AllowEmpty, Min = v.Min, Max = v.Max };
+                        }
+                        sheet.SetValidation(r, c, rule);
+                    }
+                }
+            }
             sheet.Recalculate();
             return sheet;
         }
@@ -347,6 +469,21 @@ namespace SpreadsheetApp.IO
                 };
             }
             if (formats.Count > 0) data.Formats = formats;
+            var vals2 = new Dictionary<string, ValidationData>();
+            foreach (var kv in sheet.GetAllValidations())
+            {
+                string addr = CellAddress.ToAddress(kv.Key.r, kv.Key.c);
+                var v = kv.Value;
+                vals2[addr] = new ValidationData
+                {
+                    Mode = v.Mode.ToString().ToLowerInvariant(),
+                    AllowEmpty = v.AllowEmpty,
+                    Min = v.Min,
+                    Max = v.Max,
+                    AllowedList = v.AllowedList
+                };
+            }
+            if (vals2.Count > 0) data.Validations = vals2;
             var opts = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(data, opts);
             await File.WriteAllTextAsync(path, json);
@@ -382,6 +519,27 @@ namespace SpreadsheetApp.IO
                             HAlign = Enum.TryParse<Core.CellHAlign>(f.HAlign ?? "Left", out var ha) ? ha : Core.CellHAlign.Left
                         };
                         sheet.SetFormat(r, c, fmt);
+                    }
+                }
+            }
+            if (data.Validations != null)
+            {
+                foreach (var vk in data.Validations)
+                {
+                    if (CellAddress.TryParse(vk.Key, out int r, out int c))
+                    {
+                        var v = vk.Value;
+                        SpreadsheetApp.Core.ValidationRule? rule = null;
+                        var mode = (v.Mode ?? "none").Trim().ToLowerInvariant();
+                        if (mode == "list")
+                        {
+                            rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.List, AllowEmpty = v.AllowEmpty, AllowedList = v.AllowedList };
+                        }
+                        else if (mode == "number_between")
+                        {
+                            rule = new SpreadsheetApp.Core.ValidationRule { Mode = SpreadsheetApp.Core.ValidationMode.NumberBetween, AllowEmpty = v.AllowEmpty, Min = v.Min, Max = v.Max };
+                        }
+                        sheet.SetValidation(r, c, rule);
                     }
                 }
             }

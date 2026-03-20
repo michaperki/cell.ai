@@ -18,6 +18,7 @@ namespace SpreadsheetApp.UI.AI
 
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60 };
         private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 28 };
+        private readonly CheckBox _chkAgent = new() { Text = "Use Agent Loop (MVP)", Dock = DockStyle.Top, Height = 20 };
         private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Visible = false };
@@ -26,13 +27,15 @@ namespace SpreadsheetApp.UI.AI
         private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 56, ReadOnly = true, BackColor = SystemColors.Info, Font = new Font("Consolas", 8.5f) };
 
         private AIPlan? _currentPlan;
+        private readonly Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? _runAgentLoop;
 
-        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, string? initialPrompt = null, bool autoPlan = false)
+        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false)
         {
             _planner = planner;
             _session = session;
             _getContext = getContext;
             _applyPlan = applyPlan;
+            _runAgentLoop = runAgentLoop;
 
             Dock = DockStyle.Fill;
             Padding = new Padding(6);
@@ -43,6 +46,7 @@ namespace SpreadsheetApp.UI.AI
             container.Controls.Add(_btnApply);
             container.Controls.Add(_btnPlan);
             container.Controls.Add(_btnRevise);
+            container.Controls.Add(_chkAgent);
             container.Controls.Add(_lblStatus);
             container.Controls.Add(_btnReset);
             container.Controls.Add(_policy);
@@ -119,9 +123,27 @@ namespace SpreadsheetApp.UI.AI
                 try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
                 // Include rolling conversation
                 ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_session.History);
-                var plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
+                AIPlan plan;
+                string[] transcript = Array.Empty<string>();
+                var run = _runAgentLoop; // local for nullability analysis
+                bool useAgent = _chkAgent.Checked && run != null;
+                if (useAgent)
+                {
+                    var res = await run!(_input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
+                    plan = res.plan; transcript = res.transcript;
+                }
+                else
+                {
+                    plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
+                }
                 _currentPlan = plan;
                 _lst.Items.Clear();
+                if (useAgent && transcript.Length > 0)
+                {
+                    _lst.Items.Add("Observations:");
+                    foreach (var line in transcript) _lst.Items.Add("  " + line);
+                    _lst.Items.Add("Plan:");
+                }
                 if (plan.Commands.Count == 0)
                 {
                     _lst.Items.Add("No changes suggested.");

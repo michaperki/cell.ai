@@ -1,0 +1,18 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Validation",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Task",
+        "B1": "Priority",
+        "A2": "Write docs",
+        "A3": "Ship build",
+        "A4": "Refactor"
+      }
+    }
+  ]
+}
+

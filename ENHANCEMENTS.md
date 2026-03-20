@@ -6,7 +6,7 @@ Items not already covered in Roadmap.md, BACKLOG.md, or ENHANCEMENT_PLAN.md. AI 
 
 ---
 
-## AI Command Grammar Expansions (4 of 8 done)
+## AI Command Grammar Expansions (10 of 10 done)
 
 The chat planner currently supports 7 command types (set_values, set_title, set_formula, sort_range, create_sheet, clear_range, rename_sheet). These are the remaining impactful additions:
 
@@ -20,29 +20,37 @@ Sort a rectangular region by a specified column, ascending or descending.
 Schema: `{"type":"sort_range","start":{...},"rows":N,"cols":N,"sort_col":"B","order":"asc","has_header":true}`.
 Enables "sort my expenses by amount" or "alphabetize the names column."
 
-### `insert_rows` / `insert_cols` — IMPLEMENTED (insert_rows) / NOT STARTED (insert_cols)
+### `insert_rows` / `insert_cols` — IMPLEMENTED
 Insert blank rows or columns at a position, shifting existing data down/right.
 Schema: `{"type":"insert_rows","at":5,"count":2}`.
 Currently there's no way to ask the AI to "add a header row above my data" without overwriting existing content.
 
-### `delete_rows` / `delete_cols` — IMPLEMENTED (delete_rows) / NOT STARTED (delete_cols)
+### `delete_rows` / `delete_cols` — IMPLEMENTED
 Remove rows or columns, shifting data up/left.
 Enables "remove the empty rows" or "delete column C."
 
-### `set_format` — NOT STARTED
+### `set_format` — IMPLEMENTED
 Apply formatting (bold, color, number format) to a range.
 Schema: `{"type":"set_format","start":{...},"rows":N,"cols":N,"bold":true,"number_format":"0.00"}`.
 Deferred in the roadmap to v0.4 but enabling it only through the AI planner is a lighter lift than full format-command UI — the AI becomes the interface. Note: CellFormat infrastructure already exists in Core/CellFormat.cs.
 
-### `move_range` — NOT STARTED
+### `move_range` — IMPLEMENTED
 Cut a rectangle and paste it elsewhere.
 Enables "move column A data to column C" type tasks.
 
-### `copy_range` — NOT STARTED
+### `copy_range` — IMPLEMENTED
 Copy values (or formulas) from one range to another.
 Enables "duplicate this table to Sheet2."
 
-### `delete_sheet` — NOT STARTED
+### `delete_sheet` — IMPLEMENTED
+
+### `set_validation` — IMPLEMENTED (MVP)
+Apply simple data validation rules to a range: list dropdowns and number-between constraints. Enforced on user edits and AI writes; invalid entries are rejected with a message.
+Schema: `{ "type":"set_validation","start":{...},"rows":N,"cols":N, "mode":"list|number_between", "allow_empty":true, "min":..., "max":..., "allowed":["Low","Medium","High"] }`.
+
+### `set_conditional_format` — IMPLEMENTED (MVP)
+Apply formatting to cells that meet a numeric threshold condition (>, >=, <, <=, ==, !=). This is an immediate application, not a persistent live rule; dynamic rule engine is a future enhancement.
+Schema: `{ "type":"set_conditional_format","start":{...},"rows":N,"cols":N, "op":">", "threshold": 1000, "bold": true, "back_color":"#FFFF99" }`.
 Currently missing from the command set. `create_sheet` and `rename_sheet` exist but not delete.
 Enables "remove the scratch sheet."
 
@@ -102,10 +110,10 @@ Implemented: IFERROR, SUMIF, COUNTIF, AVERAGEIF
 
 ---
 
-## Data Validation & Structured Input — NOT STARTED
+## Data Validation & Structured Input — IMPLEMENTED (MVP)
 
 ### Dropdown lists / data validation per cell
-Define a list of allowed values for a cell or column. The AI could set these up: "make column B a dropdown with Yes/No/Maybe." Natural AI command extension (`set_validation`).
+Dropdown lists and number-between constraints via `set_validation`. Rules are enforced on `CellEndEdit` and during AI `set_values` applies. Future: additional modes (gte/lte/regex), named validations, and UX affordances (dropdown UI).
 
 ### Named ranges
 Allow naming a range (e.g., `Expenses = A2:A50`). Named ranges improve both human formula authoring and AI context — the AI could reference named ranges instead of brittle cell addresses.
@@ -153,8 +161,8 @@ Click and drag the corner of a selection to extend a series (1,2,3... or Mon,Tue
 ### Freeze panes — IMPLEMENTED
 Freeze the top row(s) or left column(s) so headers stay visible during scrolling. DataGridView supports frozen columns/rows natively.
 
-### Conditional formatting rules — NOT STARTED
-Color cells based on value thresholds. The AI could set these: "highlight cells over 1000 in red." Another natural `set_conditional_format` command.
+### Conditional formatting rules — PARTIAL (MVP applied formatting)
+The AI can apply threshold-based formatting immediately via `set_conditional_format`. Persistent, live-updating conditional rules remain a future enhancement.
 
 ---
 

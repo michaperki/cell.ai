@@ -1,0 +1,29 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "FormatTest",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Item",
+        "B1": "Qty",
+        "C1": "Price",
+        "D1": "Total",
+        "A2": "Widget",
+        "B2": "2",
+        "C2": "12.5",
+        "D2": "=B2*C2",
+        "A3": "Gadget",
+        "B3": "3",
+        "C3": "8.75",
+        "D3": "=B3*C3",
+        "A4": "Thing",
+        "B4": "1",
+        "C4": "20",
+        "D4": "=B4*C4"
+      }
+    }
+  ]
+}
+

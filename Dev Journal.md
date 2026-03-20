@@ -31,6 +31,32 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
 - UI — Docked Chat Pane
   - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Toggle via AI > Toggle Chat or Ctrl+Shift+C. This is now the single chat surface; the former pop-out window was removed.
 
+## AI Command Set Extensions (2026‑03‑20)
+
+- Added new planner/execute commands (OpenAI path):
+  - insert_cols, delete_cols — shift data and formats right/left with undo
+  - delete_sheet — remove a named or indexed sheet safely (guard against last sheet)
+  - copy_range, move_range — copy/move rectangular regions with formula reference rewrite and format preservation
+  - set_format — apply bold/align/number format and colors to a range
+  - set_validation (MVP) — list and number-between rules; enforced on CellEndEdit and AI applies
+  - set_conditional_format (MVP) — apply formatting immediately when cell value meets a numeric threshold
+
+- Planner updates
+  - System JSON schema extended to include all commands above; strict parsing and AllowedCommands filtering maintained.
+  - Hex color parsing for `#RRGGBB` and `#AARRGGBB` inputs.
+
+- Tests added (E2E)
+  - 23: insert/delete columns
+  - 24: delete sheet
+  - 25: copy/move range with formula rewrite
+  - 26: set_format (bold/align/fill, number format)
+  - 27: set_validation (list/number-between)
+  - 28: set_conditional_format (threshold-based apply)
+
+Notes
+- Conditional formatting is applied immediately (not a persistent live rule engine yet).
+- Validation prevents invalid user edits and AI writes; invalid cells are rejected with an explanatory message.
+
 ## Hurdles and How We Solved Them
 1) Dependent cells not updating after edit
    - Symptom: After editing `A1`, cells with `=A1+1` didn’t visually update until clicked.
@@ -214,6 +240,48 @@ Rationale
 Validation
 - Re-ran the E2E steps for Test 16 using the Test Runner: row 2 contains actual data (no header dup), and Step 2 fills B7:I9 for the three new roots while A7:A9 are populated once.
 
+## Design Note — Observation‑First Agent Model (2026‑03‑20)
+
+Summary
+- We identified a structural gap in the current AI path: it is primarily a single‑shot planner that writes after a curated snapshot. For tasks like data cleanup, the agent needs to look around iteratively before deciding to act.
+
+What’s missing
+- Read/query tools as first‑class commands: the agent should be able to ask for uniques in a column, counts of blanks, a sample of rows, or a quick column profile. These are cheap, safe, and unblock understanding.
+- A small observe→reason→act loop: run a few read steps autonomously, then propose a write plan for approval. The human sets the intent; the agent sequences the micro‑steps.
+
+Decisions
+- Add a read/query command set to the grammar: `get_range`, `sample_rows`, `unique_values`, `count_where`, `describe_column`, `selection_summary`.
+- Implement a host‑controlled Agent Loop MVP (max 3 turns). Earlier steps may contain only read commands; the final step may contain writes subject to AllowedCommands/WritePolicy/selection bounds. All writes apply under a single composite undo.
+- De‑prioritize single‑shot batch optimizations until the loop ships. The loop is the product; batching is a later optimization.
+
+Planned acceptance (MVP)
+- On the NJ High Schools dataset, the agent can: (1) compute unique city names and blank counts, (2) sample rows to infer normalization rules, (3) propose a values/formula plan to clean the column, (4) apply after user approval.
+
+Implementation notes
+- Queries return compact, bounded results (top‑K uniques, first N rows, aggregates) to keep tokens low. Full results are available via “copy all” in the transcript.
+- Keep provider‑agnostic: initial loop can be host‑driven (planner emits query intents as JSON), with a later move to proper tool‑calling if desired.
+
+Backlog/Roadmap updates
+- New sections added for “AI Observation Tools” and “Agent Loop (MVP)”; Structured Batch Fill orchestration/costing marked Paused pending v0.3.
+
+## Agent Loop MVP — City Normalization (2026‑03‑20)
+
+What we shipped
+- Host‑controlled agent loop that performs read‑only observations (selection summary, column profile, uniques, sample rows) and then proposes a plan. Writes occur only on Apply.
+- Chat pane toggle: “Use Agent Loop (MVP)” augments prompts with observations and surfaces an observations transcript above the plan.
+- Test Runner support: new `ai_agent` action to run the loop in automation, export the observations transcript, plan JSON, and workbook snapshots.
+- Safety: values‑only/no‑titles filtering applied in agent automation when requested by the prompt; selection‑bounds sanitation before apply.
+
+Validation
+- Added test file `tests/test_29_ai_agent_city_cleanup.workbook.json` (NJ_HS sheet, messy City cases) and spec in `tests/TEST_SPECS.json`:
+  - Step 1: `ai_agent`, apply=false — records observations and proposed plan (no writes).
+  - Step 2: `ai_agent`, apply=true — applies the proposed `set_values` within B2:B12.
+- Result: City names normalized (trim + Title Case) while other columns remain unchanged. Artifacts include plan JSON, agent transcript, and consolidated export.
+
+Notes / next
+- Current loop is host‑driven (no formal query tool‑calls in the provider schema yet). This proved the product loop; next iterations can expose queries as first‑class planner tools.
+- Extend observation set (regex counts, histograms) and add simple gating for single‑text‑column normalizations to bias AllowedCommands to `set_values`.
+
 ## Planner Policy Refactor + Test 16 Learnings (2026‑03‑20)
 
 What we saw
@@ -371,6 +439,105 @@ Rationale: Smoother undo UX reduces noise and accidental multi‑undo clicks; ke
    - Paste detects TSV and writes a 2D block starting at the top‑left of the current selection; records a single bulk undo and uses incremental repaint.
 
 ## AI Enhancements (Context, Commands, Chat History)
+
+## Test 22–28 Findings (2026‑03‑20)
+
+Summary of latest run based on `tests/output/` snapshots and plans.
+
+- Test 22 — formula_ifs
+  - Output: No snapshot found in `tests/output/` for this run.
+  - Engine readiness: Core implements IFERROR, SUMIF, COUNTIF, AVERAGEIF in `Core/FormulaEngine.cs` and they’re exercised in the workbook.
+  - Status: Likely PASS, but cannot confirm without a saved snapshot. Suggest re‑run with “Save snapshots” enabled to verify values in C2–D4.
+
+- Test 23 — ai_insert_delete_cols
+  - Step 1 expected: Insert column B; set B1='Inserted'; do not alter other data.
+  - Observed plan: `insert_cols` then `set_values` for B1..B4. Snapshot shows duplicates in B2:B4 (Alpha/Beta/Gamma) and original Name still in C — data altered.
+  - Step 2 expected: Delete column C.
+  - Observed plan: Repeated `insert_cols` + `set_values` at C; snapshot shows further drift (headers/data misaligned).
+  - Root causes:
+    - FillMapping section is injected into the user message, biasing the model to generate `set_values` even for structural tasks.
+    - AllowedCommands not restricted to structural ops for this prompt; WritePolicy allowed B writes across rows.
+  - Status: FAIL.
+  - Fixes:
+    - Only include FillMapping when AllowedCommands includes `set_values` and the intent is a schema fill.
+    - For “insert/delete column” prompts, set AllowedCommands to only the structural command(s) plus, when explicitly requested, a single‑cell `set_values` for the header (B1). Tighten WritePolicy to forbid non‑header writes for this step.
+    - In revision message, explicitly state “Do not write any values except B1”.
+
+- Test 24 — ai_delete_sheet
+  - Observed plan: `delete_sheet` name=Temp.
+  - Snapshot: Only Keep remains with its data.
+  - Status: PASS.
+
+- Test 25 — ai_copy_move_range
+  - Step 1 expected: Copy A1:B3 → D1:E3 (preserve headers; rewrite formulas only where applicable).
+  - Observed plan: Empty `commands` (no change in snapshot).
+  - Step 2 expected: Move A1:B3 → F1:G3.
+  - Observed plan: Both `copy_range` and `move_range` to F; snapshot shows F1/F2… partly right but header text “H1/H2” rewritten to formulas `=M1`/`=M2` (wrong), and originals not cleared.
+  - Root causes:
+    - SanitizePlanToBounds currently converts `copy_range` into a `clear_range` (bug in sanitation), so step 1 is effectively a no‑op.
+    - Apply path rewrites non‑formula text that “looks like” a cell ref (e.g., “H1”), changing headers to refs (H1→M1). That rule is correct for autorouted formulas, but not for copy/move.
+    - AllowedCommands should be exclusive per action: copy OR move, not both.
+  - Status: FAIL.
+  - Fixes:
+    - SanitizePlanToBounds: preserve `copy_range` and `move_range` arguments instead of substituting `clear_range`.
+    - In ApplyPlan for copy/move, only rewrite formulas (strings starting with “=”), never plain text even if it resembles a ref. Remove the `LooksLikeCellRefOrRange` branch for these commands.
+    - Heuristics: if prompt contains “copy … to …” allow only `copy_range`; if it contains “move … to …” allow only `move_range`.
+
+- Test 26 — ai_set_format
+  - Step 1 expected: Format A1:D1 (bold, center, #EEEEEE) without changing values.
+  - Observed plan: `set_values` overwriting header with first data row, then `set_format` — snapshot confirms header values changed.
+  - Step 2 expected: Apply number format 0.00 to D2:D4 only.
+  - Observed plan: `set_values` replaced formulas with literal numbers, then `set_format` with number_format applied.
+  - Root causes:
+    - FillMapping biases the planner toward `set_values` for non‑fill tasks.
+    - General guidance text suggests “Use set_values for plain text …” even when the allowed command should be purely formatting.
+  - Status: FAIL.
+  - Fixes:
+    - For “set format/format …” prompts, AllowedCommands = [`set_format`] only; remove FillMapping block and remove “Use set_values …” guidance.
+    - Keep formulas intact; apply number_format only.
+
+- Test 27 — ai_set_validation
+  - Expected: `set_validation` list mode on B2:B10 with allowed [Low, Medium, High]; empty allowed.
+  - Observed plan: `set_values` writing Low/Medium/High into cells; no `set_validation` command.
+  - Root causes:
+    - AllowedCommands not restricted; guidance biases toward `set_values`.
+    - Workbook export doesn’t persist validations, so snapshots won’t capture rules even when applied (rules are enforced in‑memory/UI only).
+  - Status: FAIL.
+  - Fixes:
+    - For prompts that contain “validation”, AllowedCommands = [`set_validation`]; remove FillMapping and “Use set_values …”.
+    - Optional: extend workbook I/O to persist validations for verifiable snapshots.
+
+- Test 28 — ai_set_conditional_format
+  - Expected: `set_conditional_format` on A2:A5 with op “>” threshold 12; apply bold + #FFFF99 for matching cells; do not alter values.
+  - Observed plan: `set_values` blanked A2:A3 and re‑wrote A4:A5; snapshot shows values changed and no formats applied.
+  - Root causes:
+    - AllowedCommands not set to `set_conditional_format`; FillMapping/guidance steer to `set_values`.
+  - Status: FAIL.
+  - Fixes:
+    - For prompts that contain “conditional format/conditional formatting”, AllowedCommands = [`set_conditional_format`] only; remove FillMapping and value‑writing guidance.
+    - Apply formatting immediately based on numeric value, leave cell contents untouched.
+
+Process and prompt refinements to implement:
+- Planner message shaping
+  - Only append the FillMapping section when AllowedCommands includes `set_values` and the task intent is a schema/table fill. Omit for structural/formatting/validation tasks.
+  - If AllowedCommands is set, remove generic guidance like “Use set_values …”; instead, explicitly state: “Use only: <list>.”
+- AllowedCommands heuristics in `RunChatStepAsync`
+  - Map intent keywords to explicit command sets:
+    - “insert column/insert col” → [`insert_cols`] (+ allow a single `set_values` for a specified header cell if mentioned).
+    - “delete column/delete col” → [`delete_cols`].
+    - “copy … to …” → [`copy_range`].
+    - “move … to …” → [`move_range`].
+    - “set format/format …/bold/align/number format/color” → [`set_format`].
+    - “validation/data validation/list/number between” → [`set_validation`].
+    - “conditional format/conditional formatting/threshold” → [`set_conditional_format`].
+  - Continue using values‑only gating for explicit “set_values only”.
+- Sanitation and apply correctness
+  - Fix SanitizePlanToBounds to preserve `copy_range` and `move_range` (do not convert to `clear_range`).
+  - In ApplyPlan for copy/move, only rewrite references for formulas (raw starts with “=”); do not rewrite plain text that looks like refs.
+  - Tighten header‑row protections: keep HeaderRowReadOnly by default; allow explicit header exceptions (e.g., “set B1 …”) via a narrow per‑step override rather than broad writable B column.
+- Test runner ergonomics
+  - Persist a minimal text log per step with diffs and any assertion failures to `tests/output/<test>_stepN.log.txt` to aid review.
+  - For engine tests like 22, ensure “Save snapshots” is on so we can confirm outcomes from disk.
 
 1) New planner commands: set_formula and sort_range
    - set_formula: Distinct from set_values; writes raw formulas (kept as strings with a leading `=`). Schema: {"type":"set_formula","start":{row, col},"formulas":[["=..."],...]}. Applied as a bulk write with composite undo.

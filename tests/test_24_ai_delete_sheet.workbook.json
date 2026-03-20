@@ -1,0 +1,23 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Keep",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Keep Me",
+        "A2": "1"
+      }
+    },
+    {
+      "Name": "Temp",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "To be deleted"
+      }
+    }
+  ]
+}
+

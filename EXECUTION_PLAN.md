@@ -98,13 +98,15 @@ This plan prioritizes reliability, UX polish, and small-but-high‑leverage AI i
 - Acceptance
   - Planner aligns better with real header rows when row 1 is a title.
 
-## Phase 4 — Command Grammar Extensions (stretch)
-- Insert/Delete rows/cols: shift data and adjust dependency graph; schema: `insert_rows/delete_rows`.
-- Set format: apply bold/color/number format to ranges using existing `CellFormat`; schema: `set_format`.
-- Move/Copy range: cut/copy rectangles; respect formulas and formats (initially values-only to keep undo simple).
-- Delete sheet: complement `create_sheet`/`rename_sheet`.
+## Phase 4 — Command Grammar Extensions (Status: DONE)
+- Insert/Delete rows/cols — IMPLEMENTED (`insert_rows/delete_rows/insert_cols/delete_cols`)
+- Set format — IMPLEMENTED (`set_format`: bold/color/number format/align)
+- Move/Copy range — IMPLEMENTED (formula rewrite + format preservation)
+- Delete sheet — IMPLEMENTED (`delete_sheet`)
+- Set validation — IMPLEMENTED (MVP: list, number_between; enforced on edit + AI applies)
+- Conditional formatting — IMPLEMENTED (MVP: threshold apply via `set_conditional_format`)
 - Acceptance
-  - Parser/serializer updated in `ProviderChatPlanner`; `ApplyPlan` covers new commands with composite undo.
+  - OpenAI planner schema updated; strict parser implemented; ApplyPlan executes all commands with undo where applicable.
 
 ## Phase 5 — Testing & Verification (In progress)
 - Unit tests
@@ -126,4 +128,4 @@ This plan prioritizes reliability, UX polish, and small-but-high‑leverage AI i
 
 ## Out-of-Scope (for this pass)
 - XLSX interop and packaging/telemetry (tracked in Roadmap v0.4).
-- Advanced number formats and conditional formatting rules.
+- Advanced number formats and persistent conditional formatting rule engine (dynamic re-evaluation on value change).

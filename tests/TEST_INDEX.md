@@ -23,6 +23,15 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 | 20 | test_20_fill_down | UX | Keyboard Fill Down/Right; verify formula rewriting and bulk apply |
 | 21 | test_21_ai_schema_single_shot | AI | Single-shot schema-driven values-only fill for a small selection |
 | 22 | test_22_formula_ifs | Engine | IFERROR, SUMIF, COUNTIF, AVERAGEIF sample formulas |
+| 23 | test_23_ai_insert_delete_cols | AI | `insert_cols` and `delete_cols` on a simple table |
+| 24 | test_24_ai_delete_sheet | AI | `delete_sheet` removes a named sheet |
+| 25 | test_25_ai_copy_move_range | AI | `copy_range` and `move_range` with formula rewrite |
+| 26 | test_26_ai_set_format | AI | `set_format` bold/align/fill and number format |
+| 27 | test_27_ai_set_validation | AI | `set_validation` for list and number-between rules |
+| 28 | test_28_ai_set_conditional_format | AI | `set_conditional_format` numeric threshold formatting |
+| 29 | test_29_ai_agent_city_cleanup | AI (Agent) | Agent loop inspects City uniques and proposes Title Case cleanup |
+| 23 | test_23_ai_insert_delete_cols | AI | `insert_cols` and `delete_cols` on a simple table |
+| 24 | test_24_ai_delete_sheet | AI | `delete_sheet` removes a named sheet |
 
 ## How to use
 
@@ -37,8 +46,8 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 ### TEST_SPECS.json format
 - `tests/TEST_SPECS.json` defines automated steps per test file.
 - Each test lists `steps` with:
-  - `action`: currently only `ai_chat`
-  - `prompt`: message sent to the chat planner
+  - `action`: `ai_chat` or `ai_agent`
+  - `prompt`: message sent to the planner (agent loop augments with observations)
   - `location`: address or range to anchor context (e.g., `A3` or `A3:C6`). This sets the selection before planning.
   - `sheet` (optional): name of the sheet to activate for the step
   - `apply`: whether to apply the planned commands

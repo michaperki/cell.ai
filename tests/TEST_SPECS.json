@@ -85,5 +85,58 @@
         { "action": "ai_chat", "prompt": "In C2:C4 write =A2+B2, =A3+B3, =A4+B4 respectively. Use set_values only.", "location": "C2:C4", "apply": true }
       ]
     }
+    ,
+    {
+      "file": "test_25_ai_copy_move_range.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Copy A1:B3 to D1:E3. Adjust formulas and references appropriately.", "location": "A1:B3", "apply": true },
+        { "action": "ai_chat", "prompt": "Move A1:B3 to F1:G3. Adjust formulas and references appropriately.", "location": "A1:B3", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_26_ai_set_format.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Set the header row A1:D1 to bold, center alignment, and a light gray background (#EEEEEE).", "location": "A1:D1", "apply": true },
+        { "action": "ai_chat", "prompt": "Format D2:D4 with number format 0.00.", "location": "D2:D4", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_23_ai_insert_delete_cols.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Insert one new column at column B and set B1 to 'Inserted'. Do not alter other data.", "location": "B1:B4", "apply": true },
+        { "action": "ai_chat", "prompt": "Delete column C.", "location": "C1:C4", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_24_ai_delete_sheet.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Delete the sheet named Temp.", "sheet": "Keep", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_27_ai_set_validation.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Set data validation on B2:B10 to a list with allowed values Low, Medium, High. Empty allowed.", "location": "B2:B10", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_28_ai_set_conditional_format.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Apply conditional formatting to A2:A5: highlight cells with values greater than 12 with bold text and a yellow background (#FFFF99).", "location": "A2:A5", "apply": true }
+      ]
+    }
+    ,
+    {
+      "file": "test_29_ai_agent_city_cleanup.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Normalize the City names in the selection: trim whitespace and convert to Title Case (e.g., 'lincroft' -> 'Lincroft', 'RIDGEWOOD' -> 'Ridgewood', 'CHERRY HILL' -> 'Cherry Hill'). Do not change any other columns. Use set_values only.", "location": "B2:B12", "apply": false },
+        { "action": "ai_agent", "prompt": "Normalize the City names in the selection: trim whitespace and convert to Title Case (e.g., 'lincroft' -> 'Lincroft', 'RIDGEWOOD' -> 'Ridgewood', 'CHERRY HILL' -> 'Cherry Hill'). Do not change any other columns. Use set_values only.", "location": "B2:B12", "apply": true }
+      ]
+    }
   ]
 }

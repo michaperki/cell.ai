@@ -11,6 +11,7 @@ namespace SpreadsheetApp.UI
     {
         private readonly Action<string> _loadWorkbook;
         private readonly Func<string, string?, bool, System.Threading.CancellationToken, System.Threading.Tasks.Task<SpreadsheetApp.Core.AI.AIPlan>> _runChatStepAsync;
+        private readonly Func<string, string?, bool, System.Threading.CancellationToken, System.Threading.Tasks.Task<(SpreadsheetApp.Core.AI.AIPlan plan, string[] transcript)>> _runAgentStepAsync;
         private readonly Action<string> _saveWorkbook;
         private readonly Action<string> _activateSheet;
         private readonly Action _clearChatHistory;
@@ -34,6 +35,7 @@ namespace SpreadsheetApp.UI
 
         public TestRunnerForm(Action<string> loadWorkbook,
                               Func<string, string?, bool, System.Threading.CancellationToken, System.Threading.Tasks.Task<SpreadsheetApp.Core.AI.AIPlan>> runChatStepAsync,
+                              Func<string, string?, bool, System.Threading.CancellationToken, System.Threading.Tasks.Task<(SpreadsheetApp.Core.AI.AIPlan plan, string[] transcript)>> runAgentStepAsync,
                               Action<string> saveWorkbook,
                               Action<string> activateSheet,
                               Action clearChatHistory,
@@ -41,6 +43,7 @@ namespace SpreadsheetApp.UI
         {
             _loadWorkbook = loadWorkbook;
             _runChatStepAsync = runChatStepAsync;
+            _runAgentStepAsync = runAgentStepAsync;
             _saveWorkbook = saveWorkbook;
             _activateSheet = activateSheet;
             _clearChatHistory = clearChatHistory;
@@ -301,14 +304,14 @@ namespace SpreadsheetApp.UI
                                 string contents = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
                                 File.WriteAllText(promptPath, contents);
                                 Log($"    -> User prompt saved: {promptPath}\r\n");
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"    -> Failed to save user prompt: {ex.Message}\r\n");
-                            }
                         }
-                        if (_chkDumpPlan.Checked)
+                        catch (Exception ex)
                         {
+                            Log($"    -> Failed to save user prompt: {ex.Message}\r\n");
+                        }
+                    }
+                    if (_chkDumpPlan.Checked)
+                    {
                             try
                             {
                                 Directory.CreateDirectory(Path.Combine("tests", "output"));
@@ -323,6 +326,17 @@ namespace SpreadsheetApp.UI
                                 Log($"    -> Failed to save plan JSON: {ex.Message}\r\n");
                             }
                         }
+
+                        // Persist a concise step log for offline review
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string logPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.log.txt");
+                            File.WriteAllText(logPath, _txtLog.Text);
+                            Log($"    -> Step log saved: {logPath}\r\n");
+                        }
+                        catch { }
                         if (_chkDumpSystem.Checked)
                         {
                             try
@@ -361,6 +375,132 @@ namespace SpreadsheetApp.UI
                                 ["user"] = userStr,
                                 ["system"] = sysStr,
                                 ["plan_json"] = planStr,
+                                ["workbook_json"] = workbookStr
+                            };
+                            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            File.WriteAllText(exportPath, System.Text.Json.JsonSerializer.Serialize(root, opts));
+                            Log($"    -> Consolidated export saved: {exportPath}\r\n");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"    -> Failed to save consolidated export: {ex.Message}\r\n");
+                        }
+                    }
+                    else if (step.Action == "ai_agent")
+                    {
+                        Log($"  - Step {stepNo} [agent]: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
+                        var before = _captureSheetMap();
+                        var res = await _runAgentStepAsync(step.Prompt ?? string.Empty, step.Location, step.Apply, System.Threading.CancellationToken.None).ConfigureAwait(true);
+                        var plan = res.plan;
+                        var transcript = res.transcript ?? Array.Empty<string>();
+                        if (transcript.Length > 0)
+                        {
+                            Log("    Observations:\r\n");
+                            foreach (var line in transcript) Log($"      - {line}\r\n");
+                        }
+                        if (plan.Commands.Count == 0)
+                        {
+                            Log("    -> No changes suggested.\r\n");
+                        }
+                        else
+                        {
+                            foreach (var cmd in plan.Commands) Log($"    -> {cmd.Summarize()}\r\n");
+                        }
+                        if (step.Apply)
+                        {
+                            var after = _captureSheetMap();
+                            WriteDiffToLog(before, after);
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(step.Location) && step.Location!.Contains(":", StringComparison.Ordinal))
+                                {
+                                    var parts = step.Location!.Split(':');
+                                    if (parts.Length == 2 && SpreadsheetApp.Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && SpreadsheetApp.Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                                    {
+                                        int rStart = Math.Min(r1, r2), rEnd = Math.Max(r1, r2);
+                                        int cStart = Math.Min(c1, c2), cEnd = Math.Max(c1, c2);
+                                        var keys = new System.Collections.Generic.HashSet<string>(before.Keys, System.StringComparer.OrdinalIgnoreCase);
+                                        foreach (var k in after.Keys) keys.Add(k);
+                                        foreach (var k in keys)
+                                        {
+                                            before.TryGetValue(k, out var b);
+                                            after.TryGetValue(k, out var a);
+                                            if (string.Equals(b ?? string.Empty, a ?? string.Empty, StringComparison.Ordinal)) continue;
+                                            if (SpreadsheetApp.Core.CellAddress.TryParse(k, out int rr, out int cc))
+                                            {
+                                                if (rr < rStart || rr > rEnd || cc < cStart || cc > cEnd)
+                                                {
+                                                    Log($"    ASSERTION FAILED: change outside selection: {k}\r\n");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string snap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            _saveWorkbook(snap);
+                            if (_chkSnapshots.Checked)
+                            {
+                                string logPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.log.txt");
+                                File.WriteAllText(logPath, _txtLog.Text);
+                                Log($"    -> Step log saved: {logPath}\r\n");
+                            }
+                        }
+                        catch { }
+                        if (_chkDumpPlan.Checked)
+                        {
+                            try
+                            {
+                                Directory.CreateDirectory(Path.Combine("tests", "output"));
+                                string baseName = Path.GetFileNameWithoutExtension(path);
+                                string planPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.plan.json");
+                                string json = SerializePlan(plan);
+                                File.WriteAllText(planPath, json);
+                                Log($"    -> Plan JSON saved: {planPath}\r\n");
+                            }
+                            catch { }
+                        }
+                        if (_chkDumpPrompt.Checked)
+                        {
+                            try
+                            {
+                                Directory.CreateDirectory(Path.Combine("tests", "output"));
+                                string baseName = Path.GetFileNameWithoutExtension(path);
+                                string logPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.agent.txt");
+                                var lines = transcript.Length > 0 ? string.Join("\n", transcript) : "(no transcript)";
+                                File.WriteAllText(logPath, lines);
+                                Log($"    -> Agent transcript saved: {logPath}\r\n");
+                            }
+                            catch { }
+                        }
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string exportPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.export.json");
+                            string userStr = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
+                            string sysStr = plan.RawSystem ?? "(no system prompt)";
+                            string planStr = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
+                            string snapPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            string workbookStr = "";
+                            try { workbookStr = File.ReadAllText(snapPath); } catch { workbookStr = ""; }
+                            var root = new System.Collections.Generic.Dictionary<string, object?>
+                            {
+                                ["test_file"] = Path.GetFileName(path),
+                                ["step"] = stepNo,
+                                ["sheet"] = step.Sheet ?? "(current)",
+                                ["location"] = step.Location,
+                                ["apply"] = step.Apply,
+                                ["user"] = userStr,
+                                ["system"] = sysStr,
+                                ["plan_json"] = planStr,
+                                ["agent_transcript"] = transcript,
                                 ["workbook_json"] = workbookStr
                             };
                             var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };

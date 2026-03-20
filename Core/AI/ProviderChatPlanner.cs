@@ -33,7 +33,7 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
 
             // Allowed commands and strengthened constraints
             string[]? allowedCmds = null;
@@ -122,18 +122,38 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
             catch { }
-            var schemaSection = TryBuildSchemaFillSection(context);
-            if (!string.IsNullOrEmpty(schemaSection)) sbUsr.Append(schemaSection);
-            // Tailor guidance: avoid suggesting set_formula when values-only is in effect.
+            // Include FillMapping only for schema/table fills (pure set_values intent)
+            bool includeFillMapping = false;
+            try
+            {
+                if (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) includeFillMapping = true;
+                else if (allowedCmds == null && inferredValuesOnly) includeFillMapping = true;
+            }
+            catch { }
+            if (includeFillMapping)
+            {
+                var schemaSection = TryBuildSchemaFillSection(context);
+                if (!string.IsNullOrEmpty(schemaSection)) sbUsr.Append(schemaSection);
+            }
+
+            // Tailor guidance: if explicit AllowedCommands provided, avoid generic hints that bias toward set_values
             string guidance;
             bool valuesOnlyMode = (allowedCmds != null && allowedCmds.Length == 1 && string.Equals(allowedCmds[0], "set_values", StringComparison.OrdinalIgnoreCase)) || inferredValuesOnly;
-            if (valuesOnlyMode)
+            if (allowedCmds != null && allowedCmds.Length > 0)
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append(" Keep total writes <= 5000. Use only these commands: ");
+                for (int i = 0; i < allowedCmds.Length; i++) { if (i > 0) sb.Append(',').Append(' '); sb.Append(allowedCmds[i]); }
+                sb.Append(". Do not use any other commands.");
+                guidance = sb.ToString();
+            }
+            else if (valuesOnlyMode)
             {
                 guidance = " Keep total writes <= 5000. Prefer list fills near the selection. When formulas are needed, write them as strings beginning with '=' inside set_values cells so they evaluate as formulas. Do not use set_title or set_formula.";
             }
             else
             {
-                guidance = " Keep total writes <= 5000. Prefer list fills near the selection. Use set_values for plain text and set_formula for formulas; use sort_range for sorting.";
+                guidance = " Keep total writes <= 5000. Use set_values for plain text and set_formula for formulas when needed; use sort_range for sorting.";
             }
             sbUsr.Append($" Instruction={(prompt ?? string.Empty)}.{guidance}");
             string usr = sbUsr.ToString();
@@ -384,6 +404,14 @@ namespace SpreadsheetApp.Core.AI
                 SortRangeCommand => "sort_range",
                 InsertRowsCommand => "insert_rows",
                 DeleteRowsCommand => "delete_rows",
+                InsertColsCommand => "insert_cols",
+                DeleteColsCommand => "delete_cols",
+                DeleteSheetCommand => "delete_sheet",
+                CopyRangeCommand => "copy_range",
+                MoveRangeCommand => "move_range",
+                SetFormatCommand => "set_format",
+                SetValidationCommand => "set_validation",
+                SetConditionalFormatCommand => "set_conditional_format",
                 _ => string.Empty
             };
             if (string.IsNullOrEmpty(type)) return false;
@@ -881,6 +909,111 @@ namespace SpreadsheetApp.Core.AI
                                 plan.Commands.Add(dr);
                                 break;
                             }
+                        case "set_validation":
+                            {
+                                var sv = new SetValidationCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int r0, c0; ParseStart(start, out r0, out c0); sv.StartRow = r0; sv.StartCol = c0; }
+                                if (cmd.TryGetProperty("rows", out var rr)) sv.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) sv.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("mode", out var md) && md.ValueKind == JsonValueKind.String) sv.Mode = md.GetString() ?? "none";
+                                if (cmd.TryGetProperty("allow_empty", out var ae) && (ae.ValueKind == JsonValueKind.True || ae.ValueKind == JsonValueKind.False)) sv.AllowEmpty = ae.GetBoolean();
+                                if (cmd.TryGetProperty("min", out var mn)) { try { sv.Min = mn.GetDouble(); } catch { } }
+                                if (cmd.TryGetProperty("max", out var mx)) { try { sv.Max = mx.GetDouble(); } catch { } }
+                                if (cmd.TryGetProperty("allowed", out var al) && al.ValueKind == JsonValueKind.Array)
+                                {
+                                    var list = new System.Collections.Generic.List<string>();
+                                    foreach (var el in al.EnumerateArray()) if (el.ValueKind == JsonValueKind.String) list.Add(el.GetString() ?? string.Empty);
+                                    sv.AllowedList = list.ToArray();
+                                }
+                                plan.Commands.Add(sv);
+                                break;
+                            }
+                        case "set_conditional_format":
+                            {
+                                var scf = new SetConditionalFormatCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int r0, c0; ParseStart(start, out r0, out c0); scf.StartRow = r0; scf.StartCol = c0; }
+                                if (cmd.TryGetProperty("rows", out var rr)) scf.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) scf.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("op", out var op) && op.ValueKind == JsonValueKind.String) scf.Operator = op.GetString() ?? ">";
+                                if (cmd.TryGetProperty("threshold", out var th)) { try { scf.Threshold = th.GetDouble(); } catch { } }
+                                if (cmd.TryGetProperty("bold", out var b) && (b.ValueKind == JsonValueKind.True || b.ValueKind == JsonValueKind.False)) scf.Bold = b.GetBoolean();
+                                if (cmd.TryGetProperty("number_format", out var nf) && nf.ValueKind == JsonValueKind.String) scf.NumberFormat = nf.GetString();
+                                if (cmd.TryGetProperty("h_align", out var ha) && ha.ValueKind == JsonValueKind.String) scf.HAlign = ha.GetString();
+                                if (cmd.TryGetProperty("fore_color", out var fc) && fc.ValueKind == JsonValueKind.String) scf.ForeColorArgb = ParseHexColor(fc.GetString());
+                                if (cmd.TryGetProperty("back_color", out var bc) && bc.ValueKind == JsonValueKind.String) scf.BackColorArgb = ParseHexColor(bc.GetString());
+                                plan.Commands.Add(scf);
+                                break;
+                            }
+                        case "copy_range":
+                            {
+                                var cr = new CopyRangeCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int r0, c0; ParseStart(start, out r0, out c0); cr.StartRow = r0; cr.StartCol = c0; }
+                                if (cmd.TryGetProperty("rows", out var rr)) cr.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) cr.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("dest", out var dest)) { int rd, cd; ParseStart(dest, out rd, out cd); cr.DestRow = rd; cr.DestCol = cd; }
+                                plan.Commands.Add(cr);
+                                break;
+                            }
+                        case "move_range":
+                            {
+                                var mr = new MoveRangeCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int r0, c0; ParseStart(start, out r0, out c0); mr.StartRow = r0; mr.StartCol = c0; }
+                                if (cmd.TryGetProperty("rows", out var rr)) mr.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) mr.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("dest", out var dest)) { int rd, cd; ParseStart(dest, out rd, out cd); mr.DestRow = rd; mr.DestCol = cd; }
+                                plan.Commands.Add(mr);
+                                break;
+                            }
+                        case "set_format":
+                            {
+                                var sfmt = new SetFormatCommand();
+                                if (cmd.TryGetProperty("start", out var start)) { int r0, c0; ParseStart(start, out r0, out c0); sfmt.StartRow = r0; sfmt.StartCol = c0; }
+                                if (cmd.TryGetProperty("rows", out var rr)) sfmt.Rows = SafeInt(rr, 1);
+                                if (cmd.TryGetProperty("cols", out var cc)) sfmt.Cols = SafeInt(cc, 1);
+                                if (cmd.TryGetProperty("bold", out var b) && (b.ValueKind == JsonValueKind.True || b.ValueKind == JsonValueKind.False)) sfmt.Bold = b.GetBoolean();
+                                if (cmd.TryGetProperty("number_format", out var nf) && nf.ValueKind == JsonValueKind.String) { var s = nf.GetString(); if (!string.IsNullOrWhiteSpace(s)) sfmt.NumberFormat = s; }
+                                if (cmd.TryGetProperty("h_align", out var ha) && ha.ValueKind == JsonValueKind.String) { var s = ha.GetString(); if (!string.IsNullOrWhiteSpace(s)) sfmt.HAlign = s!.Trim().ToLowerInvariant(); }
+                                if (cmd.TryGetProperty("fore_color", out var fc) && fc.ValueKind == JsonValueKind.String) sfmt.ForeColorArgb = ParseHexColor(fc.GetString());
+                                if (cmd.TryGetProperty("back_color", out var bc) && bc.ValueKind == JsonValueKind.String) sfmt.BackColorArgb = ParseHexColor(bc.GetString());
+                                plan.Commands.Add(sfmt);
+                                break;
+                            }
+                        case "insert_cols":
+                            {
+                                var ic = new InsertColsCommand();
+                                if (cmd.TryGetProperty("at", out var at))
+                                {
+                                    if (at.ValueKind == JsonValueKind.String)
+                                        ic.At = Math.Max(0, CellAddress.ColumnNameToIndex(at.GetString() ?? "A"));
+                                    else
+                                        ic.At = Math.Max(0, SafeInt(at, 1) - 1);
+                                }
+                                if (cmd.TryGetProperty("count", out var cnt)) ic.Count = Math.Max(1, SafeInt(cnt, 1));
+                                plan.Commands.Add(ic);
+                                break;
+                            }
+                        case "delete_cols":
+                            {
+                                var dc = new DeleteColsCommand();
+                                if (cmd.TryGetProperty("at", out var at))
+                                {
+                                    if (at.ValueKind == JsonValueKind.String)
+                                        dc.At = Math.Max(0, CellAddress.ColumnNameToIndex(at.GetString() ?? "A"));
+                                    else
+                                        dc.At = Math.Max(0, SafeInt(at, 1) - 1);
+                                }
+                                if (cmd.TryGetProperty("count", out var cnt)) dc.Count = Math.Max(1, SafeInt(cnt, 1));
+                                plan.Commands.Add(dc);
+                                break;
+                            }
+                        case "delete_sheet":
+                            {
+                                var ds = new DeleteSheetCommand();
+                                if (cmd.TryGetProperty("index", out var idx)) ds.Index1 = SafeInt(idx, 0) > 0 ? SafeInt(idx, 0) : (int?)null;
+                                if (cmd.TryGetProperty("name", out var nm) && nm.ValueKind == JsonValueKind.String) ds.Name = nm.GetString();
+                                plan.Commands.Add(ds);
+                                break;
+                            }
                     }
                 }
                 catch { }
@@ -909,6 +1042,30 @@ namespace SpreadsheetApp.Core.AI
         private static int SafeInt(JsonElement el, int def)
         {
             try { return el.GetInt32(); } catch { try { return (int)el.GetDouble(); } catch { return def; } }
+        }
+
+        private static int? ParseHexColor(string? s)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(s)) return null;
+                s = s.Trim();
+                if (s.StartsWith("#")) s = s.Substring(1);
+                if (s.Length == 6)
+                {
+                    // RRGGBB -> ARGB with A=FF
+                    int rgb = Convert.ToInt32(s, 16);
+                    return unchecked((int)(0xFF000000u | (uint)rgb));
+                }
+                if (s.Length == 8)
+                {
+                    // AARRGGBB
+                    int argb = Convert.ToInt32(s, 16);
+                    return argb;
+                }
+                return null;
+            }
+            catch { return null; }
         }
     }
 }
