@@ -2,7 +2,7 @@
 
 This file tracks follow-ups and refinements discovered while implementing the enhancement plan. It lives next to `ENHANCEMENT_PLAN.md`.
 
-**Last updated: 2026-03-19**
+**Last updated: 2026-03-20**
 
 ---
 
@@ -14,24 +14,20 @@ This file tracks follow-ups and refinements discovered while implementing the en
 - **Planner timeout too short (10s) — ADDRESSED**
   - Planning timeout increased to 30s. Consider making configurable if needed per‑provider.
 
-- **Anthropic max_tokens=800 is low**
-  - `AnthropicProvider` caps response at 800 tokens. A budget table with formulas can exceed this. OpenAI has no explicit limit, creating asymmetry.
-  - Raise to at least 2048. Consider making configurable.
+- **Anthropic max_tokens config — DONE**
+  - Added `ANTHROPIC_MAX_TOKENS` (default 2048) for planner/provider.
 
 - **No progress indicator during planning — DONE**
   - Added a lightweight “Thinking…” status label in ChatAssistantForm during planning.
 
-- **No plan revision / rejection UX**
-  - Only options are Apply or Close. No way to tell the AI "change the formulas but keep the values" or edit individual commands before applying.
-  - Add a "Revise" button that appends user feedback to history and re-plans.
+- **Plan revision UX — DONE**
+  - Revise button appends feedback and replans; keeps current plan visible until replaced.
 
-- **`set_values` doesn't auto-detect formulas**
-  - If the AI puts `=SUM(...)` in a `set_values` command, it's written as literal text (not a formula). This is a common AI mistake.
-  - In the apply logic, auto-route values starting with `=` to the formula write path as a safety net.
+- **`set_values` auto-detect formulas — DONE**
+  - Values starting with `=` are written as formulas and evaluated correctly.
 
-- **No AI error feedback loop**
-  - If a formula the AI generates evaluates to `#ERR`, there's no path back. After apply, scan for new `#ERR` cells and auto-prompt: "These cells errored: [list]. Fix?"
-  - Lighter lift than the full "error repair" enhancement — directly tied to the AI apply flow.
+- **AI error feedback loop — DONE**
+  - After apply, we prompt if errors are detected and open Chat prefilled to attempt a repair (no auto-apply).
 
 - **MockChatPlanner coverage — PARTIAL DONE**
   - Expanded to produce `set_formula`, `sort_range`, `clear_range`, `rename_sheet`, plus heuristics for expense tables, tax columns, and bonus columns. Further tuning still welcome.
@@ -40,14 +36,11 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ## Active — Infrastructure
 
-- Incremental recalc UI integration
-  - Use incremental repaint for bulk ops (paste, clear, replace, AI apply, undo/redo). For direct edits, keep full refresh for now due to DataGridView repaint quirks after commit.
-  - Explore `CellValidated` vs `CellEndEdit`, or explicit `CommitEdit` before recalculation to enable safe incremental edit repaint.
-  - Wrap updates in `SuspendLayout`/`ResumeLayout`; keep 5% threshold fallback.
+- Incremental recalc UI integration — DONE (gated)
+  - Direct edits use `_sheet.RecalculateDirty` + thresholded `RefreshDirtyOrFull` with full fallback.
 
-- Dependency extraction robustness
-  - Reuse the existing parser (AST) to collect cell references and ranges for dependency tracking instead of ad-hoc scanning.
-  - Ensure references inside string literals are ignored (already handled); cover functions, nested expressions, and ranges uniformly.
+- Dependency extraction robustness — DONE
+  - Uses `FormulaEngine.EnumerateReferences` (AST) for references and ranges.
 
 - Performance / UX
   - Consider DataGridView VirtualMode for very large sheets.
@@ -61,9 +54,8 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Default cell font set to Segoe UI 9pt for consistency.
   - Future: menu icons, dark mode toggle, owner-drawn tabs.
 
-- Workbook summary header detection
-  - Currently sends row 1 as headers to the AI. If the actual header row is row 2 (common when row 1 is a title), the AI gets wrong context.
-  - Implement auto-detect header heuristic (first non-empty row with predominantly text values).
+- Workbook summary header detection — DONE
+  - Heuristic picks the first non-empty text-dominant row.
 
 ---
 
@@ -73,15 +65,15 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Add workbook Save/Open that serializes multiple sheets with names and formats.
   - For backward compatibility, still accept single-sheet files. Offer both "Save Sheet" and "Save Workbook".
 
-- Async I/O adoption
-  - Open/Save now uses async IO with busy cursor and disables UI. Extend to other long-running operations (CSV import/export, future workbook IO) and add guard flags to avoid reentrancy.
+- Async I/O adoption — DONE (CSV)
+  - Import/Export CSV now async with busy guards; pattern matches Open/Save async.
 
 ---
 
 ## Active — Editing UX
 
-- Clear contents for multi-cell selections with Delete/Backspace — implement as a single bulk undo action and refresh only affected cells when incremental repaint lands.
-- Consider a dedicated Edit > Clear Contents menu item mirroring Delete.
+- Clear contents for multi-cell selections — DONE
+  - Delete/Backspace clears selection with a single bulk undo action; guarded prompt for formulas; incremental repaint in place.
 
 ---
 
