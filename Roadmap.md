@@ -142,10 +142,9 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
   - Available in both pop‑out assistant and docked chat pane; docked pane refreshes on selection change.
 - Planner revise loop: IMPLEMENTED — on width/policy mismatch, the planner automatically requests a corrected plan instead of relying only on cropping.
 
-- Chat surface unification — PLANNED (short‑term)
-  - Make the docked chat pane the canonical surface. “Open Chat…” focuses/toggles the pane.
-  - Optional pop‑out wraps the same ChatAssistantView + shared ChatSession (no duplicate logic/state).
-  - Deprecate the separate code path in the form to reduce confusion and maintenance.
+- Chat surface unification — IMPLEMENTED
+  - Docked chat pane is now the only chat surface. “Open Chat…” focuses/toggles the pane.
+  - The former pop‑out window has been removed to reduce duplication and maintenance.
 
 ### Technical Foundation
 - Providers: Mock, OpenAI (`OpenAIProvider`), Anthropic (`AnthropicProvider`), optional External POST (`ExternalApiProvider`).

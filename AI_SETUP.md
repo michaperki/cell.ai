@@ -39,7 +39,7 @@ ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
 
 - Generate Fill (Ctrl+I): prompt → preview → accept as a single undo; respects rectangular selection (rows × cols) and never writes outside the selection.
 - Inline Suggestions: ghost overlay after a short pause when continuing a list; filters out items already present above; Apply/Dismiss buttons; Enter/Tab/Double‑click to accept.
-- Chat Assistant (Ctrl+Shift+C): docked right-side panel with plan → preview → apply; composite undo for multi‑command changes. Also available as a pop‑out window via AI > Open Chat Assistant (window).
+- Chat Assistant (Ctrl+Shift+C): docked right-side panel with plan → preview → apply; composite undo for multi‑command changes. This is the single chat surface; the former pop‑out window has been removed.
   - Values-only enforcement: when your prompt says “Use set_values only” (or “do not add titles”), the planner will filter out disallowed commands like `set_title` and `set_formula`, and the context will omit Title hints to avoid nudging the model to write titles.
 
 ## Troubleshooting

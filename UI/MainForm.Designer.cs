@@ -22,7 +22,7 @@ namespace SpreadsheetApp.UI
         private ToolStripMenuItem aiGenerateFillToolStripMenuItem = null!;
         private ToolStripMenuItem aiEnableInlineToolStripMenuItem = null!;
         private ToolStripMenuItem aiAcceptInlineToolStripMenuItem = null!;
-        private ToolStripMenuItem aiOpenChatToolStripMenuItem = null!;
+        // Removed pop-out chat window; docked pane is canonical
         private ToolStripMenuItem aiToggleChatPaneToolStripMenuItem = null!;
         private ToolStripMenuItem aiSettingsToolStripMenuItem = null!;
         private ToolStripMenuItem undoToolStripMenuItem = null!;
@@ -274,8 +274,6 @@ namespace SpreadsheetApp.UI
             aiAcceptInlineToolStripMenuItem.Click += (_, __) => AcceptInlineSuggestion();
             aiToggleChatPaneToolStripMenuItem = new ToolStripMenuItem("Toggle Docked Chat Pane") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.C };
             aiToggleChatPaneToolStripMenuItem.Click += (_, __) => ToggleChatPane();
-            aiOpenChatToolStripMenuItem = new ToolStripMenuItem("Open Chat Assistant (window)...");
-            aiOpenChatToolStripMenuItem.Click += (_, __) => OpenChatAssistant();
             aiSettingsToolStripMenuItem = new ToolStripMenuItem("Settings...");
             aiSettingsToolStripMenuItem.Click += (_, __) => OpenAiSettings();
             // AI menu (add Schema Fill)
@@ -289,7 +287,7 @@ namespace SpreadsheetApp.UI
             aiViewActionLogToolStripMenuItem.Click += (_, __) => ShowAIActionLog();
             var aiExplainCellToolStripMenuItem = new ToolStripMenuItem("Explain Cell...");
             aiExplainCellToolStripMenuItem.Click += async (_, __) => await ExplainCellAsync();
-            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiSchemaFillToolStripMenuItem, aiSmartSchemaFillToolStripMenuItem, batchSchemaFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiExplainCellToolStripMenuItem, aiViewActionLogToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
+            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiSchemaFillToolStripMenuItem, aiSmartSchemaFillToolStripMenuItem, batchSchemaFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiExplainCellToolStripMenuItem, aiViewActionLogToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
             menuStrip1.Items.Add(aiToolStripMenuItem);
 
             // testToolStripMenuItem

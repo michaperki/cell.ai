@@ -263,21 +263,13 @@ namespace SpreadsheetApp.UI
             ctx.AllowedCommands = new string[0]; // No commands - we just want text
             try
             {
-                // Use a simple approach: plan with a prompt that asks for explanation
-                // The planner will return empty commands, but we can show the raw response
-                // Open chat pane with the explain prompt
+                // Ensure docked chat pane is visible and feed the prompt
+                if (_chatDockHost == null || _chatDockSplitter == null) { try { CreateDockedChatPane(); } catch { } }
                 if (_chatDockHost != null)
                 {
                     _chatDockHost.Visible = true;
                     if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
                     _chatPane?.SetPrompt(prompt, autoPlan: true);
-                }
-                else
-                {
-                    Func<AIContext> getCtx = () => BuildPlannerContext();
-                    void apply(AIPlan ap) => ApplyPlan(ap);
-                    using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply, prompt, autoPlan: true);
-                    dlg.ShowDialog(this);
                 }
             }
             catch (Exception ex)
@@ -2857,10 +2849,13 @@ namespace SpreadsheetApp.UI
                     if (resp == DialogResult.Yes)
                     {
                         string prompt = BuildErrorRepairPrompt(errs);
-                        Func<AIContext> getCtx = () => BuildPlannerContext();
-                        void apply(AIPlan ap) => ApplyPlan(ap);
-                        using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, _chatSession, getCtx, apply, prompt, autoPlan: true);
-                        dlg.ShowDialog(this);
+                        if (_chatDockHost == null || _chatDockSplitter == null) { try { CreateDockedChatPane(); } catch { } }
+                        if (_chatDockHost != null)
+                        {
+                            _chatDockHost.Visible = true;
+                            if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
+                            _chatPane?.SetPrompt(prompt, autoPlan: true);
+                        }
                     }
                 }
             }
