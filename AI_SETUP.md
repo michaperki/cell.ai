@@ -15,6 +15,10 @@ OPENAI_MODEL=gpt-4o-mini
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-3-haiku-20240307
 
+# Optional limits/timeouts
+ANTHROPIC_MAX_TOKENS=2048
+AI_PLAN_TIMEOUT_SEC=30
+
 # Optional custom endpoints
 OPENAI_BASE_URL=https://api.openai.com/v1/chat/completions
 ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
@@ -42,3 +46,7 @@ ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
 - If Test Connection uses Mock, restart the app after setting env vars or check that `.env` is in the same folder as the EXE.
 - Inline suggestions only appear when the current cell is empty and there are ≥2 non‑empty cells above it in the same column.
 - We enforce plain text outputs sized to the requested shape; no formatting or formulas are written by AI.
+
+## Notes on Limits and Timeouts
+- `ANTHROPIC_MAX_TOKENS` controls the Anthropic response budget for planning/fill (default 2048 if unset).
+- `AI_PLAN_TIMEOUT_SEC` sets the Chat planning timeout (default 30s); planning is cancellable.

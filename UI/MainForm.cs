@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
+using System.Text.RegularExpressions;
 using SpreadsheetApp.Core;
 using SpreadsheetApp.Core.AI;
 using SpreadsheetApp.UI.AI;
@@ -14,6 +15,7 @@ namespace SpreadsheetApp.UI
     public partial class MainForm : Form
     {
         private const string ClipboardCopyOriginFormat = "SpreadsheetApp.CopyOrigin";
+        private const string ClipboardCopyContentFormat = "SpreadsheetApp.CopyContent";
         private Spreadsheet _sheet = null!;
         private readonly List<Spreadsheet> _sheets = new();
         private readonly List<string> _sheetNames = new();
@@ -469,8 +471,10 @@ namespace SpreadsheetApp.UI
                 }
             }
             var sb = new System.Text.StringBuilder();
+            var vals2d = new System.Collections.Generic.List<string[]>();
             for (int r = top; r <= bottom; r++)
             {
+                var rowVals = new string[right - left + 1];
                 for (int c = left; c <= right; c++)
                 {
                     if (c > left) sb.Append('\t');
@@ -482,14 +486,24 @@ namespace SpreadsheetApp.UI
                         sb.Append(q);
                     }
                     else sb.Append(raw);
+                    rowVals[c - left] = raw;
                 }
                 if (r < bottom) sb.AppendLine();
+                vals2d.Add(rowVals);
             }
             try
             {
                 var dobj = new DataObject();
                 dobj.SetText(sb.ToString());
                 dobj.SetData(ClipboardCopyOriginFormat, $"{top},{left}");
+                // Include structured raw values payload for reliable internal pastes
+                try
+                {
+                    var payload = new { rows = bottom - top + 1, cols = right - left + 1, values = vals2d.ToArray() };
+                    string json = System.Text.Json.JsonSerializer.Serialize(payload);
+                    dobj.SetData(ClipboardCopyContentFormat, json);
+                }
+                catch { }
                 Clipboard.SetDataObject(dobj, true);
             }
             catch { /* ignore */ }
@@ -498,6 +512,7 @@ namespace SpreadsheetApp.UI
         private void PasteCell()
         {
             if (grid.CurrentCell == null) return;
+            try { if (grid.IsCurrentCellInEditMode) grid.EndEdit(); } catch { }
             string text = string.Empty;
             try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); } catch { }
             if (string.IsNullOrEmpty(text)) return;
@@ -520,36 +535,65 @@ namespace SpreadsheetApp.UI
                 Array.Resize(ref lines, lines.Length - 1);
             }
             string[][] table;
-            if (lines.Length <= 1 && !text.Contains('\t'))
+            // Prefer internal structured payload when present (preserves raw formulas accurately)
+            bool usedStructured = false;
+            try
             {
-                // Single cell paste
-                table = new[] { new[] { text } };
-            }
-            else
-            {
-                var rowsList = new List<string[]>();
-                foreach (var line in lines)
+                var dobj = Clipboard.GetDataObject();
+                if (dobj != null && dobj.GetDataPresent(ClipboardCopyContentFormat))
                 {
-                    var parts = line.Split('\t');
-                    for (int i = 0; i < parts.Length; i++) parts[i] = Unquote(parts[i]);
-                    rowsList.Add(parts);
+                    var json = dobj.GetData(ClipboardCopyContentFormat)?.ToString();
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(json);
+                        if (doc.RootElement.TryGetProperty("values", out var vals) && vals.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            var rowsList = new System.Collections.Generic.List<string[]>();
+                            foreach (var rowEl in vals.EnumerateArray())
+                            {
+                                var colsList = new System.Collections.Generic.List<string>();
+                                if (rowEl.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                {
+                                    foreach (var c in rowEl.EnumerateArray()) colsList.Add(c.GetString() ?? string.Empty);
+                                }
+                                rowsList.Add(colsList.ToArray());
+                            }
+                            table = rowsList.ToArray();
+                            usedStructured = true;
+                        }
+                        else table = Array.Empty<string[]>();
+                    }
+                    else table = Array.Empty<string[]>();
                 }
-                table = rowsList.ToArray();
+                else
+                {
+                    table = Array.Empty<string[]>();
+                }
+            }
+            catch { table = Array.Empty<string[]>(); }
+            if (!usedStructured)
+            {
+                if (lines.Length <= 1 && !text.Contains('\t'))
+                {
+                    // Single cell paste
+                    table = new[] { new[] { text } };
+                }
+                else
+                {
+                    var rowsList = new List<string[]>();
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Split('\t');
+                        for (int i = 0; i < parts.Length; i++) parts[i] = Unquote(parts[i]);
+                        rowsList.Add(parts);
+                    }
+                    table = rowsList.ToArray();
+                }
             }
 
-            // Determine paste start at top-left of current selection
+            // Determine paste start at current cell (anchor). This avoids surprises from lingering multi-selections.
             int startR = grid.CurrentCell.RowIndex;
             int startC = grid.CurrentCell.ColumnIndex;
-            var cells = grid.SelectedCells;
-            if (cells != null && cells.Count > 0)
-            {
-                foreach (DataGridViewCell cell in cells)
-                {
-                    if (cell == null) continue;
-                    startR = Math.Min(startR, cell.RowIndex);
-                    startC = Math.Min(startC, cell.ColumnIndex);
-                }
-            }
 
             // Compute rewrite delta if clipboard originated from this app
             bool canRewrite = false; int dr = 0, dc = 0;
@@ -586,9 +630,16 @@ namespace SpreadsheetApp.UI
                         if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
                         string? oldRaw = _sheet.GetRaw(rr, cc);
                         string newRaw = row[c] ?? string.Empty;
-                        if (canRewrite && !string.IsNullOrEmpty(newRaw) && newRaw.StartsWith("=", StringComparison.Ordinal))
+                        if (canRewrite && !string.IsNullOrEmpty(newRaw))
                         {
-                            try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                            if (newRaw.StartsWith("=", StringComparison.Ordinal))
+                            {
+                                try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                            }
+                            else if (LooksLikeCellRefOrRange(newRaw))
+                            {
+                                try { newRaw = RewriteFormulaForPaste("=" + newRaw, dr, dc); } catch { }
+                            }
                         }
                         if (oldRaw == newRaw) continue;
                         _sheet.SetRaw(rr, cc, newRaw);
@@ -635,14 +686,15 @@ namespace SpreadsheetApp.UI
 
         private string RewriteFormulaForPaste(string formula, int dr, int dc)
         {
-            var expr = formula ?? string.Empty;
-            var sb = new System.Text.StringBuilder(expr.Length + 16);
+            // Rewrite references using a regex outside string literals. Handles single refs and ranges; preserves $ anchors.
+            string expr = formula ?? string.Empty;
+            var result = new System.Text.StringBuilder(expr.Length + 16);
             int i = 0;
             while (i < expr.Length)
             {
-                char ch = expr[i];
-                if (ch == '"')
+                if (expr[i] == '"')
                 {
+                    // Copy string literal verbatim, respecting doubled quotes
                     int start = i; i++;
                     while (i < expr.Length)
                     {
@@ -653,35 +705,66 @@ namespace SpreadsheetApp.UI
                         }
                         i++;
                     }
-                    sb.Append(expr, start, i - start);
+                    result.Append(expr, start, i - start);
                     continue;
                 }
-                int tokenStart, tokenEnd; int r0, c0; bool absC, absR; int save = i;
-                if (TryParseCellRefWithAnchors(expr, ref i, out r0, out c0, out absC, out absR, out tokenStart, out tokenEnd))
-                {
-                    int j = i; while (j < expr.Length && char.IsWhiteSpace(expr[j])) j++;
-                    if (j < expr.Length && expr[j] == ':')
-                    {
-                        j++; int k = j; int r1, c1; bool absC2, absR2; int ts2, te2;
-                        if (TryParseCellRefWithAnchors(expr, ref k, out r1, out c1, out absC2, out absR2, out ts2, out te2))
-                        {
-                            int nr0 = absR ? r0 : r0 + dr; int nc0 = absC ? c0 : c0 + dc;
-                            int nr1 = absR2 ? r1 : r1 + dr; int nc1 = absC2 ? c1 : c1 + dc;
-                            sb.Append(BuildRefWithAnchors(nr0, nc0, absC, absR));
-                            sb.Append(':');
-                            sb.Append(BuildRefWithAnchors(nr1, nc1, absC2, absR2));
-                            i = k;
-                            continue;
-                        }
-                    }
-                    int nr = absR ? r0 : r0 + dr; int nc = absC ? c0 : c0 + dc;
-                    sb.Append(BuildRefWithAnchors(nr, nc, absC, absR));
-                    continue;
-                }
-                sb.Append(expr[save]);
-                i = save + 1;
+                // Non-literal segment
+                int segStart = i;
+                while (i < expr.Length && expr[i] != '"') i++;
+                string segment = expr.Substring(segStart, i - segStart);
+                segment = RewriteRefsInSegment(segment, dr, dc);
+                result.Append(segment);
             }
-            return sb.ToString();
+            return result.ToString();
+        }
+
+        private static string RewriteRefsInSegment(string segment, int dr, int dc)
+        {
+            if (string.IsNullOrEmpty(segment)) return segment;
+            // Combined ref or range: ($?Letters)( $?Digits )( : ($?Letters)( $?Digits ) )?
+            var rx = new System.Text.RegularExpressions.Regex(@"(\$?[A-Za-z]+)(\$?\d+)(\s*:\s*(\$?[A-Za-z]+)(\$?\d+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
+            string Eval(System.Text.RegularExpressions.Match m)
+            {
+                string Render(string colTok, string rowTok)
+                {
+                    bool absC = colTok.StartsWith("$");
+                    bool absR = rowTok.StartsWith("$");
+                    string colName = absC ? colTok.Substring(1) : colTok;
+                    string rowDigits = absR ? rowTok.Substring(1) : rowTok;
+                    if (!int.TryParse(rowDigits, out int row1)) return m.Value; // fallback
+                    int r = Math.Max(0, row1 - 1);
+                    int c;
+                    try { c = Core.CellAddress.ColumnNameToIndex(colName); }
+                    catch { return m.Value; }
+                    int nr = absR ? r : r + dr;
+                    int nc = absC ? c : c + dc;
+                    return BuildRefWithAnchors(nr, nc, absC, absR);
+                }
+                if (m.Groups[3].Success)
+                {
+                    // Range
+                    string left = Render(m.Groups[1].Value, m.Groups[2].Value);
+                    string right = Render(m.Groups[4].Value, m.Groups[5].Value);
+                    return left + ":" + right;
+                }
+                // Single ref
+                return Render(m.Groups[1].Value, m.Groups[2].Value);
+            }
+            return rx.Replace(segment, new System.Text.RegularExpressions.MatchEvaluator(Eval));
+        }
+
+        private static bool LooksLikeCellRefOrRange(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            int i = 0;
+            int r, c; bool ac, ar; int ts, te;
+            if (!TryParseCellRefWithAnchors(s, ref i, out r, out c, out ac, out ar, out ts, out te)) return false;
+            // Optional whitespace
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+            if (i >= s.Length) return true;
+            if (s[i] != ':') return i == s.Length;
+            i++;
+            return TryParseCellRefWithAnchors(s, ref i, out r, out c, out ac, out ar, out ts, out te) && i == s.Length;
         }
 
         private void CutCell()

@@ -238,6 +238,40 @@ Rationale: Smoother undo UX reduces noise and accidental multi‑undo clicks; ke
 
 3) Multi‑cell clipboard (Copy/Paste/Cut)
    - Added rectangular selection support for Copy and Cut; clipboard format is TSV (rows by newlines, columns by tabs) with minimal quoting for tabs/newlines.
+
+# Latest Updates (v0.3 Execution Plan)
+
+1) Parser‑driven dependency extraction
+- Spreadsheet now uses `FormulaEngine.EnumerateReferences` (AST walk) to extract references and ranges, ignoring string literals and nested constructs safely.
+- Improves correctness of the dependency graph for incremental recalc.
+
+2) Incremental‑on‑edit repaint (gated)
+- On `CellEndEdit`, compute affected cells via `_sheet.RecalculateDirty` and refresh only those cells using the existing 5% threshold fallback to full refresh.
+- Immediate dependent updates; full fallback remains for reliability.
+
+3) Copy/Paste: absolute/relative reference rewriting
+- Copy tags the clipboard with origin and a structured payload of raw values. Paste prefers that payload and rewrites cell references and ranges by delta, honoring `$` anchors.
+- Bugfix: Resolved a case where pasting could yield malformed refs like `=B11` by anchoring at the active cell, ending edit before paste, and using a regex‑based rewriter outside string literals.
+
+4) CSV async I/O + guards
+- Added `ExportCsvAsync`/`ImportCsvAsync` and wired File → Import/Export CSV to async paths with `SetUiBusy` to disable menus and show wait cursor.
+- Long operations do not block the UI.
+
+5) Chat UX improvements
+- Revise loop: Chat dialog adds “Revise” to append feedback and re‑plan without closing.
+- Post‑apply error feedback: After apply, scan changed cells for `#ERR`; prompt to attempt a fix; if confirmed, open Chat with prefilled prompt and auto‑plan (review before applying).
+
+6) Provider limits/config
+- Anthropic `max_tokens` is controlled by `ANTHROPIC_MAX_TOKENS` (default 2048). Planning timeout configurable via `AI_PLAN_TIMEOUT_SEC` (default 30s).
+
+7) Planner context header detection
+- Heuristic picks the first non‑empty row with predominantly text values as the header row for the workbook summary, instead of always row 1.
+
+## Quick Validate
+- Edit A1 and observe immediate B1/C1 updates; large changes fallback to full refresh.
+- Copy 2×2 formula block with `$` variants; paste elsewhere; verify `$` anchors preserved and relative refs rewritten.
+- Import/Export CSV: menus disabled and wait cursor shown during operation.
+- Chat: Plan → Revise with feedback; then Apply. Introduce an error and confirm the post‑apply prompt to repair.
    - Paste detects TSV and writes a 2D block starting at the top‑left of the current selection; records a single bulk undo and uses incremental repaint.
 
 ## AI Enhancements (Context, Commands, Chat History)
