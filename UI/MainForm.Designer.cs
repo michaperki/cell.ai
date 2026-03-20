@@ -281,7 +281,15 @@ namespace SpreadsheetApp.UI
             // AI menu (add Schema Fill)
             var aiSchemaFillToolStripMenuItem = new ToolStripMenuItem("Fill Selected From Schema...");
             aiSchemaFillToolStripMenuItem.Click += async (_, __) => await FillSelectedFromSchemaAsync();
-            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiSchemaFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
+            var aiSmartSchemaFillToolStripMenuItem = new ToolStripMenuItem("Smart Schema Fill") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.F };
+            aiSmartSchemaFillToolStripMenuItem.Click += async (_, __) => await SmartSchemaFillAsync();
+            var batchSchemaFillToolStripMenuItem = new ToolStripMenuItem("Batch Schema Fill...");
+            batchSchemaFillToolStripMenuItem.Click += async (_, __) => await BatchFillSelectedFromSchemaAsync();
+            var aiViewActionLogToolStripMenuItem = new ToolStripMenuItem("View Action Log...");
+            aiViewActionLogToolStripMenuItem.Click += (_, __) => ShowAIActionLog();
+            var aiExplainCellToolStripMenuItem = new ToolStripMenuItem("Explain Cell...");
+            aiExplainCellToolStripMenuItem.Click += async (_, __) => await ExplainCellAsync();
+            aiToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { aiGenerateFillToolStripMenuItem, aiSchemaFillToolStripMenuItem, aiSmartSchemaFillToolStripMenuItem, batchSchemaFillToolStripMenuItem, aiToggleChatPaneToolStripMenuItem, aiOpenChatToolStripMenuItem, new ToolStripSeparator(), aiEnableInlineToolStripMenuItem, aiAcceptInlineToolStripMenuItem, new ToolStripSeparator(), aiExplainCellToolStripMenuItem, aiViewActionLogToolStripMenuItem, new ToolStripSeparator(), aiSettingsToolStripMenuItem });
             menuStrip1.Items.Add(aiToolStripMenuItem);
 
             // testToolStripMenuItem
@@ -303,6 +311,17 @@ namespace SpreadsheetApp.UI
             exportDocsJsonToolStripMenuItem.Click += (_, __) => ExportDocsJson();
             helpToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { docsViewerToolStripMenuItem, exportDocsJsonToolStripMenuItem });
             menuStrip1.Items.Add(helpToolStripMenuItem);
+
+            // viewToolStripMenuItem (View menu with Freeze options)
+            var viewToolStripMenuItem = new ToolStripMenuItem();
+            viewToolStripMenuItem.Name = "viewToolStripMenuItem";
+            viewToolStripMenuItem.Text = "View";
+            var freezeTopRowToolStripMenuItem = new ToolStripMenuItem("Freeze Top Row") { CheckOnClick = true };
+            freezeTopRowToolStripMenuItem.Click += (_, __) => ToggleFreezeTopRow();
+            var freezeFirstColToolStripMenuItem = new ToolStripMenuItem("Freeze First Column") { CheckOnClick = true };
+            freezeFirstColToolStripMenuItem.Click += (_, __) => ToggleFreezeFirstColumn();
+            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { freezeTopRowToolStripMenuItem, freezeFirstColToolStripMenuItem });
+            menuStrip1.Items.Insert(menuStrip1.Items.IndexOf(helpToolStripMenuItem), viewToolStripMenuItem);
 
             // sheetsToolStripMenuItem
             sheetsToolStripMenuItem.Name = "sheetsToolStripMenuItem";

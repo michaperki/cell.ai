@@ -747,3 +747,83 @@ Follow‑ups from tests (queued)
 - Tighten default AllowedCommands for narrow tasks (or pass an explicit allowlist per step) to prevent unintended create_sheet/set_title when not asked.
 - Optionally block duplicate‑name sheet creation unless explicitly requested, or auto‑rename/new sheet confirmation.
 - Consider a brief “revise” on policy/shape mismatch (e.g., step 19.2 targeting A instead of C) to elicit repair rather than silently dropping.
+
+## Major Feature Batch: Cross‑Sheet Refs, Grammar, Chat Unification, Batch Fill, Low‑Hanging Fruit (2026‑03‑20)
+
+### What We Shipped
+
+#### 1. Cross‑Sheet Formula References (`=Sheet2!A1`)
+- **Parser:** Added `Exclamation` token type, `SheetCellRefNode(Sheet, Address)` and `SheetRangeNode(Sheet, A, B)` AST nodes. Handles both bare identifiers (`Sheet2!A1`) and single‑quoted names (`'My Sheet'!A1`).
+- **Evaluator:** Added optional `_crossSheetResolver` callback (`Func<string, string, EvaluationResult>`) to `FormulaEngine`. `SheetCellRefNode` delegates to the resolver; `SheetRangeNode` works inside aggregate functions (SUM, COUNT, etc.) via the existing `AsNumbers` helper.
+- **Spreadsheet.cs:** Added `CrossSheetResolver` property (`Func<string, int, int, EvaluationResult>`). `EvaluateCell` now passes a cross‑sheet adapter to the `FormulaEngine` constructor.
+- **MainForm.cs:** `WireCrossSheetResolver()` maps sheet names from `_sheetNames` to `_sheets` and is called from `InitializeSheet()` whenever the active sheet changes.
+- **Dependency tracking:** Cross‑sheet refs return early in `CollectRefs` — they don't create same‑sheet dependency edges. Cross‑sheet dependency propagation is deferred (editing Sheet2 won't auto‑recalc Sheet1 formulas referencing it unless Sheet1 is recalculated explicitly).
+- Files: `Core/FormulaEngine.cs`, `Core/Spreadsheet.cs`, `UI/MainForm.cs`.
+
+#### 2. AI Command Grammar: `insert_rows` / `delete_rows`
+- Added `InsertRows` and `DeleteRows` to `AICommandType` enum and new `InsertRowsCommand` / `DeleteRowsCommand` classes in `Commands.cs`.
+- `ProviderChatPlanner.cs`: Extended system prompt with JSON schemas (`{“type”:”insert_rows”,”at”:<1-based>,”count”:<int>}`), added `ParsePlan` cases, updated `IsCommandAllowedByList` and `DescribeType`.
+- `MainForm.cs` `ApplyPlan`: `InsertRowsCommand` shifts data down (bottom‑up to avoid overwrites), clears inserted rows, copies formats. `DeleteRowsCommand` records old values, shifts up, clears vacated bottom rows. Both call `Recalculate()` and mark all affected rows for repaint.
+- Files: `Core/AI/Commands.cs`, `Core/AI/ProviderChatPlanner.cs`, `UI/MainForm.cs`.
+
+#### 3. Chat Surface Unification
+- `ChatAssistantForm.cs` rewritten from 222 lines of duplicated `DoPlanAsync`/`BuildPolicyPreview`/history logic to a 30‑line thin wrapper that embeds a `ChatAssistantPanel` instance with a Close button. Constructor signature preserved — all callers (pop‑out, error repair dialog, test runner) work unchanged.
+- File: `UI/AI/ChatAssistantForm.cs`.
+
+#### 4. Batch Schema Fill Skeleton (Stage 2)
+- New `Core/AI/BatchSchemaFiller.cs`: Splits large fills into configurable batches (default 30 rows), runs with `SemaphoreSlim`‑based concurrency (default 3 concurrent), per‑batch retry (up to 2), 60s per‑batch timeout, `Action<FillProgress>` callback for progress reporting.
+- `CloneContextForBatch` builds a fresh `AIContext` per batch with headers + only that batch's input values (prompt‑cache friendly — system prompt + headers identical across batches).
+- `MainForm.cs`: Added `BatchFillSelectedFromSchemaAsync()` — falls back to single‑shot for ≤40 rows, shows confirmation dialog with batch count, updates title bar with progress, applies each successful batch with bounds sanitization. Added menu item “Batch Schema Fill…” in the AI menu.
+- Files: `Core/AI/BatchSchemaFiller.cs` (new), `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+
+#### 5. Structured Prompt Template for Schema Fill
+- `TryBuildSchemaFillSection` in `ProviderChatPlanner.cs` now emits explicit ordering instructions: “Produce exactly one row of N values per input below, in the SAME order. Each output row MUST correspond to the input on that row. Do NOT reorder or skip inputs.” Plus total expected row/column counts.
+- This directly addresses the root‑to‑row misalignment observed in Test 16 where the AI shuffled or omitted inputs.
+- File: `Core/AI/ProviderChatPlanner.cs`.
+
+#### 6. Formula Engine: 11 New Functions
+- **COUNTA** — count non‑empty cells (vs COUNT which only counts numbers).
+- **ISBLANK, ISNUMBER, ISTEXT** — type‑checking predicates (return 1/0).
+- **TRIM** — strip leading/trailing whitespace.
+- **PROPER** — title‑case via `CultureInfo.TextInfo.ToTitleCase`.
+- **TODAY / NOW** — return date/datetime as `yyyy-MM-dd` / `yyyy-MM-dd HH:mm:ss` strings.
+- **TEXT** — format a number with a format string; handles `%` patterns and maps `#` → `0` for .NET compat.
+- **REPLACE** — replace characters by position (1‑based start, count, replacement text).
+- File: `Core/FormulaEngine.cs`.
+
+#### 7. Freeze Panes
+- View menu with two checkable toggles: “Freeze Top Row” and “Freeze First Column”. Uses native DataGridView `Rows[0].Frozen` / `Columns[0].Frozen`.
+- Files: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+
+#### 8. AI Action Log
+- New `Core/AI/AIActionLog.cs`: Session‑scoped list of `Entry` records (timestamp, prompt summary, command count, cell count, summary). `Record()` called at the top of `ApplyPlan`.
+- `ShowAIActionLog()` in MainForm opens a `ListView`‑based dialog. Menu item “View Action Log…” in the AI menu.
+- Files: `Core/AI/AIActionLog.cs` (new), `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+
+#### 9. Explain Cell
+- AI menu item “Explain Cell…” builds a prompt from the active cell's raw content and evaluated value, then opens the docked chat pane (or dialog fallback) with `autoPlan: true`.
+- Files: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+
+#### 10. Schema Fill Hotkey + Selection Heuristic
+- Bound to `Ctrl+Shift+F`. If only a single cell is selected, `SmartSchemaFillAsync` auto‑expands to the output rectangle: finds header row, rightmost header column, input column, last data row, then selects the empty output region before calling `FillSelectedFromSchemaAsync`.
+- Files: `UI/MainForm.cs`, `UI/MainForm.Designer.cs`.
+
+### Files Modified (9)
+- `Core/FormulaEngine.cs` — cross‑sheet parser/evaluator + 11 new functions
+- `Core/Spreadsheet.cs` — CrossSheetResolver property + wiring
+- `Core/AI/Commands.cs` — InsertRows/DeleteRows types
+- `Core/AI/ProviderChatPlanner.cs` — insert/delete grammar, structured prompt template
+- `UI/AI/ChatAssistantForm.cs` — rewritten as thin wrapper
+- `UI/MainForm.cs` — all feature integrations
+- `UI/MainForm.Designer.cs` — menu items for all new features
+
+### Files Created (2)
+- `Core/AI/AIActionLog.cs` — session action log
+- `Core/AI/BatchSchemaFiller.cs` — batch orchestration
+
+### Known Limitations / Follow‑ups
+- Cross‑sheet dependency propagation is not automatic: editing Sheet2 won't recalc Sheet1 formulas until Sheet1 is recalculated. Needs a workbook‑level recalc pass.
+- `insert_cols` / `delete_cols` not yet implemented (only rows).
+- Batch orchestration is skeleton — needs real‑world testing with >40 rows and cost estimation dialog.
+- Explain Cell uses the planner (which returns JSON commands); a dedicated text‑only endpoint would be better for pure explanations.
+- Freeze panes state doesn't persist across sheet switches or save/load.

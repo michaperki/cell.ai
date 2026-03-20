@@ -33,7 +33,7 @@ namespace SpreadsheetApp.Core.AI
                 }
             }
 
-            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> }]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
+            string sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array.";
 
             // Allowed commands and strengthened constraints
             string[]? allowedCmds = null;
@@ -314,19 +314,27 @@ namespace SpreadsheetApp.Core.AI
             }
             catch { }
 
-            // Row-to-input mapping: list inputs detected in the first column of the Nearby window
+            // Row-to-input mapping: explicitly map each input to its output row
             if (nearby != null && nearby.Length > 1)
             {
                 int startRow1 = context.StartRow + 1; // 1-based starting row for the selection
                 int fillColCount = Math.Max(0, headerRow.Length - 1);
                 string fillStart = CellAddress.ColumnIndexToName(tableLeftCol + 1);
                 string fillEnd = CellAddress.ColumnIndexToName(tableLeftCol + fillColCount);
+                sb.Append($" IMPORTANT: Produce exactly one row of {fillColCount} values per input below, in the SAME order.");
+                sb.Append($" Each output row MUST correspond to the input on that row. Do NOT reorder or skip inputs.");
+                int inputCount = 0;
                 for (int r = 1; r < nearby.Length; r++)
                 {
                     if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0]))
                     {
-                        sb.Append($" Row {startRow1 + r - 1}: input=\"{nearby[r][0]}\" -> fill columns {fillStart}-{fillEnd}.");
+                        inputCount++;
+                        sb.Append($" Row {startRow1 + r - 1}: input=\"{nearby[r][0]}\" -> produce values for columns {fillStart}-{fillEnd} matching the headers.");
                     }
+                }
+                if (inputCount > 0)
+                {
+                    sb.Append($" Total expected rows in set_values: {inputCount}. Total columns per row: {fillColCount}.");
                 }
             }
 
@@ -374,6 +382,8 @@ namespace SpreadsheetApp.Core.AI
                 ClearRangeCommand => "clear_range",
                 RenameSheetCommand => "rename_sheet",
                 SortRangeCommand => "sort_range",
+                InsertRowsCommand => "insert_rows",
+                DeleteRowsCommand => "delete_rows",
                 _ => string.Empty
             };
             if (string.IsNullOrEmpty(type)) return false;
@@ -622,6 +632,8 @@ namespace SpreadsheetApp.Core.AI
                 ClearRangeCommand => "clear_range",
                 RenameSheetCommand => "rename_sheet",
                 SortRangeCommand => "sort_range",
+                InsertRowsCommand => "insert_rows",
+                DeleteRowsCommand => "delete_rows",
                 _ => cmd.GetType().Name
             };
         }
@@ -851,6 +863,22 @@ namespace SpreadsheetApp.Core.AI
                                     }
                                 }
                                 plan.Commands.Add(sr);
+                                break;
+                            }
+                        case "insert_rows":
+                            {
+                                var ir = new InsertRowsCommand();
+                                if (cmd.TryGetProperty("at", out var at)) ir.At = Math.Max(0, SafeInt(at, 1) - 1);
+                                if (cmd.TryGetProperty("count", out var cnt)) ir.Count = Math.Max(1, SafeInt(cnt, 1));
+                                plan.Commands.Add(ir);
+                                break;
+                            }
+                        case "delete_rows":
+                            {
+                                var dr = new DeleteRowsCommand();
+                                if (cmd.TryGetProperty("at", out var at)) dr.At = Math.Max(0, SafeInt(at, 1) - 1);
+                                if (cmd.TryGetProperty("count", out var cnt)) dr.Count = Math.Max(1, SafeInt(cnt, 1));
+                                plan.Commands.Add(dr);
                                 break;
                             }
                     }

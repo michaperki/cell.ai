@@ -27,6 +27,9 @@ namespace SpreadsheetApp.Core
         // Cell formatting
         private readonly Dictionary<(int r, int c), CellFormat> _formats = new();
 
+        // Optional resolver for cross-sheet references (Sheet name, row, col -> EvaluationResult)
+        public Func<string, int, int, EvaluationResult>? CrossSheetResolver { get; set; }
+
         public Spreadsheet(int rows, int columns)
         {
             if (rows <= 0 || columns <= 0) throw new ArgumentOutOfRangeException();
@@ -170,6 +173,17 @@ namespace SpreadsheetApp.Core
                 else if (raw.StartsWith("=", StringComparison.Ordinal))
                 {
                     var expr = raw.Substring(1);
+                    Func<string, string, EvaluationResult>? crossSheet = null;
+                    if (CrossSheetResolver != null)
+                    {
+                        var resolver = CrossSheetResolver;
+                        crossSheet = (sheet, addr) =>
+                        {
+                            if (!CellAddress.TryParse(addr, out int rr2, out int cc2))
+                                return EvaluationResult.FromError($"Bad ref '{addr}'");
+                            return resolver(sheet, rr2, cc2);
+                        };
+                    }
                     var engine = new FormulaEngine((addr) =>
                     {
                         if (!CellAddress.TryParse(addr, out int rr, out int cc))
@@ -177,7 +191,7 @@ namespace SpreadsheetApp.Core
                         if (rr < 0 || rr >= Rows || cc < 0 || cc >= Columns)
                             return EvaluationResult.FromError("REF");
                         return EvaluateCell(rr, cc, visiting);
-                    });
+                    }, crossSheet);
                     result = engine.Evaluate(expr);
                 }
                 else

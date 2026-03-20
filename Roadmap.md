@@ -188,6 +188,23 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Performance regressions from repaint → measure vs. full‑sheet fallback.
 - Format migrations → explicit versioning and migration helpers.
 
+## Low‑Hanging Fruit (quick wins, high perceived value)
+
+### Freeze Panes — IMPLEMENTED
+View menu adds Freeze Top Row / Freeze First Column toggles, wiring DataGridView’s `Frozen` properties so headers remain visible during scroll.
+
+### Formula Engine: COUNTA + IS* Functions — IMPLEMENTED
+Added `COUNTA`, `ISBLANK`, `ISNUMBER`, and `ISTEXT` to the function dispatch, improving parity and enabling richer AI‑generated formulas.
+
+### Explain Cell (AI right‑click action) — IMPLEMENTED
+Right‑click or AI > Explain Cell… builds a prompt from the active cell’s raw contents and evaluated value, then opens the docked Chat pane (or dialog fallback) with auto‑plan. Planner is gated to no‑write commands for a plain‑language explanation; no grid writes occur.
+
+### AI Action Log (session history) — IMPLEMENTED
+Session‑scoped log of applied AI plans (timestamp, prompt, command count, cell count, summary). Accessible via AI > View Action Log… and rendered in a simple list view.
+
+### Schema Fill Hotkey + Selection Heuristic — IMPLEMENTED
+Added Smart Schema Fill (Ctrl+Shift+F). When a single cell is selected, it auto‑expands to the likely output rectangle using header/input detection before invoking schema fill.
+
 ## Backlog (Triage Pool)
 - Advanced number formats (patterns), more functions, keyboard/selection refinements.
 - Nice‑to‑have: XLSX interop, charts (out of scope unless prioritized).

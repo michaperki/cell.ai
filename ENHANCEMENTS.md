@@ -6,7 +6,7 @@ Items not already covered in Roadmap.md, BACKLOG.md, or ENHANCEMENT_PLAN.md. AI 
 
 ---
 
-## AI Command Grammar Expansions (2 of 8 done)
+## AI Command Grammar Expansions (4 of 8 done)
 
 The chat planner currently supports 7 command types (set_values, set_title, set_formula, sort_range, create_sheet, clear_range, rename_sheet). These are the remaining impactful additions:
 
@@ -20,12 +20,12 @@ Sort a rectangular region by a specified column, ascending or descending.
 Schema: `{"type":"sort_range","start":{...},"rows":N,"cols":N,"sort_col":"B","order":"asc","has_header":true}`.
 Enables "sort my expenses by amount" or "alphabetize the names column."
 
-### `insert_rows` / `insert_cols` — NOT STARTED
+### `insert_rows` / `insert_cols` — IMPLEMENTED (insert_rows) / NOT STARTED (insert_cols)
 Insert blank rows or columns at a position, shifting existing data down/right.
 Schema: `{"type":"insert_rows","at":5,"count":2}`.
 Currently there's no way to ask the AI to "add a header row above my data" without overwriting existing content.
 
-### `delete_rows` / `delete_cols` — NOT STARTED
+### `delete_rows` / `delete_cols` — IMPLEMENTED (delete_rows) / NOT STARTED (delete_cols)
 Remove rows or columns, shifting data up/left.
 Enables "remove the empty rows" or "delete column C."
 
@@ -85,20 +85,20 @@ Multi-turn chat works (conversation history is shipped), but undo and chat are c
 
 ---
 
-## Formula Engine Gaps (~7 of 10 done)
+## Formula Engine Gaps (~10 of 10 done)
 
 Functions not yet implemented that would both enrich the spreadsheet and expand what the AI can generate via `set_formula`:
 Implemented: IFERROR, SUMIF, COUNTIF, AVERAGEIF
-- **`SUMIF` / `COUNTIF` / `AVERAGEIF`** — NOT IMPLEMENTED. Conditional aggregates. Extremely common in real spreadsheet use.
+- **`SUMIF` / `COUNTIF` / `AVERAGEIF`** — IMPLEMENTED. Conditional aggregates. Extremely common in real spreadsheet use.
 - **`HLOOKUP`** — IMPLEMENTED. Horizontal lookup, complement to VLOOKUP.
 - **`INDEX` / `MATCH`** — IMPLEMENTED. More flexible than VLOOKUP; the modern lookup pattern.
-- **`IFERROR`** — NOT IMPLEMENTED. Wraps errors gracefully; `=IFERROR(A1/B1, 0)`.
-- **`TRIM`** — NOT IMPLEMENTED. **`UPPER` / `LOWER`** — IMPLEMENTED. **`PROPER`** — NOT IMPLEMENTED. Text cleanup functions.
-- **`TEXT`** — NOT IMPLEMENTED. Format a number as text with a format string: `=TEXT(A1, "0.00%")`.
-- **`TODAY` / `NOW`** — NOT IMPLEMENTED. Date functions (even if just returning serial numbers or formatted strings).
-- **`COUNTA`** — NOT IMPLEMENTED. Count non-empty cells (COUNT only counts numbers).
-- **`ISBLANK` / `ISNUMBER` / `ISTEXT`** — NOT IMPLEMENTED. Type-checking functions.
-- **`SUBSTITUTE`** — IMPLEMENTED. **`REPLACE`** — NOT IMPLEMENTED. String replacement.
+- **`IFERROR`** — IMPLEMENTED. Wraps errors gracefully; `=IFERROR(A1/B1, 0)`.
+- **`TRIM`** — IMPLEMENTED. **`UPPER` / `LOWER`** — IMPLEMENTED. **`PROPER`** — IMPLEMENTED. Text cleanup functions.
+- **`TEXT`** — IMPLEMENTED. Format a number as text with a format string: `=TEXT(A1, "0.00%")`.
+- **`TODAY` / `NOW`** — IMPLEMENTED. Date functions (even if just returning serial numbers or formatted strings).
+- **`COUNTA`** — IMPLEMENTED. Count non-empty cells (COUNT only counts numbers).
+- **`ISBLANK` / `ISNUMBER` / `ISTEXT`** — IMPLEMENTED. Type-checking functions.
+- **`SUBSTITUTE`** — IMPLEMENTED. **`REPLACE`** — IMPLEMENTED. String replacement.
 
 ---
 
@@ -112,7 +112,7 @@ Allow naming a range (e.g., `Expenses = A2:A50`). Named ranges improve both huma
 
 ---
 
-## Cross-Sheet References — NOT STARTED
+## Cross-Sheet References — IMPLEMENTED
 
 The formula engine currently resolves cell references within a single sheet. Supporting `=Sheet2!A1` or `=SUM(Sheet2!B:B)` syntax would unlock real multi-sheet workbooks and let the AI write formulas that pull data across sheets.
 
@@ -150,7 +150,7 @@ Ctrl+D fills selected cells with the value/formula from the top cell of each col
 ### Drag-fill handle
 Click and drag the corner of a selection to extend a series (1,2,3... or Mon,Tue,Wed...). Core spreadsheet interaction that's missing. (Subsumed by Fill Down / drag‑fill above.)
 
-### Freeze panes — NOT STARTED
+### Freeze panes — IMPLEMENTED
 Freeze the top row(s) or left column(s) so headers stay visible during scrolling. DataGridView supports frozen columns/rows natively.
 
 ### Conditional formatting rules — NOT STARTED

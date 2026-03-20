@@ -8,10 +8,12 @@ namespace SpreadsheetApp.Core
     public class FormulaEngine
     {
         private readonly Func<string, EvaluationResult> _cellResolver;
+        private readonly Func<string, string, EvaluationResult>? _crossSheetResolver; // (sheetName, cellAddr) -> result
 
-        public FormulaEngine(Func<string, EvaluationResult> cellResolver)
+        public FormulaEngine(Func<string, EvaluationResult> cellResolver, Func<string, string, EvaluationResult>? crossSheetResolver = null)
         {
             _cellResolver = cellResolver;
+            _crossSheetResolver = crossSheetResolver;
         }
 
         // Enumerate referenced cell coordinates (including expanded ranges) from an expression string.
@@ -58,6 +60,9 @@ namespace SpreadsheetApp.Core
                 case FuncCallNode fn:
                     foreach (var a in fn.Args) CollectRefs(a, refs);
                     return;
+                case SheetCellRefNode:
+                case SheetRangeNode:
+                    return; // Cross-sheet refs tracked separately
                 default:
                     return;
             }
@@ -145,6 +150,12 @@ namespace SpreadsheetApp.Core
                     }
                     case FuncCallNode fn:
                         return EvalFunc(fn);
+                    case SheetCellRefNode scr:
+                        if (_crossSheetResolver == null)
+                            return EvaluationResult.FromError("Cross-sheet refs not supported");
+                        return _crossSheetResolver(scr.Sheet, scr.Address);
+                    case SheetRangeNode srn:
+                        return EvaluationResult.FromError("Sheet range not allowed here");
                     case RangeNode rn:
                         return EvaluationResult.FromError("Range not allowed here");
                     default:
@@ -168,6 +179,16 @@ namespace SpreadsheetApp.Core
                     foreach (var addr in EnumerateRange(rng.A, rng.B))
                     {
                         var v = _cellResolver(addr);
+                        if (v.Error == null && v.Number is double d) yield return d;
+                    }
+                    yield break;
+                }
+                if (arg is SheetRangeNode srng)
+                {
+                    if (_crossSheetResolver == null) yield break;
+                    foreach (var addr in EnumerateRange(srng.A, srng.B))
+                    {
+                        var v = _crossSheetResolver(srng.Sheet, addr);
                         if (v.Error == null && v.Number is double d) yield return d;
                     }
                     yield break;
@@ -640,6 +661,120 @@ namespace SpreadsheetApp.Core
                         return _cellResolver(retAddr);
                     }
                 }
+                case "COUNTA":
+                {
+                    if (fn.Args.Count < 1) return EvaluationResult.FromError("COUNTA expects at least 1 argument");
+                    int count = 0;
+                    foreach (var arg in fn.Args)
+                    {
+                        if (arg is RangeNode rng)
+                        {
+                            foreach (var addr in EnumerateRange(rng.A, rng.B))
+                            {
+                                var v = _cellResolver(addr);
+                                if (v.Error == null && !string.IsNullOrEmpty(v.ToDisplay())) count++;
+                            }
+                        }
+                        else
+                        {
+                            var v = EvalNode(arg);
+                            if (v.Error == null && !string.IsNullOrEmpty(v.ToDisplay())) count++;
+                        }
+                    }
+                    return EvaluationResult.FromNumber(count);
+                }
+                case "ISBLANK":
+                {
+                    if (fn.Args.Count != 1) return EvaluationResult.FromError("ISBLANK expects 1 argument");
+                    var v = EvalNode(fn.Args[0]);
+                    bool blank = v.Error == null && string.IsNullOrEmpty(v.ToDisplay());
+                    return EvaluationResult.FromNumber(blank ? 1.0 : 0.0);
+                }
+                case "ISNUMBER":
+                {
+                    if (fn.Args.Count != 1) return EvaluationResult.FromError("ISNUMBER expects 1 argument");
+                    var v = EvalNode(fn.Args[0]);
+                    return EvaluationResult.FromNumber(v.Error == null && v.Number is double ? 1.0 : 0.0);
+                }
+                case "ISTEXT":
+                {
+                    if (fn.Args.Count != 1) return EvaluationResult.FromError("ISTEXT expects 1 argument");
+                    var v = EvalNode(fn.Args[0]);
+                    bool isText = v.Error == null && v.Number is not double && !string.IsNullOrEmpty(v.Text);
+                    return EvaluationResult.FromNumber(isText ? 1.0 : 0.0);
+                }
+                case "TRIM":
+                {
+                    if (fn.Args.Count != 1) return EvaluationResult.FromError("TRIM expects 1 argument");
+                    try { return EvaluationResult.FromText(AsText(fn.Args[0]).Trim()); }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                }
+                case "PROPER":
+                {
+                    if (fn.Args.Count != 1) return EvaluationResult.FromError("PROPER expects 1 argument");
+                    try
+                    {
+                        var s = AsText(fn.Args[0]);
+                        return EvaluationResult.FromText(System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(s.ToLowerInvariant()));
+                    }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                }
+                case "TODAY":
+                {
+                    if (fn.Args.Count != 0) return EvaluationResult.FromError("TODAY expects 0 arguments");
+                    return EvaluationResult.FromText(DateTime.Today.ToString("yyyy-MM-dd"));
+                }
+                case "NOW":
+                {
+                    if (fn.Args.Count != 0) return EvaluationResult.FromError("NOW expects 0 arguments");
+                    return EvaluationResult.FromText(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                }
+                case "TEXT":
+                {
+                    if (fn.Args.Count != 2) return EvaluationResult.FromError("TEXT expects 2 arguments");
+                    try
+                    {
+                        var num = GetNumber(fn.Args[0], "TEXT");
+                        var fmt = AsText(fn.Args[1]);
+                        // Handle common spreadsheet format patterns
+                        string formatted;
+                        if (fmt.Contains("%"))
+                        {
+                            // Percentage: count decimal places after decimal point before %
+                            int decPlaces = 0;
+                            int dotIdx = fmt.IndexOf('.');
+                            int pctIdx = fmt.IndexOf('%');
+                            if (dotIdx >= 0 && pctIdx > dotIdx)
+                                decPlaces = pctIdx - dotIdx - 1;
+                            formatted = (num * 100).ToString("F" + decPlaces) + "%";
+                        }
+                        else
+                        {
+                            // Try direct .NET format; map # to 0 for basic compat
+                            string netFmt = fmt.Replace("#", "0");
+                            formatted = num.ToString(netFmt, CultureInfo.InvariantCulture);
+                        }
+                        return EvaluationResult.FromText(formatted);
+                    }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                }
+                case "REPLACE":
+                {
+                    if (fn.Args.Count != 4) return EvaluationResult.FromError("REPLACE expects 4 arguments");
+                    try
+                    {
+                        var s = AsText(fn.Args[0]);
+                        int startPos = (int)Math.Floor(GetNumber(fn.Args[1], "REPLACE")); // 1-based
+                        int numChars = (int)Math.Max(0, Math.Floor(GetNumber(fn.Args[2], "REPLACE")));
+                        var newText = AsText(fn.Args[3]);
+                        if (startPos < 1) startPos = 1;
+                        int idx = startPos - 1;
+                        if (idx >= s.Length) return EvaluationResult.FromText(s + newText);
+                        int removeCount = Math.Min(numChars, s.Length - idx);
+                        return EvaluationResult.FromText(s.Substring(0, idx) + newText + s.Substring(idx + removeCount));
+                    }
+                    catch (Exception ex) { return EvaluationResult.FromError(ex.Message); }
+                }
                 default:
                     return EvaluationResult.FromError($"Unknown function {fn.Name}");
             }
@@ -657,7 +792,7 @@ namespace SpreadsheetApp.Core
         }
 
         // -------------- Parser -----------------
-        private enum TokenType { Number, Ident, Cell, String, Plus, Minus, Star, Slash, Caret, Ampersand, LParen, RParen, Comma, Colon, Eq, NotEq, Lt, Gt, LtEq, GtEq, End }
+        private enum TokenType { Number, Ident, Cell, String, Plus, Minus, Star, Slash, Caret, Ampersand, LParen, RParen, Comma, Colon, Eq, NotEq, Lt, Gt, LtEq, GtEq, Exclamation, End }
 
         private record Token(TokenType Type, string Text, double Number = 0);
 
@@ -669,6 +804,8 @@ namespace SpreadsheetApp.Core
         private record UnaryNode(TokenType Op, Node Inner) : Node;
         private record BinaryNode(TokenType Op, Node Left, Node Right) : Node;
         private record FuncCallNode(string Name, List<Node> Args) : Node;
+        private record SheetCellRefNode(string Sheet, string Address) : Node;
+        private record SheetRangeNode(string Sheet, string A, string B) : Node;
 
         private class Parser
         {
@@ -773,6 +910,21 @@ namespace SpreadsheetApp.Core
                 if (_look.Type == TokenType.Ident)
                 {
                     string name = _look.Text; Consume();
+                    // Sheet reference: Ident ! Cell or Ident ! Cell:Cell
+                    if (_look.Type == TokenType.Exclamation)
+                    {
+                        Consume();
+                        if (_look.Type != TokenType.Cell) throw new Exception("Expected cell reference after '!'");
+                        string a = _look.Text; Consume();
+                        if (_look.Type == TokenType.Colon)
+                        {
+                            Consume();
+                            if (_look.Type != TokenType.Cell) throw new Exception("Range needs cell after colon");
+                            string b = _look.Text; Consume();
+                            return new SheetRangeNode(name, a, b);
+                        }
+                        return new SheetCellRefNode(name, a);
+                    }
                     if (_look.Type == TokenType.LParen)
                     {
                         Consume();
@@ -790,7 +942,7 @@ namespace SpreadsheetApp.Core
                         Consume();
                         return new FuncCallNode(name, args);
                     }
-                    throw new Exception("Identifier must be a function");
+                    throw new Exception("Identifier must be a function or sheet reference");
                 }
                 if (_look.Type == TokenType.LParen)
                 {
@@ -862,6 +1014,21 @@ namespace SpreadsheetApp.Core
                     }
                 }
 
+                // Quoted sheet name for cross-sheet refs: 'Sheet Name'
+                if (ch == '\'')
+                {
+                    _pos++; // consume opening quote
+                    var sb = new System.Text.StringBuilder();
+                    while (_pos < _s.Length && _s[_pos] != '\'')
+                    {
+                        sb.Append(_s[_pos]);
+                        _pos++;
+                    }
+                    if (_pos >= _s.Length) throw new Exception("Unterminated sheet name");
+                    _pos++; // consume closing quote
+                    return new Token(TokenType.Ident, sb.ToString());
+                }
+
                 // String literal
                 if (ch == '"')
                 {
@@ -922,6 +1089,7 @@ namespace SpreadsheetApp.Core
                     ')' => new Token(TokenType.RParen, ")"),
                     ',' => new Token(TokenType.Comma, ","),
                     ':' => new Token(TokenType.Colon, ":"),
+                    '!' => new Token(TokenType.Exclamation, "!"),
                     _ => throw new Exception($"Unexpected '{ch}'")
                 };
             }

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SpreadsheetApp.Core.AI
 {
-    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange, RenameSheet, SetFormula, SortRange }
+    public enum AICommandType { SetValues, SetTitle, CreateSheet, ClearRange, RenameSheet, SetFormula, SortRange, InsertRows, DeleteRows }
 
     public interface IAICommand
     {
@@ -89,5 +89,21 @@ namespace SpreadsheetApp.Core.AI
         public string Order { get; set; } = "asc"; // asc | desc
         public bool HasHeader { get; set; } = false;
         public string Summarize() => $"Sort {Rows}x{Cols} at {StartRow+1},{StartCol+1} by {SpreadsheetApp.Core.CellAddress.ColumnIndexToName(SortCol)} {Order}{(HasHeader?", header":"")}";
+    }
+
+    public sealed class InsertRowsCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.InsertRows;
+        public int At { get; set; }     // 0-based row index to insert before
+        public int Count { get; set; } = 1;
+        public string Summarize() => $"Insert {Count} row(s) at row {At + 1}";
+    }
+
+    public sealed class DeleteRowsCommand : IAICommand
+    {
+        public AICommandType Type => AICommandType.DeleteRows;
+        public int At { get; set; }     // 0-based row index to start deleting
+        public int Count { get; set; } = 1;
+        public string Summarize() => $"Delete {Count} row(s) at row {At + 1}";
     }
 }

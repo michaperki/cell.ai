@@ -45,6 +45,7 @@ namespace SpreadsheetApp.UI
         private int _aiGhostCol = -1;
         private System.Threading.CancellationTokenSource? _aiInlineCts;
         private IChatPlanner _chatPlanner = new MockChatPlanner();
+        private readonly AIActionLog _aiActionLog = new();
         private readonly System.Collections.Generic.Dictionary<string, string[]> _aiInlineCache = new();
         private SpreadsheetApp.Core.AppSettings _settings = SpreadsheetApp.Core.AppSettings.Load();
         private bool _suppressFormulaBarSync;
@@ -101,6 +102,7 @@ namespace SpreadsheetApp.UI
             if (keyData == (Keys.Control | Keys.D)) { FillDown(); return true; }
             if (keyData == (Keys.Control | Keys.R)) { FillRight(); return true; }
             if (keyData == (Keys.Control | Keys.Shift | Keys.C)) { ToggleChatPane(); return true; }
+            if (keyData == (Keys.Control | Keys.Shift | Keys.F)) { _ = SmartSchemaFillAsync(); return true; }
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -208,6 +210,147 @@ namespace SpreadsheetApp.UI
             catch { }
         }
 
+        private void ShowAIActionLog()
+        {
+            var form = new Form
+            {
+                Text = "AI Action Log",
+                Width = 600,
+                Height = 400,
+                StartPosition = FormStartPosition.CenterParent
+            };
+            var list = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true
+            };
+            list.Columns.Add("Time", 80);
+            list.Columns.Add("Prompt", 200);
+            list.Columns.Add("Cmds", 50);
+            list.Columns.Add("Cells", 50);
+            list.Columns.Add("Summary", 300);
+            foreach (var e in _aiActionLog.Entries)
+            {
+                var item = new ListViewItem(e.Timestamp.ToString("HH:mm:ss"));
+                item.SubItems.Add(e.Prompt);
+                item.SubItems.Add(e.CommandCount.ToString());
+                item.SubItems.Add(e.CellCount.ToString());
+                item.SubItems.Add(e.Summary);
+                list.Items.Add(item);
+            }
+            form.Controls.Add(list);
+            form.ShowDialog(this);
+        }
+
+        private System.Threading.Tasks.Task ExplainCellAsync()
+        {
+            if (!_settings.AiEnabled || !ProviderReady()) return System.Threading.Tasks.Task.CompletedTask;
+            var cell = grid.CurrentCell;
+            if (cell == null) return System.Threading.Tasks.Task.CompletedTask;
+            string? raw = _sheet.GetRaw(cell.RowIndex, cell.ColumnIndex);
+            if (string.IsNullOrWhiteSpace(raw)) { MessageBox.Show(this, "Cell is empty.", "Explain Cell"); return System.Threading.Tasks.Task.CompletedTask; }
+            var val = _sheet.GetValue(cell.RowIndex, cell.ColumnIndex);
+            string addr = Core.CellAddress.ToAddress(cell.RowIndex, cell.ColumnIndex);
+            string prompt = $"Explain what this cell does in plain language. Cell {addr} contains: {raw}";
+            if (val.Error != null) prompt += $" (evaluates to error: {val.Error})";
+            else prompt += $" (evaluates to: {val.ToDisplay()})";
+
+            // Use planner for a simple explanation (no commands expected)
+            var ctx = BuildPlannerContext();
+            ctx.AllowedCommands = new string[0]; // No commands - we just want text
+            try
+            {
+                // Use a simple approach: plan with a prompt that asks for explanation
+                // The planner will return empty commands, but we can show the raw response
+                // Open chat pane with the explain prompt
+                if (_chatDockHost != null)
+                {
+                    _chatDockHost.Visible = true;
+                    if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
+                    _chatPane?.SetPrompt(prompt, autoPlan: true);
+                }
+                else
+                {
+                    Func<AIContext> getCtx = () => BuildPlannerContext();
+                    void apply(AIPlan ap) => ApplyPlan(ap);
+                    using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, getCtx, apply, prompt, autoPlan: true);
+                    dlg.ShowDialog(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Error: {ex.Message}", "Explain Cell");
+            }
+            return System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        private async System.Threading.Tasks.Task SmartSchemaFillAsync()
+        {
+            // If only a single cell is selected, try to auto-expand to the empty data region
+            try
+            {
+                if (grid.SelectedCells.Count <= 1 && grid.CurrentCell != null)
+                {
+                    int row = grid.CurrentCell.RowIndex;
+                    int col = grid.CurrentCell.ColumnIndex;
+                    // Find header row (row 0 or first non-empty text row)
+                    int headerRow = 0;
+                    // Find the rightmost non-empty header
+                    int maxCol = col;
+                    for (int c = 0; c < _sheet.Columns; c++)
+                    {
+                        var h = _sheet.GetRaw(headerRow, c);
+                        if (!string.IsNullOrWhiteSpace(h)) maxCol = c;
+                    }
+                    // Find the input column (leftmost non-empty column with data below headers)
+                    int inputCol = 0;
+                    for (int c = 0; c <= maxCol; c++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(_sheet.GetRaw(headerRow + 1, c))) { inputCol = c; break; }
+                    }
+                    // Find the last row with input data
+                    int lastDataRow = headerRow;
+                    for (int r = headerRow + 1; r < _sheet.Rows; r++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(_sheet.GetRaw(r, inputCol))) lastDataRow = r;
+                        else break;
+                    }
+                    // Select the output region: from (headerRow+1, inputCol+1) to (lastDataRow, maxCol)
+                    int startRow = headerRow + 1;
+                    int startCol = inputCol + 1;
+                    if (startCol <= maxCol && startRow <= lastDataRow)
+                    {
+                        grid.ClearSelection();
+                        for (int r = startRow; r <= lastDataRow; r++)
+                            for (int c = startCol; c <= maxCol; c++)
+                                grid[c, r].Selected = true;
+                        grid.CurrentCell = grid[startCol, startRow];
+                    }
+                }
+            }
+            catch { }
+            await FillSelectedFromSchemaAsync();
+        }
+
+        private bool _freezeTopRow;
+        private bool _freezeFirstCol;
+
+        private void ToggleFreezeTopRow()
+        {
+            _freezeTopRow = !_freezeTopRow;
+            if (grid.Rows.Count > 0)
+                grid.Rows[0].Frozen = _freezeTopRow;
+        }
+
+        private void ToggleFreezeFirstColumn()
+        {
+            _freezeFirstCol = !_freezeFirstCol;
+            if (grid.Columns.Count > 0)
+                grid.Columns[0].Frozen = _freezeFirstCol;
+        }
+
         private void OpenDocsViewer()
         {
             try
@@ -251,6 +394,8 @@ namespace SpreadsheetApp.UI
             }
             _sheet = _sheets[_activeSheetIndex];
             _undo = _undos[_activeSheetIndex];
+            // Wire cross-sheet resolver for =Sheet2!A1 formulas
+            WireCrossSheetResolver(_sheet);
 
             grid.Columns.Clear();
             grid.Rows.Clear();
@@ -275,6 +420,24 @@ namespace SpreadsheetApp.UI
             UpdateStatus();
             RefreshTabs();
             try { UpdateAiMenuItemsState(); } catch { }
+        }
+
+        private void WireCrossSheetResolver(Spreadsheet sheet)
+        {
+            sheet.CrossSheetResolver = (sheetName, row, col) =>
+            {
+                for (int i = 0; i < _sheets.Count; i++)
+                {
+                    if (string.Equals(_sheetNames[i], sheetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var target = _sheets[i];
+                        if (row < 0 || row >= target.Rows || col < 0 || col >= target.Columns)
+                            return EvaluationResult.FromError("REF");
+                        return target.GetValue(row, col);
+                    }
+                }
+                return EvaluationResult.FromError($"Sheet '{sheetName}' not found");
+            };
         }
 
         private void Grid_CellBeginEdit(object? sender, DataGridViewCellCancelEventArgs e)
@@ -2086,6 +2249,77 @@ namespace SpreadsheetApp.UI
             ApplyPlan(plan);
         }
 
+        private async System.Threading.Tasks.Task BatchFillSelectedFromSchemaAsync()
+        {
+            if (!_settings.AiEnabled) { try { MessageBox.Show(this, "AI is disabled.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } return; }
+            if (!ProviderReady()) { try { MessageBox.Show(this, "No AI provider configured.", "AI", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } return; }
+
+            var ctx = BuildPlannerContext();
+            ctx.AllowedCommands = new[] { "set_values" };
+
+            // Detect input column values
+            int inputCol = Math.Max(0, ctx.StartCol - 1);
+            var inputs = new List<string>();
+            for (int r = ctx.StartRow; r < ctx.StartRow + ctx.Rows; r++)
+            {
+                var raw = _sheet.GetRaw(r, inputCol) ?? string.Empty;
+                inputs.Add(raw);
+            }
+
+            int totalRows = inputs.Count;
+            if (totalRows <= 40)
+            {
+                // Small enough for single-shot
+                await FillSelectedFromSchemaAsync();
+                return;
+            }
+
+            // Confirm batch fill
+            var filler = new BatchSchemaFiller(_chatPlanner);
+            int batchCount = filler.EstimateBatchCount(totalRows);
+            var confirm = MessageBox.Show(this,
+                $"This will fill {totalRows} rows in {batchCount} batches.\nProceed?",
+                "Batch Schema Fill", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+            if (confirm != DialogResult.OK) return;
+
+            string prompt = "Fill the selected range from the input column using the headers as schema. Use set_values only. Do not modify headers or the input column. Return a single set_values sized exactly to the batch selection.";
+
+            using var cts = new System.Threading.CancellationTokenSource();
+            // Simple progress via title bar
+            string origTitle = Text;
+            var results = await filler.FillAsync(ctx, prompt, inputs.ToArray(), ctx.StartRow,
+                progress =>
+                {
+                    try { BeginInvoke(new Action(() => Text = $"{origTitle} — Batch {progress.CompletedBatches}/{progress.TotalBatches}")); } catch { }
+                },
+                cts.Token);
+
+            Text = origTitle;
+
+            // Apply successful batches
+            int applied = 0;
+            foreach (var result in results)
+            {
+                if (result.Plan != null)
+                {
+                    try
+                    {
+                        int minR, minC, maxR, maxC;
+                        minR = result.StartRow; minC = ctx.StartCol;
+                        maxR = result.StartRow + result.RowCount - 1; maxC = ctx.StartCol + ctx.Cols - 1;
+                        var sanitized = SanitizePlanToBounds(result.Plan, minR, minC, maxR, maxC);
+                        ApplyPlan(sanitized);
+                        applied++;
+                    }
+                    catch { }
+                }
+            }
+
+            int failed = results.Count(r => !r.Success);
+            if (failed > 0)
+                MessageBox.Show(this, $"Completed: {applied} batches applied, {failed} failed.", "Batch Fill", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
         private AIContext BuildPlannerContext()
         {
             int sr = grid.CurrentCell?.RowIndex ?? 0;
@@ -2290,6 +2524,8 @@ namespace SpreadsheetApp.UI
 
         private void ApplyPlan(AIPlan plan)
         {
+            // Log the AI action
+            try { _aiActionLog.Record("(applied plan)", plan); } catch { }
             var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
             var affected = new HashSet<(int r, int c)>();
             int? sheetAddedIndex = null; string? sheetAddedName = null;
@@ -2486,6 +2722,97 @@ namespace SpreadsheetApp.UI
                             }
                         }
                     }
+                }
+                else if (cmd is InsertRowsCommand ir)
+                {
+                    // Shift data down by ir.Count rows starting at ir.At
+                    int at = Math.Max(0, Math.Min(_sheet.Rows - 1, ir.At));
+                    int count = Math.Max(1, Math.Min(_sheet.Rows - at, ir.Count));
+                    // Shift from bottom up to avoid overwrites
+                    for (int r = _sheet.Rows - 1; r >= at + count; r--)
+                    {
+                        int srcRow = r - count;
+                        for (int c = 0; c < _sheet.Columns; c++)
+                        {
+                            string? srcRaw = _sheet.GetRaw(srcRow, c);
+                            string? dstRaw = _sheet.GetRaw(r, c);
+                            if (srcRaw != dstRaw)
+                            {
+                                _sheet.SetRaw(r, c, srcRaw);
+                                edits.Add((r, c, dstRaw, srcRaw));
+                            }
+                            // Copy format too
+                            var srcFmt = _sheet.GetFormat(srcRow, c);
+                            _sheet.SetFormat(r, c, srcFmt);
+                        }
+                    }
+                    // Clear the inserted rows
+                    for (int r = at; r < at + count && r < _sheet.Rows; r++)
+                    {
+                        for (int c = 0; c < _sheet.Columns; c++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old))
+                            {
+                                _sheet.SetRaw(r, c, string.Empty);
+                                edits.Add((r, c, old, string.Empty));
+                            }
+                            _sheet.SetFormat(r, c, null);
+                        }
+                    }
+                    _sheet.Recalculate();
+                    for (int r = at; r < _sheet.Rows; r++)
+                        for (int c = 0; c < _sheet.Columns; c++)
+                            affected.Add((r, c));
+                }
+                else if (cmd is DeleteRowsCommand dr)
+                {
+                    // Shift data up by dr.Count rows starting at dr.At
+                    int at = Math.Max(0, Math.Min(_sheet.Rows - 1, dr.At));
+                    int count = Math.Max(1, Math.Min(_sheet.Rows - at, dr.Count));
+                    // Record old values for undo
+                    for (int r = at; r < at + count && r < _sheet.Rows; r++)
+                    {
+                        for (int c = 0; c < _sheet.Columns; c++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old))
+                                edits.Add((r, c, old, string.Empty));
+                        }
+                    }
+                    // Shift rows up
+                    for (int r = at; r < _sheet.Rows - count; r++)
+                    {
+                        int srcRow = r + count;
+                        for (int c = 0; c < _sheet.Columns; c++)
+                        {
+                            string? srcRaw = _sheet.GetRaw(srcRow, c);
+                            string? dstRaw = _sheet.GetRaw(r, c);
+                            _sheet.SetRaw(r, c, srcRaw);
+                            if (srcRaw != dstRaw)
+                                edits.Add((r, c, dstRaw, srcRaw));
+                            var srcFmt = _sheet.GetFormat(srcRow, c);
+                            _sheet.SetFormat(r, c, srcFmt);
+                        }
+                    }
+                    // Clear the vacated rows at the bottom
+                    for (int r = _sheet.Rows - count; r < _sheet.Rows; r++)
+                    {
+                        for (int c = 0; c < _sheet.Columns; c++)
+                        {
+                            string? old = _sheet.GetRaw(r, c);
+                            if (!string.IsNullOrEmpty(old))
+                            {
+                                _sheet.SetRaw(r, c, string.Empty);
+                                edits.Add((r, c, old, string.Empty));
+                            }
+                            _sheet.SetFormat(r, c, null);
+                        }
+                    }
+                    _sheet.Recalculate();
+                    for (int r = at; r < _sheet.Rows; r++)
+                        for (int c = 0; c < _sheet.Columns; c++)
+                            affected.Add((r, c));
                 }
             }
             if (edits.Count > 0 || sheetAddedIndex.HasValue)
