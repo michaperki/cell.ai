@@ -14,6 +14,55 @@ namespace SpreadsheetApp.Core
             _cellResolver = cellResolver;
         }
 
+        // Enumerate referenced cell coordinates (including expanded ranges) from an expression string.
+        // This uses the parser/AST to avoid false positives in string literals and to cover nested functions.
+        public static System.Collections.Generic.IEnumerable<(int r, int c)> EnumerateReferences(string expr)
+        {
+            var refs = new System.Collections.Generic.HashSet<(int r, int c)>();
+            try
+            {
+                var parser = new Parser(expr ?? string.Empty);
+                var node = parser.ParseExpression();
+                CollectRefs(node, refs);
+            }
+            catch
+            {
+                // On parse failure, return empty to avoid incorrect graph edges
+            }
+            return refs;
+        }
+
+        private static void CollectRefs(Node n, System.Collections.Generic.HashSet<(int r, int c)> refs)
+        {
+            switch (n)
+            {
+                case NumberNode:
+                case StringNode:
+                    return;
+                case CellRefNode cr:
+                    if (CellAddress.TryParse(cr.Address, out int rr, out int cc)) refs.Add((rr, cc));
+                    return;
+                case RangeNode rn:
+                    foreach (var addr in EnumerateRange(rn.A, rn.B))
+                    {
+                        if (CellAddress.TryParse(addr, out int r1, out int c1)) refs.Add((r1, c1));
+                    }
+                    return;
+                case UnaryNode un:
+                    CollectRefs(un.Inner, refs);
+                    return;
+                case BinaryNode bn:
+                    CollectRefs(bn.Left, refs);
+                    CollectRefs(bn.Right, refs);
+                    return;
+                case FuncCallNode fn:
+                    foreach (var a in fn.Args) CollectRefs(a, refs);
+                    return;
+                default:
+                    return;
+            }
+        }
+
         public EvaluationResult Evaluate(string expr)
         {
             var parser = new Parser(expr);

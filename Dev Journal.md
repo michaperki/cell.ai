@@ -383,3 +383,23 @@ WinForms defaults (3D sunken borders, royal-blue selection, system-drawn headers
   - Step 1: A3:C6 headers + 3 rows.
   - Step 2: D3:D6 (Tax header + formulas down only data rows).
   - Step 3: Row 6 totals in C/D with B6 labeled "Total". Snapshots and on‑screen view now match.
+
+## Planner Robustness + Workbook Semantics (2026‑03‑20)
+
+1) Tolerant plan parsing for set_values/set_formula
+   - Problem: Providers sometimes emit JSON numbers/booleans in `set_values.values`. Our parser previously treated every cell as string (`GetString()`), which caused parse exceptions and dropped whole commands.
+   - Change: Coerce any JSON value to a string when parsing `set_values` (strings, numbers, booleans, objects via `GetRawText()`). `set_formula` parsing is also tolerant.
+   - Impact: Plans that include numeric literals now apply reliably without losing the entire write block.
+
+2) Richer workbook summary for planning
+   - Added per‑sheet fields: `HeaderRowIndex`, `DataRowCountExcludingHeader`, and `UsedTopLeft`/`UsedBottomRight` addresses.
+   - Header detection heuristic picks the first predominantly‑text non‑empty row; falls back to the first used row.
+   - Impact: Providers can reason about “data rows (excluding header)” and the true used range without guessing from rough counts.
+
+3) Selection bounding in automation
+   - When executing AI steps via the Test Runner, we now sanitize the plan to the requested selection range: intersect write regions and drop out‑of‑bounds writes.
+   - Impact: Prevents accidental spillover writes during automated runs while keeping normal chat behavior unchanged.
+
+4) Provider stability
+   - OpenAI/Anthropic planner calls now use `temperature=0.0`; Anthropic `max_tokens` increased to 2048.
+   - Impact: Reduces variance and truncation for larger JSON plans without test‑specific prompts.

@@ -3,30 +3,33 @@
     {
       "type": "set_values",
       "start": {
-        "row": 3,
+        "row": 2,
         "col": "D"
       },
       "values": [
         [
-          "Tax"
+          "Bonus"
         ]
       ]
     },
     {
       "type": "set_formula",
       "start": {
-        "row": 4,
+        "row": 3,
         "col": "D"
       },
       "formulas": [
         [
-          "=C4*0.1"
+          "=C3*0.15"
         ],
         [
-          "=C5*0.1"
+          "=C4*0.15"
         ],
         [
-          "=C6*0.1"
+          "=C5*0.15"
+        ],
+        [
+          "=C6*0.15"
         ]
       ]
     }

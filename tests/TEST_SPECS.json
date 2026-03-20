@@ -48,13 +48,13 @@
     {
       "file": "test_14_ai_complex_plan.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Create a monthly budget: headers in row 2 (Category, Jan, Feb, Mar, Total), 4 expense categories in A3:A6, sample dollar amounts in B3:D6, and SUM formulas in E3:E6 and B7:E7 for totals.", "location": "A2", "apply": true }
+        { "action": "ai_chat", "prompt": "Create a monthly budget strictly within A2:E7: headers in A2:E2 = Category, Jan, Feb, Mar, Total; 4 expense categories in A3:A6; sample dollar amounts in B3:D6; SUM formulas in E3:E6 and B7:E7 for totals. Do not write outside A2:E7. No titles or extra text. Use set_values for headers and numbers; use set_formula only for E3:E6 and B7:E7.", "location": "A2:E7", "apply": true }
       ]
     },
     {
       "file": "test_15_ai_workbook_context.workbook.json",
       "steps": [
-        { "action": "ai_chat", "sheet": "Summary", "prompt": "Fill A2 with the number of products (rows) in the Sales sheet and A3 with the number of items (rows) in the Inventory sheet.", "location": "A2", "apply": true }
+        { "action": "ai_chat", "sheet": "Summary", "prompt": "Fill A2 with the count of data rows (excluding the header) in the Sales sheet, and A3 with the count of data rows (excluding the header) in the Inventory sheet. Write plain numbers only (set_values), no formulas, no titles, and do not edit other cells.", "location": "A2:A3", "apply": true }
       ]
     }
   ]

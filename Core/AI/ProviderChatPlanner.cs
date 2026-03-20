@@ -74,7 +74,9 @@ namespace SpreadsheetApp.Core.AI
                     {
                         var s = context.Workbook[i];
                         if (i > 0) sbUsr.Append("; ");
-                        sbUsr.Append($"[{s.Name} rows={s.UsedRows} cols={s.UsedCols} header={(s.HeaderRow!=null?string.Join(",", s.HeaderRow):string.Empty)}]");
+                        string hdr = (s.HeaderRow != null ? string.Join(",", s.HeaderRow) : string.Empty);
+                        string used = (!string.IsNullOrWhiteSpace(s.UsedTopLeft) && !string.IsNullOrWhiteSpace(s.UsedBottomRight)) ? ($"{s.UsedTopLeft}:{s.UsedBottomRight}") : string.Empty;
+                        sbUsr.Append($"[{s.Name} rows={s.UsedRows} cols={s.UsedCols} header_idx={s.HeaderRowIndex} data_rows={s.DataRowCountExcludingHeader} used={used} header={hdr}]");
                     }
                     sbUsr.Append(". ");
                 }
@@ -136,7 +138,7 @@ namespace SpreadsheetApp.Core.AI
             var body = new
             {
                 model,
-                temperature = 0.2,
+                temperature = 0.0,
                 messages = new object[] { new { role = "system", content = system }, new { role = "user", content = user } }
             };
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
@@ -173,11 +175,13 @@ namespace SpreadsheetApp.Core.AI
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
             http.DefaultRequestHeaders.Add("x-api-key", key);
             http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+            int maxTokens = 2048;
+            try { var s = Environment.GetEnvironmentVariable("ANTHROPIC_MAX_TOKENS"); if (!string.IsNullOrWhiteSpace(s)) maxTokens = int.Parse(s); } catch { }
             var body = new
             {
                 model,
-                max_tokens = 800,
-                temperature = 0.2,
+                max_tokens = maxTokens,
+                temperature = 0.0,
                 system = system,
                 messages = new object[] { new { role = "user", content = new object[] { new { type = "text", text = user } } } }
             };
@@ -229,7 +233,29 @@ namespace SpreadsheetApp.Core.AI
                                     {
                                         var cols = new System.Collections.Generic.List<string>();
                                         if (rowEl.ValueKind == JsonValueKind.Array)
-                                            foreach (var c in rowEl.EnumerateArray()) cols.Add(c.GetString() ?? string.Empty);
+                                        {
+                                            foreach (var ce in rowEl.EnumerateArray())
+                                            {
+                                                string cellText = string.Empty;
+                                                switch (ce.ValueKind)
+                                                {
+                                                    case JsonValueKind.String:
+                                                        cellText = ce.GetString() ?? string.Empty; break;
+                                                    case JsonValueKind.Number:
+                                                    case JsonValueKind.Object:
+                                                    case JsonValueKind.Array:
+                                                        cellText = ce.GetRawText(); break;
+                                                    case JsonValueKind.True:
+                                                        cellText = "true"; break;
+                                                    case JsonValueKind.False:
+                                                        cellText = "false"; break;
+                                                    case JsonValueKind.Null:
+                                                    default:
+                                                        cellText = string.Empty; break;
+                                                }
+                                                cols.Add(cellText);
+                                            }
+                                        }
                                         rows.Add(cols.ToArray());
                                     }
                                     sv.Values = rows.ToArray();
@@ -251,7 +277,13 @@ namespace SpreadsheetApp.Core.AI
                                     {
                                         var cols = new System.Collections.Generic.List<string>();
                                         if (rowEl.ValueKind == JsonValueKind.Array)
-                                            foreach (var c in rowEl.EnumerateArray()) cols.Add(c.GetString() ?? string.Empty);
+                                        {
+                                            foreach (var ce in rowEl.EnumerateArray())
+                                            {
+                                                string textVal = ce.ValueKind == JsonValueKind.String ? (ce.GetString() ?? string.Empty) : ce.GetRawText();
+                                                cols.Add(textVal);
+                                            }
+                                        }
                                         rows.Add(cols.ToArray());
                                     }
                                     sf.Formulas = rows.ToArray();

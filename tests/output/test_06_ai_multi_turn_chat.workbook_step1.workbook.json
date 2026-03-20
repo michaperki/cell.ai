@@ -5,7 +5,20 @@
       "Name": "MultiTurn",
       "Rows": 100,
       "Columns": 26,
-      "Cells": {},
+      "Cells": {
+        "A3": "Date",
+        "B3": "Description",
+        "C3": "Amount",
+        "A4": "2023-10-01",
+        "B4": "Groceries",
+        "C4": "45",
+        "A5": "2023-10-02",
+        "B5": "Utilities",
+        "C5": "30",
+        "A6": "2023-10-03",
+        "B6": "Supplies",
+        "C6": "25"
+      },
       "Formats": null
     }
   ]

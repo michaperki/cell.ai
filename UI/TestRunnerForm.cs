@@ -28,6 +28,8 @@ namespace SpreadsheetApp.UI
         private readonly CheckBox _chkDumpSystem = new() { Text = "Dump system prompt", AutoSize = true };
         private readonly Label _lblStatus = new() { AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         private readonly List<string> _testFiles = new();
+        private readonly List<string> _visibleFiles = new();
+        private readonly ComboBox _cmbFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
         private TestSpecs? _specs;
 
         public TestRunnerForm(Action<string> loadWorkbook,
@@ -59,9 +61,10 @@ namespace SpreadsheetApp.UI
             _btnNext.Click += (_, __) => Navigate(1);
             _btnLoad.Click += (_, __) => LoadSelected();
             _btnRun.Click += async (_, __) => await RunSelectedAsync();
+            _cmbFilter.SelectedIndexChanged += (_, __) => RefreshVisibleList();
 
-            if (_lstTests.Items.Count > 0)
-                _lstTests.SelectedIndex = 0;
+            RefreshVisibleList();
+            if (_lstTests.Items.Count > 0) _lstTests.SelectedIndex = 0;
         }
 
         private void DiscoverTests()
@@ -78,15 +81,7 @@ namespace SpreadsheetApp.UI
                 .OrderBy(f => Path.GetFileName(f))
                 .ToList();
 
-            foreach (var f in files)
-            {
-                _testFiles.Add(f);
-                string name = Path.GetFileNameWithoutExtension(f);
-                // Strip the .workbook suffix
-                if (name.EndsWith(".workbook")) name = name[..^".workbook".Length];
-                _lstTests.Items.Add(name);
-            }
-
+            foreach (var f in files) _testFiles.Add(f);
             _lblStatus.Text = $"{_testFiles.Count} tests found";
         }
 
@@ -113,6 +108,11 @@ namespace SpreadsheetApp.UI
             var topPanel = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(6, 4, 6, 4) };
             _lblStatus.Location = new Point(8, 8);
             topPanel.Controls.Add(_lblStatus);
+            _cmbFilter.Items.AddRange(new object[] { "All tests", "AI tests", "Non-AI tests" });
+            _cmbFilter.SelectedIndex = 0;
+            _cmbFilter.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _cmbFilter.Location = new Point(Width - 200, 6);
+            topPanel.Controls.Add(_cmbFilter);
 
             var listPanel = new Panel { Dock = DockStyle.Top, Height = 180, Padding = new Padding(6, 0, 6, 4) };
             _lstTests.Dock = DockStyle.Fill;
@@ -166,27 +166,27 @@ namespace SpreadsheetApp.UI
         private void UpdatePreview()
         {
             int idx = _lstTests.SelectedIndex;
-            if (idx < 0 || idx >= _testFiles.Count)
+            if (idx < 0 || idx >= _visibleFiles.Count)
             {
                 _txtSpec.Text = string.Empty; _txtLog.Clear();
                 return;
             }
 
-            _lblStatus.Text = $"Test {idx + 1} of {_testFiles.Count}";
+            _lblStatus.Text = $"Test {idx + 1} of {_visibleFiles.Count}";
             _btnPrev.Enabled = idx > 0;
-            _btnNext.Enabled = idx < _testFiles.Count - 1;
+            _btnNext.Enabled = idx < _visibleFiles.Count - 1;
             _txtLog.Clear();
-            _txtSpec.Text = DescribeSpecForPath(_testFiles[idx]);
+            _txtSpec.Text = DescribeSpecForPath(_visibleFiles[idx]);
         }
 
         private void LoadSelected()
         {
             int idx = _lstTests.SelectedIndex;
-            if (idx < 0 || idx >= _testFiles.Count) return;
+            if (idx < 0 || idx >= _visibleFiles.Count) return;
             try
             {
-                _loadWorkbook(_testFiles[idx]);
-                _lblStatus.Text = $"Test {idx + 1} of {_testFiles.Count} -- LOADED";
+                _loadWorkbook(_visibleFiles[idx]);
+                _lblStatus.Text = $"Test {idx + 1} of {_visibleFiles.Count} -- LOADED";
                 _clearChatHistory();
             }
             catch (Exception ex)
@@ -198,8 +198,8 @@ namespace SpreadsheetApp.UI
         private async System.Threading.Tasks.Task RunSelectedAsync()
         {
             int idx = _lstTests.SelectedIndex;
-            if (idx < 0 || idx >= _testFiles.Count) return;
-            string path = _testFiles[idx];
+            if (idx < 0 || idx >= _visibleFiles.Count) return;
+            string path = _visibleFiles[idx];
             var spec = GetSpecForPath(path);
             if (spec == null || spec.Steps == null || spec.Steps.Count == 0)
             {
@@ -306,6 +306,34 @@ namespace SpreadsheetApp.UI
                 finally { stepNo++; }
             }
             _txtLog.AppendText("> Done.\r\n");
+        }
+
+        private void RefreshVisibleList()
+        {
+            try
+            {
+                _visibleFiles.Clear();
+                _lstTests.Items.Clear();
+                int filter = _cmbFilter.SelectedIndex; // 0=All, 1=AI, 2=Non-AI
+                foreach (var f in _testFiles)
+                {
+                    bool hasSpec = GetSpecForPath(f) != null;
+                    bool include = filter switch { 1 => hasSpec, 2 => !hasSpec, _ => true };
+                    if (!include) continue;
+                    _visibleFiles.Add(f);
+                    string name = Path.GetFileNameWithoutExtension(f);
+                    if (name.EndsWith(".workbook")) name = name[..^".workbook".Length];
+                    _lstTests.Items.Add(name);
+                }
+                _lblStatus.Text = _cmbFilter.SelectedIndex switch
+                {
+                    1 => $"{_visibleFiles.Count} AI test(s) shown (of {_testFiles.Count})",
+                    2 => $"{_visibleFiles.Count} non-AI test(s) shown (of {_testFiles.Count})",
+                    _ => $"{_visibleFiles.Count} tests shown"
+                };
+                if (_lstTests.Items.Count > 0) _lstTests.SelectedIndex = Math.Min(_lstTests.SelectedIndex >= 0 ? _lstTests.SelectedIndex : 0, _lstTests.Items.Count - 1);
+            }
+            catch { }
         }
 
         private static string SerializePlan(SpreadsheetApp.Core.AI.AIPlan plan)

@@ -127,12 +127,12 @@ namespace SpreadsheetApp.UI
             // importCsvToolStripMenuItem
             importCsvToolStripMenuItem.Name = "importCsvToolStripMenuItem";
             importCsvToolStripMenuItem.Text = "Import CSV...";
-            importCsvToolStripMenuItem.Click += (_, __) => ImportCsv();
+            importCsvToolStripMenuItem.Click += async (_, __) => await ImportCsvAsync();
 
             // exportCsvToolStripMenuItem
             exportCsvToolStripMenuItem.Name = "exportCsvToolStripMenuItem";
             exportCsvToolStripMenuItem.Text = "Export CSV...";
-            exportCsvToolStripMenuItem.Click += (_, __) => ExportCsv();
+            exportCsvToolStripMenuItem.Click += async (_, __) => await ExportCsvAsync();
 
             // recentFilesToolStripMenuItem
             recentFilesToolStripMenuItem.Name = "recentFilesToolStripMenuItem";

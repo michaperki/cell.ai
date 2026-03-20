@@ -1,0 +1,32 @@
+{
+  "commands": [
+    {
+      "type": "set_values",
+      "start": {
+        "row": 2,
+        "col": "A"
+      },
+      "values": [
+        ["Category", "Jan", "Feb", "Mar", "Total"],
+        ["Rent", 1200, 1200, 1200, ""],
+        ["Utilities", 300, 250, 275, ""],
+        ["Groceries", 400, 450, 500, ""],
+        ["Transportation", 150, 200, 180, ""]
+      ]
+    },
+    {
+      "type": "set_formula",
+      "start": {
+        "row": 3,
+        "col": "E"
+      },
+      "formulas": [
+        ["=SUM(B3:D3)"],
+        ["=SUM(B4:D4)"],
+        ["=SUM(B5:D5)"],
+        ["=SUM(B6:D6)"],
+        ["=SUM(E3:E6)"]
+      ]
+    }
+  ]
+}

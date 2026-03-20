@@ -13,6 +13,7 @@ namespace SpreadsheetApp.UI
 {
     public partial class MainForm : Form
     {
+        private const string ClipboardCopyOriginFormat = "SpreadsheetApp.CopyOrigin";
         private Spreadsheet _sheet = null!;
         private readonly List<Spreadsheet> _sheets = new();
         private readonly List<string> _sheetNames = new();
@@ -141,10 +142,9 @@ namespace SpreadsheetApp.UI
             }
             try
             {
-                // Full refresh here for reliability. Incremental repaint risks stale visuals after edits.
-                RefreshGridValues();
-                grid.Invalidate();
-                grid.Refresh();
+                // Incremental-on-edit: recalc and repaint affected cells with fallback inside RefreshDirtyOrFull
+                var affected = _sheet.RecalculateDirty(e.RowIndex, e.ColumnIndex);
+                RefreshDirtyOrFull(affected);
                 UpdateStatus();
             }
             catch (Exception ex)
@@ -485,7 +485,14 @@ namespace SpreadsheetApp.UI
                 }
                 if (r < bottom) sb.AppendLine();
             }
-            try { Clipboard.SetText(sb.ToString()); } catch { /* ignore */ }
+            try
+            {
+                var dobj = new DataObject();
+                dobj.SetText(sb.ToString());
+                dobj.SetData(ClipboardCopyOriginFormat, $"{top},{left}");
+                Clipboard.SetDataObject(dobj, true);
+            }
+            catch { /* ignore */ }
         }
 
         private void PasteCell()
@@ -544,6 +551,25 @@ namespace SpreadsheetApp.UI
                 }
             }
 
+            // Compute rewrite delta if clipboard originated from this app
+            bool canRewrite = false; int dr = 0, dc = 0;
+            try
+            {
+                if (Clipboard.GetDataObject() is IDataObject dobj && dobj.GetDataPresent(ClipboardCopyOriginFormat))
+                {
+                    var s = dobj.GetData(ClipboardCopyOriginFormat)?.ToString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        var parts = s.Split(',');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out int srcR) && int.TryParse(parts[1], out int srcC))
+                        {
+                            dr = startR - srcR; dc = startC - srcC; canRewrite = true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
             var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
             var affected = new HashSet<(int r, int c)>();
             _suppressRecord = true;
@@ -560,6 +586,10 @@ namespace SpreadsheetApp.UI
                         if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
                         string? oldRaw = _sheet.GetRaw(rr, cc);
                         string newRaw = row[c] ?? string.Empty;
+                        if (canRewrite && !string.IsNullOrEmpty(newRaw) && newRaw.StartsWith("=", StringComparison.Ordinal))
+                        {
+                            try { newRaw = RewriteFormulaForPaste(newRaw, dr, dc); } catch { }
+                        }
                         if (oldRaw == newRaw) continue;
                         _sheet.SetRaw(rr, cc, newRaw);
                         edits.Add((rr, cc, oldRaw, newRaw));
@@ -574,6 +604,84 @@ namespace SpreadsheetApp.UI
                 try { RefreshDirtyOrFull(affected); } catch { }
             }
             try { UpdateAiMenuItemsState(); } catch { }
+        }
+
+        private static bool TryParseCellRefWithAnchors(string s, ref int i, out int row, out int col, out bool absCol, out bool absRow, out int tokenStart, out int tokenEnd)
+        {
+            row = col = 0; absCol = absRow = false; tokenStart = i; tokenEnd = i;
+            int pos = i;
+            int save = i;
+            if (pos < s.Length && s[pos] == '$') { absCol = true; pos++; }
+            int lettersStart = pos;
+            while (pos < s.Length && char.IsLetter(s[pos])) pos++;
+            if (pos == lettersStart) { i = save; return false; }
+            if (pos < s.Length && s[pos] == '$') { absRow = true; pos++; }
+            int digitsStart = pos;
+            while (pos < s.Length && char.IsDigit(s[pos])) pos++;
+            if (pos == digitsStart) { i = save; return false; }
+            string letters = s.Substring(lettersStart, pos - lettersStart).Replace("$", string.Empty);
+            string digits = s.Substring(digitsStart, pos - digitsStart);
+            string addr = (letters + digits).ToUpperInvariant();
+            if (!Core.CellAddress.TryParse(addr, out row, out col)) { i = save; return false; }
+            tokenStart = i; tokenEnd = pos; i = pos; return true;
+        }
+
+        private static string BuildRefWithAnchors(int row, int col, bool absCol, bool absRow)
+        {
+            string colName = Core.CellAddress.ColumnIndexToName(Math.Max(0, col));
+            string rowText = (Math.Max(0, row) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return (absCol ? "$" : string.Empty) + colName + (absRow ? "$" : string.Empty) + rowText;
+        }
+
+        private string RewriteFormulaForPaste(string formula, int dr, int dc)
+        {
+            var expr = formula ?? string.Empty;
+            var sb = new System.Text.StringBuilder(expr.Length + 16);
+            int i = 0;
+            while (i < expr.Length)
+            {
+                char ch = expr[i];
+                if (ch == '"')
+                {
+                    int start = i; i++;
+                    while (i < expr.Length)
+                    {
+                        if (expr[i] == '"')
+                        {
+                            if (i + 1 < expr.Length && expr[i + 1] == '"') { i += 2; continue; }
+                            i++; break;
+                        }
+                        i++;
+                    }
+                    sb.Append(expr, start, i - start);
+                    continue;
+                }
+                int tokenStart, tokenEnd; int r0, c0; bool absC, absR; int save = i;
+                if (TryParseCellRefWithAnchors(expr, ref i, out r0, out c0, out absC, out absR, out tokenStart, out tokenEnd))
+                {
+                    int j = i; while (j < expr.Length && char.IsWhiteSpace(expr[j])) j++;
+                    if (j < expr.Length && expr[j] == ':')
+                    {
+                        j++; int k = j; int r1, c1; bool absC2, absR2; int ts2, te2;
+                        if (TryParseCellRefWithAnchors(expr, ref k, out r1, out c1, out absC2, out absR2, out ts2, out te2))
+                        {
+                            int nr0 = absR ? r0 : r0 + dr; int nc0 = absC ? c0 : c0 + dc;
+                            int nr1 = absR2 ? r1 : r1 + dr; int nc1 = absC2 ? c1 : c1 + dc;
+                            sb.Append(BuildRefWithAnchors(nr0, nc0, absC, absR));
+                            sb.Append(':');
+                            sb.Append(BuildRefWithAnchors(nr1, nc1, absC2, absR2));
+                            i = k;
+                            continue;
+                        }
+                    }
+                    int nr = absR ? r0 : r0 + dr; int nc = absC ? c0 : c0 + dc;
+                    sb.Append(BuildRefWithAnchors(nr, nc, absC, absR));
+                    continue;
+                }
+                sb.Append(expr[save]);
+                i = save + 1;
+            }
+            return sb.ToString();
         }
 
         private void CutCell()
@@ -1291,6 +1399,7 @@ namespace SpreadsheetApp.UI
                 {
                     var sh = _sheets[i];
                     int usedR = 0, usedC = 0;
+                    int minUsedR = int.MaxValue, minUsedC = int.MaxValue;
                     for (int r = 0; r < sh.Rows; r++)
                     {
                         for (int c = 0; c < sh.Columns; c++)
@@ -1300,16 +1409,58 @@ namespace SpreadsheetApp.UI
                             {
                                 if (r + 1 > usedR) usedR = r + 1;
                                 if (c + 1 > usedC) usedC = c + 1;
+                                if (r < minUsedR) minUsedR = r;
+                                if (c < minUsedC) minUsedC = c;
                             }
                         }
                     }
+                    if (minUsedR == int.MaxValue) { minUsedR = 0; }
+                    if (minUsedC == int.MaxValue) { minUsedC = 0; }
+
+                    int hdrIdx = -1;
                     string[]? header = null;
                     if (usedR > 0 && usedC > 0)
                     {
+                        hdrIdx = DetectHeaderRow(sh, usedR, usedC);
+                        if (hdrIdx < 0) hdrIdx = minUsedR; // fall back to first used row
                         header = new string[usedC];
-                        for (int c = 0; c < usedC; c++) header[c] = sh.GetDisplay(0, c);
+                        for (int c = 0; c < usedC; c++) header[c] = sh.GetDisplay(hdrIdx, c);
                     }
-                    list.Add(new SpreadsheetApp.Core.AI.SheetSummary { Name = _sheetNames.Count > i ? _sheetNames[i] : $"Sheet{i+1}", UsedRows = usedR, UsedCols = usedC, HeaderRow = header });
+
+                    // Count data rows excluding header (rows with any non-empty cell below header up to usedR-1)
+                    int dataCount = 0;
+                    if (usedR > 0 && usedC > 0)
+                    {
+                        for (int r = hdrIdx + 1; r < usedR; r++)
+                        {
+                            bool any = false;
+                            for (int c = 0; c < usedC; c++)
+                            {
+                                var raw = sh.GetRaw(r, c);
+                                if (!string.IsNullOrWhiteSpace(raw)) { any = true; break; }
+                            }
+                            if (any) dataCount++;
+                        }
+                    }
+
+                    string? usedTopLeft = null, usedBottomRight = null;
+                    if (usedR > 0 && usedC > 0)
+                    {
+                        usedTopLeft = SpreadsheetApp.Core.CellAddress.ToAddress(minUsedR, minUsedC);
+                        usedBottomRight = SpreadsheetApp.Core.CellAddress.ToAddress(usedR - 1, usedC - 1);
+                    }
+
+                    list.Add(new SpreadsheetApp.Core.AI.SheetSummary
+                    {
+                        Name = _sheetNames.Count > i ? _sheetNames[i] : $"Sheet{i + 1}",
+                        UsedRows = usedR,
+                        UsedCols = usedC,
+                        HeaderRow = header,
+                        HeaderRowIndex = hdrIdx,
+                        DataRowCountExcludingHeader = dataCount,
+                        UsedTopLeft = usedTopLeft,
+                        UsedBottomRight = usedBottomRight
+                    });
                 }
                 ctx.Workbook = list.ToArray();
             }
@@ -1533,6 +1684,57 @@ namespace SpreadsheetApp.UI
                 try { RefreshDirtyOrFull(affected); } catch { }
                 try { UpdateAiMenuItemsState(); } catch { }
             }
+
+            // Post-apply error feedback loop: prompt to fix cells that evaluated to errors
+            try
+            {
+                var seen = new HashSet<(int r, int c)>();
+                var errs = new List<(int r, int c, string raw, string err)>();
+                foreach (var e in edits)
+                {
+                    if (!seen.Add((e.row, e.col))) continue;
+                    var val = _sheet.GetValue(e.row, e.col);
+                    if (val.Error != null)
+                    {
+                        var raw = _sheet.GetRaw(e.row, e.col) ?? string.Empty;
+                        errs.Add((e.row, e.col, raw, val.Error));
+                    }
+                }
+                if (errs.Count > 0)
+                {
+                    var preview = new System.Text.StringBuilder();
+                    int max = Math.Min(6, errs.Count);
+                    for (int i = 0; i < max; i++)
+                    {
+                        var it = errs[i];
+                        preview.Append(Core.CellAddress.ToAddress(it.r, it.c)).Append(" ").Append(it.raw).Append(" => #ERR: ").Append(it.err).AppendLine();
+                    }
+                    var resp = MessageBox.Show(this, $"Some cells errored. Attempt a fix?\n\n" + preview.ToString(), "AI", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (resp == DialogResult.Yes)
+                    {
+                        string prompt = BuildErrorRepairPrompt(errs);
+                        Func<AIContext> getCtx = () => BuildPlannerContext();
+                        void apply(AIPlan ap) => ApplyPlan(ap);
+                        using var dlg = new UI.AI.ChatAssistantForm(_chatPlanner, getCtx, apply, prompt, autoPlan: true);
+                        dlg.ShowDialog(this);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private string BuildErrorRepairPrompt(System.Collections.Generic.List<(int r, int c, string raw, string err)> errs)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("Some cells produced errors after the last changes. Please propose fixes without adding unrelated changes. Errors: ");
+            int limit = Math.Min(20, errs.Count);
+            for (int i = 0; i < limit; i++)
+            {
+                var e = errs[i];
+                sb.Append("[").Append(Core.CellAddress.ToAddress(e.r, e.c)).Append(": ")
+                  .Append(e.raw).Append(" -> #ERR: ").Append(e.err).Append("] ");
+            }
+            return sb.ToString();
         }
 
         private int FindFirstEmptyBelow(int col, int fromRow)
@@ -1545,6 +1747,26 @@ namespace SpreadsheetApp.UI
                 r++;
             }
             return Math.Max(0, _sheet.Rows - 1);
+        }
+
+        private static int DetectHeaderRow(Core.Spreadsheet sh, int usedRows, int usedCols)
+        {
+            // Heuristic: first non-empty row with predominantly text values
+            for (int r = 0; r < usedRows; r++)
+            {
+                int nonEmpty = 0, textCount = 0, numberCount = 0;
+                for (int c = 0; c < usedCols; c++)
+                {
+                    var disp = sh.GetDisplay(r, c) ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(disp)) continue;
+                    nonEmpty++;
+                    if (double.TryParse(disp, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)) numberCount++;
+                    else if (!disp.StartsWith("#ERR", StringComparison.Ordinal)) textCount++;
+                }
+                if (nonEmpty == 0) continue;
+                if (textCount >= Math.Max(1, usedCols / 2) && textCount >= numberCount) return r;
+            }
+            return -1;
         }
 
         private void OpenAiSettings()
@@ -2039,6 +2261,37 @@ namespace SpreadsheetApp.UI
             }
         }
 
+        private async System.Threading.Tasks.Task ExportCsvAsync()
+        {
+            using var sfd = new SaveFileDialog { Filter = "CSV (*.csv)|*.csv|All files (*.*)|*.*", FileName = "sheet.csv" };
+            if (sfd.ShowDialog(this) == DialogResult.OK)
+            {
+                SetUiBusy(true);
+                try { await IO.SpreadsheetIO.ExportCsvAsync(_sheet, sfd.FileName).ConfigureAwait(true); }
+                catch (Exception ex) { MessageBox.Show(this, $"Export failed: {ex.Message}", "CSV Export", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                finally { SetUiBusy(false); }
+            }
+        }
+
+        private async System.Threading.Tasks.Task ImportCsvAsync()
+        {
+            using var ofd = new OpenFileDialog { Filter = "CSV (*.csv)|*.csv|All files (*.*)|*.*" };
+            if (ofd.ShowDialog(this) == DialogResult.OK)
+            {
+                SetUiBusy(true);
+                try
+                {
+                    var imported = await IO.SpreadsheetIO.ImportCsvAsync(ofd.FileName).ConfigureAwait(true);
+                    _sheets[_activeSheetIndex] = imported;
+                    _undos[_activeSheetIndex].Clear();
+                    _sheet = imported;
+                    InitializeSheet(_sheet);
+                }
+                catch (Exception ex) { MessageBox.Show(this, $"Import failed: {ex.Message}", "CSV Import", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                finally { SetUiBusy(false); }
+            }
+        }
+
         // Format menu handlers
         private void ToggleBoldFormat()
         {
@@ -2255,9 +2508,110 @@ namespace SpreadsheetApp.UI
 
             if (apply && plan.Commands.Count > 0)
             {
+                // In automation, if a range was provided, sanitize plan to selection bounds
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(location) && location!.Contains(":", StringComparison.Ordinal))
+                    {
+                        var parts = location.Split(':');
+                        if (parts.Length == 2 && Core.CellAddress.TryParse(parts[0].Trim(), out int r1, out int c1) && Core.CellAddress.TryParse(parts[1].Trim(), out int r2, out int c2))
+                        {
+                            int rStart = Math.Max(0, Math.Min(r1, r2));
+                            int rEnd = Math.Min(_sheet.Rows - 1, Math.Max(r1, r2));
+                            int cStart = Math.Max(0, Math.Min(c1, c2));
+                            int cEnd = Math.Min(_sheet.Columns - 1, Math.Max(c1, c2));
+                            plan = SanitizePlanToBounds(plan, rStart, cStart, rEnd, cEnd);
+                        }
+                    }
+                }
+                catch { }
                 ApplyPlan(plan);
             }
             return plan;
+        }
+
+        private SpreadsheetApp.Core.AI.AIPlan SanitizePlanToBounds(SpreadsheetApp.Core.AI.AIPlan plan, int rStart, int cStart, int rEnd, int cEnd)
+        {
+            var outPlan = new SpreadsheetApp.Core.AI.AIPlan();
+            outPlan.RawJson = plan.RawJson; outPlan.RawUser = plan.RawUser; outPlan.RawSystem = plan.RawSystem;
+            foreach (var cmd in plan.Commands)
+            {
+                switch (cmd)
+                {
+                    case SpreadsheetApp.Core.AI.SetValuesCommand sv:
+                    {
+                        int rows = sv.Values.Length; int cols = rows > 0 ? sv.Values[0].Length : 0;
+                        int a1 = sv.StartRow; int b1 = sv.StartCol; int a2 = sv.StartRow + rows - 1; int b2 = sv.StartCol + cols - 1;
+                        int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
+                        int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
+                        if (rr1 > rr2 || cc1 > cc2) break;
+                        int newRows = rr2 - rr1 + 1; int newCols = cc2 - cc1 + 1;
+                        var vals = new string[newRows][];
+                        for (int r = 0; r < newRows; r++)
+                        {
+                            vals[r] = new string[newCols];
+                            for (int c = 0; c < newCols; c++)
+                            {
+                                vals[r][c] = sv.Values[(rr1 - a1) + r][(cc1 - b1) + c];
+                            }
+                        }
+                        outPlan.Commands.Add(new SpreadsheetApp.Core.AI.SetValuesCommand { StartRow = rr1, StartCol = cc1, Values = vals });
+                        break;
+                    }
+                    case SpreadsheetApp.Core.AI.SetFormulaCommand sf:
+                    {
+                        int rows = sf.Formulas.Length; int cols = rows > 0 ? sf.Formulas[0].Length : 0;
+                        int a1 = sf.StartRow; int b1 = sf.StartCol; int a2 = sf.StartRow + rows - 1; int b2 = sf.StartCol + cols - 1;
+                        int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
+                        int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
+                        if (rr1 > rr2 || cc1 > cc2) break;
+                        int newRows = rr2 - rr1 + 1; int newCols = cc2 - cc1 + 1;
+                        var f = new string[newRows][];
+                        for (int r = 0; r < newRows; r++)
+                        {
+                            f[r] = new string[newCols];
+                            for (int c = 0; c < newCols; c++)
+                            {
+                                f[r][c] = sf.Formulas[(rr1 - a1) + r][(cc1 - b1) + c];
+                            }
+                        }
+                        outPlan.Commands.Add(new SpreadsheetApp.Core.AI.SetFormulaCommand { StartRow = rr1, StartCol = cc1, Formulas = f });
+                        break;
+                    }
+                    case SpreadsheetApp.Core.AI.ClearRangeCommand cr:
+                    {
+                        int a1 = cr.StartRow; int b1 = cr.StartCol; int a2 = cr.StartRow + Math.Max(1, cr.Rows) - 1; int b2 = cr.StartCol + Math.Max(1, cr.Cols) - 1;
+                        int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
+                        int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
+                        if (rr1 > rr2 || cc1 > cc2) break;
+                        outPlan.Commands.Add(new SpreadsheetApp.Core.AI.ClearRangeCommand { StartRow = rr1, StartCol = cc1, Rows = rr2 - rr1 + 1, Cols = cc2 - cc1 + 1 });
+                        break;
+                    }
+                    case SpreadsheetApp.Core.AI.SortRangeCommand sr:
+                    {
+                        int a1 = sr.StartRow; int b1 = sr.StartCol; int a2 = sr.StartRow + Math.Max(1, sr.Rows) - 1; int b2 = sr.StartCol + Math.Max(1, sr.Cols) - 1;
+                        int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
+                        int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
+                        if (rr1 > rr2 || cc1 > cc2) break;
+                        var clone = new SpreadsheetApp.Core.AI.SortRangeCommand { StartRow = rr1, StartCol = cc1, Rows = rr2 - rr1 + 1, Cols = cc2 - cc1 + 1, Order = sr.Order, HasHeader = sr.HasHeader, SortCol = sr.SortCol };
+                        outPlan.Commands.Add(clone);
+                        break;
+                    }
+                    case SpreadsheetApp.Core.AI.SetTitleCommand st:
+                    {
+                        int a1 = st.StartRow; int b1 = st.StartCol; int a2 = st.StartRow + Math.Max(1, st.Rows) - 1; int b2 = st.StartCol + Math.Max(1, st.Cols) - 1;
+                        int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
+                        int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
+                        if (rr1 > rr2 || cc1 > cc2) break;
+                        outPlan.Commands.Add(new SpreadsheetApp.Core.AI.SetTitleCommand { StartRow = rr1, StartCol = cc1, Rows = rr2 - rr1 + 1, Cols = cc2 - cc1 + 1, Text = st.Text });
+                        break;
+                    }
+                    default:
+                        outPlan.Commands.Add(cmd);
+                        break;
+                }
+            }
+            return outPlan;
         }
 
         private void SetSelectionFromLocation(string loc)

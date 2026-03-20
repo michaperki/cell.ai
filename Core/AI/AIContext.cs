@@ -33,5 +33,9 @@ namespace SpreadsheetApp.Core.AI
         public int UsedRows { get; set; }
         public int UsedCols { get; set; }
         public string[]? HeaderRow { get; set; }
+        public int HeaderRowIndex { get; set; } = -1;
+        public int DataRowCountExcludingHeader { get; set; }
+        public string? UsedTopLeft { get; set; }
+        public string? UsedBottomRight { get; set; }
     }
 }

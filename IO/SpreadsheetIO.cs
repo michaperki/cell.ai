@@ -430,6 +430,46 @@ namespace SpreadsheetApp.IO
             return sheet;
         }
 
+        public static async Task ExportCsvAsync(Spreadsheet sheet, string path)
+        {
+            await using var sw = new StreamWriter(path);
+            for (int r = 0; r < sheet.Rows; r++)
+            {
+                var fields = new List<string>(sheet.Columns);
+                for (int c = 0; c < sheet.Columns; c++)
+                {
+                    string v = sheet.GetDisplay(r, c) ?? string.Empty;
+                    fields.Add(CsvEscape(v));
+                }
+                await sw.WriteLineAsync(string.Join(',', fields));
+            }
+        }
+
+        public static async Task<Spreadsheet> ImportCsvAsync(string path)
+        {
+            var lines = await File.ReadAllLinesAsync(path);
+            int rows = lines.Length;
+            int cols = 0;
+            var parsed = new List<string[]>();
+            foreach (var line in lines)
+            {
+                var row = CsvParse(line);
+                parsed.Add(row);
+                cols = Math.Max(cols, row.Length);
+            }
+            var sheet = new Spreadsheet(rows > 0 ? rows : Spreadsheet.DefaultRows, cols > 0 ? cols : Spreadsheet.DefaultCols);
+            for (int r = 0; r < parsed.Count; r++)
+            {
+                var row = parsed[r];
+                for (int c = 0; c < row.Length; c++)
+                {
+                    sheet.SetRaw(r, c, row[c]);
+                }
+            }
+            sheet.Recalculate();
+            return sheet;
+        }
+
         private static string CsvEscape(string s)
         {
             if (s.Contains('"') || s.Contains(',') || s.Contains('\n') || s.Contains('\r'))

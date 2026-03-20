@@ -1,3 +1,1 @@
-(no RawUser from provider)
-stepPrompt: Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.
-location: A3:C6
+Sheet=MultiTurn; Selection=(3,A); Rows=4; Cols=3; Title=. Instruction=create an expense table with columns: date, description, amount in a3:c3 with 3 sample rows..

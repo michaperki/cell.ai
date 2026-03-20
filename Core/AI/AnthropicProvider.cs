@@ -27,10 +27,12 @@ namespace SpreadsheetApp.Core.AI
             string endpoint = Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL") ?? "https://api.anthropic.com/v1/messages";
             var prompt = "You are a spreadsheet fill assistant. Respond ONLY with strict JSON: {\"cells\": [[...]]} sized exactly to rows x cols; plain text strings; no formatting, no code blocks, no extra keys.\n\n" +
                          $"Sheet={context.SheetName}; Title={(context.Title ?? "").Trim()}; Start=({context.StartRow+1},{context.StartCol+1}); Rows={context.Rows}; Cols={context.Cols}; Prompt={(context.Prompt ?? "").Trim()}";
+            int maxTokens = 2048;
+            try { var s = Environment.GetEnvironmentVariable("ANTHROPIC_MAX_TOKENS"); if (!string.IsNullOrWhiteSpace(s)) maxTokens = int.Parse(s); } catch { }
             var body = new
             {
                 model = _model,
-                max_tokens = 800,
+                max_tokens = maxTokens,
                 temperature = 0.2,
                 messages = new object[]
                 {
@@ -72,4 +74,3 @@ namespace SpreadsheetApp.Core.AI
         }
     }
 }
-

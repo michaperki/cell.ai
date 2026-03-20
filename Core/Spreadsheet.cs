@@ -201,50 +201,8 @@ namespace SpreadsheetApp.Core
         // --- Helpers ---
         private static IEnumerable<(int r, int c)> ExtractReferences(string expr)
         {
-            var refs = new HashSet<(int r, int c)>();
-            int i = 0;
-            while (i < expr.Length)
-            {
-                // Skip string literals "..." with doubled quotes inside
-                if (expr[i] == '"')
-                {
-                    i++; // consume opening quote
-                    while (i < expr.Length)
-                    {
-                        if (expr[i] == '"')
-                        {
-                            if (i + 1 < expr.Length && expr[i + 1] == '"') { i += 2; continue; }
-                            i++; // closing quote
-                            break;
-                        }
-                        i++;
-                    }
-                    continue;
-                }
-
-                int start = i;
-                if (TryParseCellToken(expr, ref i, out int r1, out int c1))
-                {
-                    // Check for range
-                    int j = i;
-                    while (j < expr.Length && char.IsWhiteSpace(expr[j])) j++;
-                    if (j < expr.Length && expr[j] == ':')
-                    {
-                        j++;
-                        int j2 = j;
-                        if (TryParseCellToken(expr, ref j2, out int r2, out int c2))
-                        {
-                            foreach (var rc in EnumerateRangeCoords(r1, c1, r2, c2)) refs.Add(rc);
-                            i = j2;
-                            continue;
-                        }
-                    }
-                    refs.Add((r1, c1));
-                    continue;
-                }
-                i = start + 1;
-            }
-            return refs;
+            // Delegate to the formula parser for robust reference extraction.
+            return FormulaEngine.EnumerateReferences(expr);
         }
 
         private static bool TryParseCellToken(string s, ref int i, out int row, out int col)

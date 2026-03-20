@@ -1,0 +1,45 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Sales",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Product",
+        "B2": "Revenue",
+        "A3": "Widget",
+        "B3": "5000",
+        "A4": "Gadget",
+        "B4": "3000",
+        "A5": "Doohickey",
+        "B5": "7000"
+      },
+      "Formats": null
+    },
+    {
+      "Name": "Inventory",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "Item",
+        "B2": "Qty",
+        "A3": "Bolts",
+        "B3": "500",
+        "A4": "Nuts",
+        "B4": "300"
+      },
+      "Formats": null
+    },
+    {
+      "Name": "Summary",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A2": "3",
+        "A3": "2"
+      },
+      "Formats": null
+    }
+  ]
+}
