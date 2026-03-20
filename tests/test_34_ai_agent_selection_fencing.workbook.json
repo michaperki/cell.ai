@@ -1,0 +1,25 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "TwoCols",
+      "Rows": 40,
+      "Columns": 10,
+      "Cells": {
+        "A1": "City1",
+        "B1": "City2",
+        "A2": "Hackensack",
+        "B2": " Teterboro ",
+        "A3": "Millburn",
+        "B3": "lincroft",
+        "A4": "Westfield",
+        "B4": "RIDGEWOOD",
+        "A5": "Livingston",
+        "B5": "CHERRY HILL",
+        "A6": "Morristown",
+        "B6": "morristown"
+      }
+    }
+  ]
+}
+

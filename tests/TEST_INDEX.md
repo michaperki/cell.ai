@@ -30,6 +30,11 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 | 27 | test_27_ai_set_validation | AI | `set_validation` for list and number-between rules |
 | 28 | test_28_ai_set_conditional_format | AI | `set_conditional_format` numeric threshold formatting |
 | 29 | test_29_ai_agent_city_cleanup | AI (Agent) | Agent loop inspects City uniques and proposes Title Case cleanup |
+| 30 | test_30_ai_agent_observe | AI (Agent) | Agent loop observe-only run; transcript presence |
+| 31 | test_31_ai_agent_values_only_gating | AI (Agent) | Values-only gating yields set_values plan for normalization |
+| 32 | test_32_ai_agent_transform_range | AI (Agent) | transform_range normalize_city over a selection |
+| 33 | test_33_ai_agent_observe_only_strict | AI (Agent) | Observe-only scenario to capture transcript without applying writes |
+| 34 | test_34_ai_agent_selection_fencing | AI (Agent) | Selection hard-mode fences writes to selection bounds |
 | 23 | test_23_ai_insert_delete_cols | AI | `insert_cols` and `delete_cols` on a simple table |
 | 24 | test_24_ai_delete_sheet | AI | `delete_sheet` removes a named sheet |
 

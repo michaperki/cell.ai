@@ -4344,6 +4344,77 @@ namespace SpreadsheetApp.UI
             // Include automation history into context
             try { ctx.Conversation = new System.Collections.Generic.List<SpreadsheetApp.Core.AI.ChatMessage>(_automationHistory); } catch { }
 
+            // De-bias Title and gate AllowedCommands from prompt before planning (mirror chat path)
+            try
+            {
+                string p = (prompt ?? string.Empty);
+                bool valuesOnly = p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("Use set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (noTitles)
+                {
+                    ctx.Title = string.Empty;
+                }
+
+                if (valuesOnly)
+                {
+                    ctx.AllowedCommands = new[] { "set_values" };
+                }
+                else
+                {
+                    // Infer structural/format ops from prompt similar to RunChatStepAsync
+                    string low = p.ToLowerInvariant();
+                    bool wantsInsertCol = (low.Contains("insert") && (low.Contains("column") || low.Contains(" col")));
+                    bool wantsDeleteCol = (low.Contains("delete") && (low.Contains("column") || low.Contains(" col")));
+                    bool wantsCopy = low.Contains("copy ") && low.Contains(" to ");
+                    bool wantsMove = low.Contains("move ") && low.Contains(" to ");
+                    bool wantsFormat = low.Contains("set format") || low.Contains("format ") || low.Contains("bold") || low.Contains("alignment") || low.Contains("number format") || low.Contains("background") || low.Contains("fill color") || low.Contains("center alignment");
+                    bool wantsValidation = low.Contains("validation");
+                    bool wantsConditional = low.Contains("conditional format");
+
+                    if (wantsInsertCol)
+                    {
+                        bool mentionsHeaderCell = low.Contains(" b1") || low.Contains(" a1") || System.Text.RegularExpressions.Regex.IsMatch(low, @"\b[A-Za-z]+1\b");
+                        ctx.AllowedCommands = mentionsHeaderCell ? new[] { "insert_cols", "set_values" } : new[] { "insert_cols" };
+                    }
+                    else if (wantsDeleteCol)
+                    {
+                        ctx.AllowedCommands = new[] { "delete_cols" };
+                    }
+                    else if (wantsCopy && !wantsMove)
+                    {
+                        ctx.AllowedCommands = new[] { "copy_range" };
+                    }
+                    else if (wantsMove && !wantsCopy)
+                    {
+                        ctx.AllowedCommands = new[] { "move_range" };
+                    }
+                    else if (wantsFormat)
+                    {
+                        ctx.AllowedCommands = new[] { "set_format" };
+                    }
+                    else if (wantsValidation)
+                    {
+                        ctx.AllowedCommands = new[] { "set_validation" };
+                    }
+                    else if (wantsConditional)
+                    {
+                        ctx.AllowedCommands = new[] { "set_conditional_format" };
+                    }
+                    else
+                    {
+                        // Simple fill intent without structural mentions → set_values
+                        bool mentionsFormula = low.Contains("formula") || low.Contains("=a") || low.Contains("=sum") || low.Contains("sum(") || low.Contains("average(") || low.Contains("total row");
+                        bool mentionsStructural = low.Contains("sort") || low.Contains("rename") || low.Contains("create sheet") || low.Contains("clear ") || low.Contains("insert ") || low.Contains("delete ") || low.Contains("title");
+                        bool simpleFillIntent = (low.Contains("fill") || low.Contains("write") || low.Contains("list") || low.Contains("pairs") || low.Contains("numbers") || low.Contains("values"));
+                        if (simpleFillIntent && !mentionsFormula && !mentionsStructural)
+                        {
+                            ctx.AllowedCommands = new[] { "set_values" };
+                        }
+                    }
+                }
+            }
+            catch { }
+
             SpreadsheetApp.Core.AI.AgentLoop.Result res;
             try
             {

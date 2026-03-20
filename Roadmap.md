@@ -211,15 +211,19 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
   - Formalize read/query intents (DONE) and extend set: `describe_column` and `count_where` (DONE).
   - Two‑phase planning: first pass emits only query intents, host appends an observations transcript, second pass returns a write plan. (DONE, first pass)
   - Per‑command “rationale” strings parsed and shown in Chat preview (first pass; optional, preview‑only).
+  - Agent gating parity with chat (DONE): agent runner now passes AllowedCommands from prompt and de‑biases Title for values‑only/no‑title prompts.
 
 - Planner Robustness
   - Strict structural‑op gating: when prompt asks to insert/delete rows/cols, restrict AllowedCommands to those ops (avoid stray set_values), with optional single‑cell header write handled explicitly later.
   - Stronger append‑only phrasing in first plan and revision messages: “Write outputs only for selected rows; do not modify earlier rows,” with explicit row bounds.
   - Typed schema hints v2: per‑column constraints (type, allow_empty, and lightweight hints like “latin alphabet”) passed through context and rendered in policy preview.
+  - Observe‑only agent mode: when apply=false, run Phase 1 only and skip write‑plan generation. (Planned)
+  - Selection fencing for `transform_range`: clamp to selection bounds similar to set_values/set_formula. (Planned)
 
 - Deterministic Transform Tools
   - Introduce a `transform_range` command supporting safe transforms (TRIM, PROPER, UPPER/LOWER, STRIP_PUNCT, NORMALIZE_CITY). Deterministic, undo‑friendly, low token cost. — IMPLEMENTED (first pass)
   - City cleanup: `NORMALIZE_CITY` trims, collapses whitespace, and applies Title Case deterministically.
+  - Tests: add values‑only gating (Test 31), transform_range flow (Test 32), selection fencing scenario (Test 34). (DONE)
 
 - UX — Plan Preview
   - Plan simulator overlay highlighting affected cells (green add, yellow modify, red clear) before apply; “Apply” uses the simulated diff.

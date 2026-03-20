@@ -1029,3 +1029,25 @@ Follow‑ups from tests (queued)
 - Batch orchestration is skeleton — needs real‑world testing with >40 rows and cost estimation dialog.
 - Explain Cell uses the planner (which returns JSON commands); a dedicated text‑only endpoint would be better for pure explanations.
 - Freeze panes state doesn't persist across sheet switches or save/load.
+
+## Agent Loop Gating Fix + New Agent Tests (2026‑03‑20 PM2)
+
+What changed
+- Agent loop now mirrors chat path gating: we de‑bias Title when the prompt forbids titles and pass an explicit AllowedCommands list derived from the prompt (e.g., ["set_values"] for “Use set_values only”). File: `UI/MainForm.cs:RunAgentStepAsync`.
+
+Why
+- Test 29 previously yielded no plan under OpenAI because the planner inferred `transform_range` from the prompt and our post‑filter removed it due to "Use set_values only", leaving an empty plan. By passing AllowedCommands upfront, the provider is steered to return `set_values` sized to the selection.
+
+Results
+- Test 29 now proposes a single `set_values` (11×1) and applies the expected five fixes within B2:B12 (trim + Title Case). Logs show the 5 cell changes.
+
+New tests added
+- Test 31 — agent values‑only gating: simple 1‑column city list; two steps (observe, apply). Expects `set_values` only and selection‑bounded normalization.
+- Test 32 — agent transform_range: same dataset; prompt allows `transform_range normalize_city`; single apply step.
+- Test 33 — agent observe‑only strict: observe transcript on a small 3‑column dataset with apply=false.
+- Test 34 — selection fencing: selection is a subset of messy values; prompt enforces in‑selection normalization with `set_values` only; apply=true.
+
+Next
+- Make apply=false strictly Phase 1 (skip writes planning) so observe‑only runs leave `plan.commands` empty.
+- Extend SelectionHardMode/SanitizePlan to fence `transform_range` writes to selection bounds.
+- Add lightweight plan assertions in the Test Runner (e.g., error log if apply=false and commands were proposed; structural checks for OOB writes).

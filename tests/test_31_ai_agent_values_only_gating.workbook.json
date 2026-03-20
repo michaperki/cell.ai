@@ -1,0 +1,19 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Cities",
+      "Rows": 40,
+      "Columns": 10,
+      "Cells": {
+        "A1": "City",
+        "A2": " Teterboro ",
+        "A3": "lincroft",
+        "A4": "RIDGEWOOD",
+        "A5": "CHERRY HILL",
+        "A6": "morristown"
+      }
+    }
+  ]
+}
+
