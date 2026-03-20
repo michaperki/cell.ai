@@ -29,7 +29,7 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
   - Async Save/Load methods added (UI still sync)
 
 - UI — Docked Chat Pane
-  - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Open via AI > Open Chat or Ctrl+Shift+C. This is now the single chat surface; the former pop-out window was removed.
+  - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Toggle via AI > Toggle Chat or Ctrl+Shift+C. This is now the single chat surface; the former pop-out window was removed.
 
 ## Hurdles and How We Solved Them
 1) Dependent cells not updating after edit

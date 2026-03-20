@@ -73,7 +73,7 @@ This roadmap organizes near-term work, medium-term polish, and stretch goals for
   - Cancelation immediate; UI never blocks; memory/CPU overhead minimal.
 
 ### AI v0.3 — Chat Assistant (Plan → Preview → Apply) — LIVE (expanded)
-- UX: docked side panel with chat (open via AI > Open Chat or Ctrl+Shift+C); messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step. The docked pane is the single chat surface; no pop‑out.
+- UX: docked side panel with chat (toggle via AI > Toggle Chat or Ctrl+Shift+C); messages generate a dry‑run “plan” of commands; user reviews a diff/summary and applies all or step‑by‑step. The docked pane is the single chat surface; no pop‑out.
 - Command grammar now includes:
   - `set_values(range, values2d)`
   - `set_formula(range, formulas2d)`
@@ -143,7 +143,7 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Planner revise loop: IMPLEMENTED — on width/policy mismatch, the planner automatically requests a corrected plan instead of relying only on cropping.
 
 - Chat surface unification — IMPLEMENTED
-  - Docked chat pane is now the only chat surface. “Open Chat…” focuses/toggles the pane.
+  - Docked chat pane is now the only chat surface. “Toggle Chat” shows/hides the pane.
   - The former pop‑out window has been removed to reduce duplication and maintenance.
 
 ### Technical Foundation
