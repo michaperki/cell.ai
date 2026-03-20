@@ -193,6 +193,27 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
    - Issue: Dependent cells not repainting after edit when we first tried incremental-on-edit.
    - Fix: Reverted edits to full refresh path; kept incremental for bulk ops.
 
+## Post‑Testing Fixes (AI Planner + Selection Sanitization)
+
+1) Values-only enforcement (Test 16: Hebrew roots)
+   - Symptom: Planner emitted a `set_title` despite the instruction “Use set_values only”; headers were duplicated into row 2.
+   - Root cause: The system grammar advertised `set_title`, and we passed a “Title=” hint derived from the header cell above the selection, nudging the model toward title writes.
+   - Fix: Add values-only gating. When the prompt contains “set_values only” or “do not add titles,” we (a) strengthen the planner instruction, (b) filter out disallowed command types (e.g., `set_title`, `set_formula`) from the returned plan before apply, and (c) de-bias the context by clearing the Title hint.
+
+2) Ragged `set_values` shape within a selection
+   - Symptom: A plan contained mixed-width rows (first rows only in column A, later rows spanning A..I). Sanitization used the first row’s width, so only A7:A9 were written and the multi-column data was dropped.
+   - Fix: Sanitize by intersecting each row against the selection, compact rows with zero overlap (drop them), and build rows aligned to the selection’s left edge. Apply path now iterates per-row width instead of assuming a rectangular block.
+
+3) Header-echo suppression
+   - Symptom: Model repeated headers as the first row of data under the real header row.
+   - Fix: When the first planned row matches the header cells above the selection (majority match), drop that row before apply.
+
+Rationale
+- Keeps AI writes inside the user’s intent and selection shape, prevents accidental title/format writes, and ensures multi-turn appends align correctly without losing the wide rows.
+
+Validation
+- Re-ran the E2E steps for Test 16 using the Test Runner: row 2 contains actual data (no header dup), and Step 2 fills B7:I9 for the three new roots while A7:A9 are populated once.
+
 ## Post‑Update (Undo UX + Menu State)
 
 1) Undo coalescing for rapid edits
@@ -553,3 +574,23 @@ A `StackOverflowException` cannot be caught by any .NET exception handler — it
 - Re‑run test 16 with NearbyValues shift + schema‑fill helper **enabled** (now re‑enabled) to see if the FillMapping section fixes step 1's alignment.
 - The schema‑fill helper should make step 1 behave more like step 2 by giving the planner explicit "Row N: input=X" mappings.
 - Column B transliteration issue needs a prompt template fix (specify "Latin alphabet" more forcefully).
+
+## Docs Viewer + Markdown Rendering + JSON Export (2026‑03‑20)
+
+What we shipped
+- Added a lightweight Docs Viewer (Help > View Docs…) that lists root‑level Markdown files and renders them as HTML in‑app.
+- Added Export Docs JSON (Help > Export Docs JSON) and a `--export-docs` CLI to write `docs/docs_index.json` containing files, sections, and raw content.
+- Introduced a small `Core/DocsIndexer` to scan top‑level `*.md` and split sections by headings.
+- Added a tiny offline Markdown renderer (`Core/Markdown.cs`) to cover headings, paragraphs, lists, blockquotes, horizontal rules, code blocks, inline code, bold/italic, links, and images. Styling is embedded CSS for simplicity.
+
+Hurdles / fixes
+- Initial regex strings used standard C# escapes which produced CS1009 “Unrecognized escape sequence” and CS1012 char literal issues on Windows. Rewrote patterns as verbatim strings (`@"..."`) and corrected char literals in the line splitter to use `'\r'` / `'\n'` directly.
+- Ensured WebBrowser control is quiet (script errors suppressed) and safe (no drag‑drop).
+
+Rationale
+- Keep it minimal and offline so it’s easy to experiment with and doesn’t add package dependencies. JSON export provides a simple path to integrate docs elsewhere if desired.
+
+Follow‑ups
+- Anchor navigation within the full document and auto‑scroll to a selected section.
+- Option to include nested docs (e.g., `tests/TEST_INDEX.md`) and a configurable include list.
+- Basic link hygiene: open external links in the system browser and keep in‑app view sandboxed.

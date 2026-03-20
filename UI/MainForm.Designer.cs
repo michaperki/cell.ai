@@ -50,6 +50,9 @@ namespace SpreadsheetApp.UI
         private Panel _formulaBarPanel = null!;
         private TextBox _cellNameBox = null!;
         private TextBox _formulaBar = null!;
+        private ToolStripMenuItem helpToolStripMenuItem = null!;
+        private ToolStripMenuItem docsViewerToolStripMenuItem = null!;
+        private ToolStripMenuItem exportDocsJsonToolStripMenuItem = null!;
 
         protected override void Dispose(bool disposing)
         {
@@ -272,6 +275,17 @@ namespace SpreadsheetApp.UI
             testRunnerToolStripMenuItem.Click += (_, __) => OpenTestRunner();
             testToolStripMenuItem.DropDownItems.Add(testRunnerToolStripMenuItem);
             menuStrip1.Items.Add(testToolStripMenuItem);
+
+            // helpToolStripMenuItem
+            helpToolStripMenuItem = new ToolStripMenuItem();
+            helpToolStripMenuItem.Name = "helpToolStripMenuItem";
+            helpToolStripMenuItem.Text = "Help";
+            docsViewerToolStripMenuItem = new ToolStripMenuItem("View Docs...");
+            docsViewerToolStripMenuItem.Click += (_, __) => OpenDocsViewer();
+            exportDocsJsonToolStripMenuItem = new ToolStripMenuItem("Export Docs JSON");
+            exportDocsJsonToolStripMenuItem.Click += (_, __) => ExportDocsJson();
+            helpToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { docsViewerToolStripMenuItem, exportDocsJsonToolStripMenuItem });
+            menuStrip1.Items.Add(helpToolStripMenuItem);
 
             // sheetsToolStripMenuItem
             sheetsToolStripMenuItem.Name = "sheetsToolStripMenuItem";

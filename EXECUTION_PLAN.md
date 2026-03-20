@@ -86,6 +86,13 @@ This plan prioritizes reliability, UX polish, and small-but-high‑leverage AI i
   - Long JSON plans (tables + formulas) no longer truncate under normal cases.
 
 9) Header detection heuristic for planner context — DONE
+
+10) Values-only gating and sanitization — DONE
+- Enforce “values-only” prompts by filtering out disallowed command types (e.g., set_title/set_formula) at planning time and before apply.
+- Improve selection-bounded sanitization:
+  - Handle ragged `set_values` (rows with different lengths) by intersecting against the selection and compacting rows with no overlap.
+  - Align multi-column rows to the left edge of the selection and avoid writing outside bounds.
+- Suppress header-echo rows: when the first planned row matches the header row above the selection, drop it to prevent duplicating headers into the data area.
 - Tasks
   - Identify header row as the first non-empty row with predominantly text values; include that row’s values in workbook summary.
 - Acceptance

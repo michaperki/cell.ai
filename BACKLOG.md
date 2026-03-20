@@ -62,6 +62,19 @@ This file tracks follow-ups and refinements discovered while implementing the en
 
 ---
 
+## Active — Docs / Tools
+
+- Internal Docs Viewer — EXPERIMENT (DONE)
+  - Help > View Docs… renders root‑level Markdown via a lightweight offline converter.
+  - Help > Export Docs JSON writes `docs/docs_index.json`; also available via `--export-docs` CLI.
+
+- Follow‑ups
+  - Anchor navigation inside a full-file render; auto‑scroll to the selected section.
+  - Configurable include paths (e.g., include `tests/TEST_INDEX.md` and nested docs).
+  - External link handling: open in system browser; keep viewer sandboxed.
+
+---
+
 ## Active — I/O
 
 - Multi-sheet workbook I/O

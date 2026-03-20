@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using SpreadsheetApp.Core;
 using SpreadsheetApp.Core.AI;
 using SpreadsheetApp.UI.AI;
+using SpreadsheetApp.UI;
 
 namespace SpreadsheetApp.UI
 {
@@ -183,6 +184,33 @@ namespace SpreadsheetApp.UI
             catch { }
             try { if (show) _chatPane?.FocusInput(); } catch { }
             try { UpdateAiMenuItemsState(); } catch { }
+        }
+
+        private void OpenDocsViewer()
+        {
+            try
+            {
+                using var dlg = new DocsViewerForm();
+                dlg.ShowDialog(this);
+            }
+            catch (Exception ex)
+            {
+                try { MessageBox.Show(this, $"Failed to open Docs Viewer: {ex.Message}", "Docs Viewer", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+            }
+        }
+
+        private void ExportDocsJson()
+        {
+            try
+            {
+                var idx = DocsIndexer.Build(null);
+                string path = DocsIndexer.WriteJson(idx, null);
+                try { MessageBox.Show(this, $"Exported to:\n{path}", "Docs Export", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { }
+            }
+            catch (Exception ex)
+            {
+                try { MessageBox.Show(this, $"Failed to export: {ex.Message}", "Docs Export", MessageBoxButtons.OK, MessageBoxIcon.Error); } catch { }
+            }
         }
 
         private void InitializeSheet(Spreadsheet? newSheet = null)
@@ -1761,9 +1789,9 @@ namespace SpreadsheetApp.UI
                     // Handle append semantics: if StartRow < 0, append below the last non-empty in column
                     int baseRow = set.StartRow < 0 ? FindFirstEmptyBelow(set.StartCol, grid.CurrentCell?.RowIndex ?? 0) : set.StartRow;
                     int rows = set.Values.Length;
-                    int cols = rows > 0 ? set.Values[0].Length : 0;
                     for (int r = 0; r < rows; r++)
                     {
+                        int cols = set.Values[r]?.Length ?? 0;
                         for (int c = 0; c < cols; c++)
                         {
                             int rr = baseRow + r;
@@ -2775,6 +2803,19 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
+            // De-bias Title hint when the prompt forbids titles or requires values-only
+            try
+            {
+                string p = (prompt ?? string.Empty);
+                bool valuesOnly = p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (noTitles)
+                {
+                    ctx.Title = string.Empty;
+                }
+            }
+            catch { }
+
             SpreadsheetApp.Core.AI.AIPlan plan;
             try
             {
@@ -2795,6 +2836,23 @@ namespace SpreadsheetApp.UI
                 _automationHistory.Add(userMsg);
                 _automationHistory.Add(asstMsg);
                 if (_automationHistory.Count > 10) _automationHistory.RemoveRange(0, _automationHistory.Count - 10);
+            }
+            catch { }
+
+            // Enforce values-only constraints before sanitation/apply when explicitly requested
+            try
+            {
+                string p = (prompt ?? string.Empty);
+                bool valuesOnly = p.IndexOf("set_values only", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (valuesOnly)
+                {
+                    plan.Commands.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand);
+                }
+                else if (noTitles)
+                {
+                    plan.Commands.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand);
+                }
             }
             catch { }
 
@@ -2832,22 +2890,71 @@ namespace SpreadsheetApp.UI
                 {
                     case SpreadsheetApp.Core.AI.SetValuesCommand sv:
                     {
-                        int rows = sv.Values.Length; int cols = rows > 0 ? sv.Values[0].Length : 0;
-                        int a1 = sv.StartRow; int b1 = sv.StartCol; int a2 = sv.StartRow + rows - 1; int b2 = sv.StartCol + cols - 1;
+                        int rows = sv.Values.Length;
+                        int a1 = sv.StartRow; int b1 = sv.StartCol; int a2 = sv.StartRow + rows - 1;
+                        // Determine max width across rows to compute right edge
+                        int maxCols = 0;
+                        for (int r = 0; r < rows; r++) { int len = sv.Values[r]?.Length ?? 0; if (len > maxCols) maxCols = len; }
+                        int b2 = (maxCols > 0) ? (sv.StartCol + maxCols - 1) : (sv.StartCol - 1);
                         int rr1 = Math.Max(rStart, a1); int cc1 = Math.Max(cStart, b1);
                         int rr2 = Math.Min(rEnd, a2); int cc2 = Math.Min(cEnd, b2);
                         if (rr1 > rr2 || cc1 > cc2) break;
-                        int newRows = rr2 - rr1 + 1; int newCols = cc2 - cc1 + 1;
-                        var vals = new string[newRows][];
-                        for (int r = 0; r < newRows; r++)
+                        int newCols = cc2 - cc1 + 1;
+
+                        var rowsOut = new System.Collections.Generic.List<string[]>();
+                        for (int rr = rr1; rr <= rr2; rr++)
                         {
-                            vals[r] = new string[newCols];
-                            for (int c = 0; c < newCols; c++)
+                            int srcRowIndex = rr - a1;
+                            if (srcRowIndex < 0 || srcRowIndex >= rows) continue;
+                            int rowLen = sv.Values[srcRowIndex]?.Length ?? 0;
+                            int srcFirstCol = b1;
+                            int srcLastCol = b1 + Math.Max(0, rowLen) - 1;
+                            int cStartInt = Math.Max(cc1, srcFirstCol);
+                            int cEndInt = Math.Min(cc2, srcLastCol);
+                            int overlap = cEndInt - cStartInt + 1;
+                            if (overlap <= 0) continue; // compact rows with no overlap
+
+                            var line = new string[newCols];
+                            for (int i = 0; i < newCols; i++) line[i] = string.Empty;
+                            for (int c = 0; c < overlap; c++)
                             {
-                                vals[r][c] = sv.Values[(rr1 - a1) + r][(cc1 - b1) + c];
+                                int destCol = (cStartInt - cc1) + c;
+                                int srcCol = (cStartInt - srcFirstCol) + c;
+                                line[destCol] = sv.Values[srcRowIndex][srcCol];
+                            }
+                            rowsOut.Add(line);
+                        }
+                        if (rowsOut.Count > 0)
+                        {
+                            // Header-echo suppression: drop first row if it matches header above the selection
+                            try
+                            {
+                                if (rr1 > 0)
+                                {
+                                    int matches = 0, nonEmpty = 0;
+                                    for (int c = 0; c < newCols; c++)
+                                    {
+                                        var hdr = _sheet.GetDisplay(rr1 - 1, cc1 + c) ?? string.Empty;
+                                        var first = rowsOut[0][c] ?? string.Empty;
+                                        if (!string.IsNullOrWhiteSpace(hdr))
+                                        {
+                                            nonEmpty++;
+                                            if (string.Equals(hdr, first, StringComparison.OrdinalIgnoreCase)) matches++;
+                                        }
+                                    }
+                                    if (nonEmpty >= 2 && matches >= nonEmpty)
+                                    {
+                                        rowsOut.RemoveAt(0);
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            if (rowsOut.Count > 0)
+                            {
+                                outPlan.Commands.Add(new SpreadsheetApp.Core.AI.SetValuesCommand { StartRow = rr1, StartCol = cc1, Values = rowsOut.ToArray() });
                             }
                         }
-                        outPlan.Commands.Add(new SpreadsheetApp.Core.AI.SetValuesCommand { StartRow = rr1, StartCol = cc1, Values = vals });
                         break;
                     }
                     case SpreadsheetApp.Core.AI.SetFormulaCommand sf:

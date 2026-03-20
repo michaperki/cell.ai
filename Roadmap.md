@@ -158,6 +158,8 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Plan parser tolerates typed values in `set_values` and coerces to strings.
 - Workbook summary includes `HeaderRowIndex`, `DataRowCountExcludingHeader`, and `UsedTopLeft/UsedBottomRight` to improve general reasoning.
 - Test Runner sanitizes AI plans to selection bounds during automation to prevent out‑of‑range writes.
+ - Values-only enforcement for chat plans: block `set_title`/`set_formula` when the prompt explicitly requires `set_values` only; clear biasing Title hints in such cases.
+ - Selection sanitization handles ragged `set_values` arrays by intersecting per row and compacting rows with no overlap; prevents header duplication by dropping a header-echo first row.
 
 ## File Format Versioning
 - Introduced `formatVersion` (1) for workbook JSON; loader auto-detects workbook vs single-sheet for backward compatibility.

@@ -1,5 +1,7 @@
 using System;
 using System.Windows.Forms;
+using System.Linq;
+using SpreadsheetApp.Core;
 
 namespace SpreadsheetApp
 {
@@ -10,6 +12,19 @@ namespace SpreadsheetApp
         {
             // Load .env first so provider selection can use environment variables
             SpreadsheetApp.Core.Env.LoadDotEnv();
+            // Lightweight CLI: export docs index and exit
+            try
+            {
+                var args = Environment.GetCommandLineArgs();
+                if (args.Any(a => string.Equals(a, "--export-docs", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var idx = DocsIndexer.Build(null);
+                    string path = DocsIndexer.WriteJson(idx, null);
+                    try { Console.WriteLine($"Exported docs JSON to: {path}"); } catch { }
+                    return;
+                }
+            }
+            catch { }
             ApplicationConfiguration.Initialize();
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) =>
