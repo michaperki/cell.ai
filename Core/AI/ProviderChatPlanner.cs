@@ -151,48 +151,71 @@ namespace SpreadsheetApp.Core.AI
 
         private static string? TryBuildSchemaFillSection(AIContext context)
         {
+            // Prefer workbook header summary for robust schema, fall back to Nearby header row
+            string[]? headerRow = null;
+            int tableLeftCol = 0; // absolute column index of the table's first column (e.g., A=0)
+            try
+            {
+                if (context.Workbook != null)
+                {
+                    foreach (var s in context.Workbook)
+                    {
+                        if (string.Equals(s.Name, context.SheetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            headerRow = s.HeaderRow;
+                            if (!string.IsNullOrWhiteSpace(s.UsedTopLeft) && CellAddress.TryParse(s.UsedTopLeft, out int _, out int col))
+                                tableLeftCol = Math.Max(0, col);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+
             var nearby = context.NearbyValues;
-            if (nearby == null || nearby.Length < 2) return null;
+            if (headerRow == null || headerRow.Length < 2)
+            {
+                if (nearby == null || nearby.Length < 2) return null;
+                headerRow = nearby[0];
+            }
 
-            // Row 0 should have >=2 non-empty header cells
-            var headerRow = nearby[0];
+            // Require at least two non-empty headers beyond the input column
             int nonEmptyHeaders = 0;
-            foreach (var h in headerRow)
-                if (!string.IsNullOrWhiteSpace(h)) nonEmptyHeaders++;
+            for (int i = 1; i < headerRow.Length; i++) if (!string.IsNullOrWhiteSpace(headerRow[i])) nonEmptyHeaders++;
             if (nonEmptyHeaders < 2) return null;
-
-            // Rows 1+ should have non-empty values in col 0 (the input column)
-            int inputCount = 0;
-            for (int r = 1; r < nearby.Length; r++)
-                if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0])) inputCount++;
-            if (inputCount < 1) return null;
 
             // Build the section
             var sb = new System.Text.StringBuilder();
             sb.Append(" FillMapping (emit ONE set_values with a 2D array):");
 
-            // Headers — map column letters to header names
+            // Headers — use absolute letters from the table's left edge; skip input col (index 0)
             sb.Append(" Headers:");
-            int startCol = context.StartCol;
             for (int c = 1; c < headerRow.Length; c++)
             {
                 if (string.IsNullOrWhiteSpace(headerRow[c])) continue;
-                string colLetter = CellAddress.ColumnIndexToName(startCol + c - 1);
+                string colLetter = CellAddress.ColumnIndexToName(tableLeftCol + c);
                 if (c > 1) sb.Append(',');
                 sb.Append($" {colLetter}={headerRow[c]}");
             }
             sb.Append('.');
 
-            // Row-to-input mapping
-            int startRow1 = context.StartRow + 1; // 1-based
-            int fillColCount = headerRow.Length - 1;
-            string fillStart = CellAddress.ColumnIndexToName(startCol);
-            string fillEnd = CellAddress.ColumnIndexToName(startCol + fillColCount - 1);
-            for (int r = 1; r < nearby.Length; r++)
+            // Make the input column explicit; clarify not to write into it
+            string inputColLetter = CellAddress.ColumnIndexToName(tableLeftCol + 0);
+            sb.Append($" InputColumn={inputColLetter}. Do not write to {inputColLetter}; write outputs only to the mapped columns.");
+
+            // Row-to-input mapping: list inputs detected in the first column of the Nearby window
+            if (nearby != null && nearby.Length > 1)
             {
-                if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0]))
+                int startRow1 = context.StartRow + 1; // 1-based starting row for the selection
+                int fillColCount = Math.Max(0, headerRow.Length - 1);
+                string fillStart = CellAddress.ColumnIndexToName(tableLeftCol + 1);
+                string fillEnd = CellAddress.ColumnIndexToName(tableLeftCol + fillColCount);
+                for (int r = 1; r < nearby.Length; r++)
                 {
-                    sb.Append($" Row {startRow1 + r - 1}: input=\"{nearby[r][0]}\" -> fill columns {fillStart}-{fillEnd}.");
+                    if (nearby[r].Length > 0 && !string.IsNullOrWhiteSpace(nearby[r][0]))
+                    {
+                        sb.Append($" Row {startRow1 + r - 1}: input=\"{nearby[r][0]}\" -> fill columns {fillStart}-{fillEnd}.");
+                    }
                 }
             }
 

@@ -22,10 +22,10 @@ namespace SpreadsheetApp.UI
         private readonly Button _btnNext = new() { Text = "Next >>", Width = 80, Height = 30 };
         private readonly Button _btnLoad = new() { Text = "Load Test", Width = 100, Height = 30 };
         private readonly Button _btnRun = new() { Text = "Run Steps", Width = 100, Height = 30 };
-        private readonly CheckBox _chkSnapshots = new() { Text = "Save snapshots", AutoSize = true };
-        private readonly CheckBox _chkDumpPlan = new() { Text = "Dump plan JSON", AutoSize = true };
-        private readonly CheckBox _chkDumpPrompt = new() { Text = "Dump user prompt", AutoSize = true };
-        private readonly CheckBox _chkDumpSystem = new() { Text = "Dump system prompt", AutoSize = true };
+        private readonly CheckBox _chkSnapshots = new() { Text = "Save snapshots", AutoSize = true, Checked = true };
+        private readonly CheckBox _chkDumpPlan = new() { Text = "Dump plan JSON", AutoSize = true, Checked = true };
+        private readonly CheckBox _chkDumpPrompt = new() { Text = "Dump user prompt", AutoSize = true, Checked = true };
+        private readonly CheckBox _chkDumpSystem = new() { Text = "Dump system prompt", AutoSize = true, Checked = true };
         private readonly Label _lblStatus = new() { AutoSize = true, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         private readonly List<string> _testFiles = new();
         private readonly List<string> _visibleFiles = new();
@@ -244,6 +244,23 @@ namespace SpreadsheetApp.UI
                             var after = _captureSheetMap();
                             WriteDiffToLog(before, after);
                         }
+                        // Always ensure a snapshot exists for consolidated export; save once here
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string snap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            _saveWorkbook(snap);
+                            if (_chkSnapshots.Checked)
+                            {
+                                Log($"    -> Snapshot saved: {snap}\r\n");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"    -> Failed to save snapshot: {ex.Message}\r\n");
+                        }
+
                         if (_chkDumpPrompt.Checked)
                         {
                             try
@@ -292,13 +309,37 @@ namespace SpreadsheetApp.UI
                                 Log($"    -> Failed to save system prompt: {ex.Message}\r\n");
                             }
                         }
-                        if (_chkSnapshots.Checked)
+                        // Consolidated export (single JSON file containing system, user, plan, and workbook)
+                        try
                         {
                             Directory.CreateDirectory(Path.Combine("tests", "output"));
                             string baseName = Path.GetFileNameWithoutExtension(path);
-                            string snap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
-                            _saveWorkbook(snap);
-                            Log($"    -> Snapshot saved: {snap}\r\n");
+                            string exportPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.export.json");
+                            string userStr = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
+                            string sysStr = plan.RawSystem ?? "(no system prompt)";
+                            string planStr = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
+                            string snapPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            string workbookStr = "";
+                            try { workbookStr = File.ReadAllText(snapPath); } catch { workbookStr = ""; }
+                            var root = new System.Collections.Generic.Dictionary<string, object?>
+                            {
+                                ["test_file"] = Path.GetFileName(path),
+                                ["step"] = stepNo,
+                                ["sheet"] = step.Sheet ?? "(current)",
+                                ["location"] = step.Location,
+                                ["apply"] = step.Apply,
+                                ["user"] = userStr,
+                                ["system"] = sysStr,
+                                ["plan_json"] = planStr,
+                                ["workbook_json"] = workbookStr
+                            };
+                            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            File.WriteAllText(exportPath, System.Text.Json.JsonSerializer.Serialize(root, opts));
+                            Log($"    -> Consolidated export saved: {exportPath}\r\n");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"    -> Failed to save consolidated export: {ex.Message}\r\n");
                         }
                     }
                     else
