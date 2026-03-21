@@ -466,6 +466,13 @@ namespace SpreadsheetApp.UI
 
             // Grid context menu (right-click)
             var gridContextMenu = new ContextMenuStrip { Renderer = new FlatToolStripRenderer(), BackColor = Color.White };
+            var aiSubMenu = new ToolStripMenuItem("AI");
+            aiSubMenu.DropDownItems.AddRange(new ToolStripItem[]
+            {
+                new ToolStripMenuItem("Explain Cell\u2026", null, async (_, __) => await ExplainCellAsync()),
+                new ToolStripMenuItem("Smart Schema Fill\u2026", null, async (_, __) => await SmartSchemaFillAsync()) { ShortcutKeyDisplayString = "Ctrl+Shift+F" },
+                new ToolStripMenuItem("Ask About Sheet\u2026", null, async (_, __) => await AskAboutSheetAsync()),
+            });
             gridContextMenu.Items.AddRange(new ToolStripItem[]
             {
                 new ToolStripMenuItem("Cut", null, (_, __) => CutCell()) { ShortcutKeyDisplayString = "Ctrl+X" },
@@ -474,8 +481,7 @@ namespace SpreadsheetApp.UI
                 new ToolStripSeparator(),
                 new ToolStripMenuItem("Clear Contents", null, (_, __) => ClearSelectedCells()) { ShortcutKeyDisplayString = "Del" },
                 new ToolStripSeparator(),
-                new ToolStripMenuItem("Explain Cell\u2026", null, async (_, __) => await ExplainCellAsync()),
-                new ToolStripMenuItem("Smart Schema Fill\u2026", null, async (_, __) => await SmartSchemaFillAsync()) { ShortcutKeyDisplayString = "Ctrl+Shift+F" },
+                aiSubMenu,
             });
             gridContextMenu.Font = Theme.UI;
             gridContextMenu.ForeColor = Theme.TextPrimary;

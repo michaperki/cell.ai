@@ -21,28 +21,35 @@ namespace SpreadsheetApp.UI.AI
         private readonly SpreadsheetApp.Core.AI.ChatSession _session;
 
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
-        private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 32 };
-        private readonly CheckBox _chkAgent = new() { Text = "Let AI explore first", Dock = DockStyle.Top, Height = 20 };
-        private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 28 };
+        private readonly Button _btnPlan = new() { Text = "Send", Dock = DockStyle.Top, Height = 32 };
+        private readonly CheckBox _chkAgent = new() { Text = "Analyze selection first", Dock = DockStyle.Top, Height = 20 };
+        // Revise is now per-card; remove global Revise button
         private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnHistory = new() { Text = "History…", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Primary, Visible = false };
-        private readonly RichTextBox _logBox = new() { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Theme.LogBg, ForeColor = Theme.LogFg, WordWrap = true };
-        private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 32, Enabled = false };
-        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None, Visible = false };
-        private readonly LinkLabel _policyToggle = new() { Dock = DockStyle.Top, Height = 16, Text = "\u25B6 Show details", TextAlign = ContentAlignment.MiddleLeft };
-        private readonly CheckBox _chkHardMode = new() { Text = "Selection hard mode (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
+        // Removed terminal-style log and global Apply; proposals render as inline cards
+        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None };
+        private readonly LinkLabel _policyToggle = new() { Dock = DockStyle.Top, Height = 16, Text = "\u25B6 Show advanced", TextAlign = ContentAlignment.MiddleLeft };
+        private readonly CheckBox _chkHardMode = new() { Text = "Strict to selection (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
         private readonly ComboBox _inputPolicy = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 22 };
+        private Panel _advancedPanel = null!;
+        // Session context indicator
+        private readonly Label _lblSession = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.TextSecondary };
+        // Unified thread panel (scrollable conversation with inline cards)
+        private readonly Panel _threadHost = new() { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.PanelBg };
+        private FlowLayoutPanel _threadFlow = null!;
 
         private Panel _inputWrapper = null!;
-        private AIPlan? _currentPlan;
+        // Current plan per-card; no global current plan
         private readonly Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? _runAgentLoop;
         private string[] _lastTranscript = Array.Empty<string>();
         private System.Windows.Forms.Timer? _thinkingTimer;
         private int _thinkingDots;
+        private readonly CheckBox _chkAutoApply = new() { Text = "Auto-apply small safe writes", Dock = DockStyle.Top, Height = 18, Checked = true };
+        private int _lastProposalVersion = 0;
 
-        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null)
+        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null, string? initialMode = null, Action<string>? onModeChanged = null)
         {
             _planner = planner;
             _session = session;
@@ -58,14 +65,12 @@ namespace SpreadsheetApp.UI.AI
 
             // ── Apply theme styles to buttons ─────────────────────
             Theme.StylePrimary(_btnPlan);
-            Theme.StyleSuccess(_btnApply);
-            Theme.StyleSecondary(_btnRevise);
             Theme.StyleGhost(_btnCopyObs);
             Theme.StyleDanger(_btnReset);
             Theme.StyleGhost(_btnHistory);
 
-            // ── Style log box ─────────────────────────────────────
-            _logBox.Font = Theme.MonoSmall;
+            // ── Style log box (advanced) ─────────────────────────
+            // no terminal log in unified thread UI
 
             // ── Style policy preview (collapsible) ───────────────
             _policy.BackColor = Theme.SurfaceMuted;
@@ -75,11 +80,7 @@ namespace SpreadsheetApp.UI.AI
             _policyToggle.LinkColor = Theme.TextSecondary;
             _policyToggle.ActiveLinkColor = Theme.Primary;
             _policyToggle.LinkBehavior = LinkBehavior.NeverUnderline;
-            _policyToggle.Click += (_, __) =>
-            {
-                _policy.Visible = !_policy.Visible;
-                _policyToggle.Text = _policy.Visible ? "\u25BC Hide details" : "\u25B6 Show details";
-            };
+            _policyToggle.Click += (_, __) => ToggleAdvanced();
 
             // ── Style input with focus indicator ─────────────────
             _input.Font = Theme.UI;
@@ -108,6 +109,7 @@ namespace SpreadsheetApp.UI.AI
 
             // ── Status label ──────────────────────────────────────
             _lblStatus.Font = Theme.UISemiBold;
+            _lblSession.Font = Theme.UI;
 
             // ── Spacers ───────────────────────────────────────────
             var spacer1 = new Label { Dock = DockStyle.Top, Height = 6, BackColor = Color.Transparent };
@@ -117,35 +119,32 @@ namespace SpreadsheetApp.UI.AI
             // ── Layout ────────────────────────────────────────────
             // Added last-to-first for Top dock (last added = topmost)
             var container = new Panel { Dock = DockStyle.Fill };
-            container.Controls.Add(_logBox);         // Fill — center
-            container.Controls.Add(_btnApply);       // Bottom
+            // Unified thread area
+            BuildThreadHost();
+            container.Controls.Add(_threadHost);
             container.Controls.Add(_btnPlan);        // Top
-            container.Controls.Add(spacer1);         // Top — gap before Plan
-            container.Controls.Add(_btnRevise);      // Top
-            container.Controls.Add(_btnCopyObs);     // Top
-            container.Controls.Add(_btnHistory);     // Top
+            container.Controls.Add(spacer1);         // Top — gap before Send
+            // Advanced controls are added inside _advancedPanel (hidden by default)
+            _advancedPanel = new Panel { Dock = DockStyle.Top, Visible = false };
+            var advButtons = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.LeftToRight, Height = 28 };
+            advButtons.Controls.Add(_btnCopyObs);
+            advButtons.Controls.Add(_btnHistory);
+            advButtons.Controls.Add(_btnReset);
+            _advancedPanel.Controls.Add(advButtons);
+            _advancedPanel.Controls.Add(policySep);       // separator
+            _advancedPanel.Controls.Add(_policy);         // policy text
+            container.Controls.Add(_advancedPanel);
             container.Controls.Add(_chkAgent);       // Top
-            container.Controls.Add(_lblStatus);      // Top
+            container.Controls.Add(_chkAutoApply);   // Top
+            container.Controls.Add(_lblStatus);      // Top (provider/model)
+            container.Controls.Add(_lblSession);     // Top (session status)
             container.Controls.Add(spacer2);         // Top — gap before action buttons
-            container.Controls.Add(_btnReset);       // Top
-            container.Controls.Add(policySep);       // Top — 1px line under policy
-            container.Controls.Add(_policy);         // Top (hidden by default)
-            container.Controls.Add(_policyToggle);   // Top — toggle link
+            container.Controls.Add(_policyToggle);   // Top — advanced toggle
             container.Controls.Add(_chkHardMode);    // Top
             container.Controls.Add(_inputPolicy);    // Top
             container.Controls.Add(_inputWrapper);    // Top — topmost (wraps _input with focus border)
             Controls.Add(container);
-
-            _btnPlan.Click += async (_, __) => await DoPlanAsync();
-            _btnRevise.Click += async (_, __) =>
-            {
-                var feedback = _input.Text ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(feedback))
-                {
-                    _session.AddUser(feedback);
-                }
-                await DoPlanAsync();
-            };
+            _btnPlan.Click += async (_, __) => await DoSendAsync();
             _btnCopyObs.Click += (_, __) =>
             {
                 try
@@ -158,38 +157,16 @@ namespace SpreadsheetApp.UI.AI
                 catch { }
             };
             _btnHistory.Click += (_, __) => ShowHistoryDialog();
-            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); try { _clearPreview?.Invoke(); } catch { } };
-            _btnApply.Click += (_, __) =>
-            {
-                if (_currentPlan != null)
-                {
-                    try
-                    {
-                        _applyPlan(_currentPlan);
-                        var summary = string.Join("; ", _currentPlan.Commands.Select(c => c.Summarize()));
-                        LogAppend($"Applied: {summary}", Theme.LogSuccess);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogAppend($"Apply error: {ex.Message}", Theme.LogError);
-                    }
-                    finally
-                    {
-                        _currentPlan = null;
-                        _btnApply.Enabled = false;
-                        _input.Clear();
-                        _input.Focus();
-                        try { _clearPreview?.Invoke(); } catch { }
-                    }
-                }
-            };
+            _btnReset.Click += (_, __) => { _session.Clear(); RenderThread(); try { _clearPreview?.Invoke(); } catch { } };
 
             if (!string.IsNullOrWhiteSpace(initialPrompt)) _input.Text = initialPrompt;
             // Initialize input policy options
             try
             {
                 _inputPolicy.Items.AddRange(new object[] { "Input read-only", "Append-only (empty rows)", "Writable" });
-                _inputPolicy.SelectedIndex = 1; // default append-only
+                // Unified default: make follow-up edits easier by default
+                _inputPolicy.SelectedIndex = 2; // Writable
+                _chkHardMode.Checked = false;   // Do not fence to selection unless opted in
                 _inputPolicy.SelectedIndexChanged += (_, __) =>
                 {
                     try { var ctx = _getContext(); _policy.Text = BuildPolicyPreview(ApplyUiPolicy(ctx, previewOnly: true)); } catch { }
@@ -201,9 +178,8 @@ namespace SpreadsheetApp.UI.AI
             }
             catch { }
             try { var ctx0 = _getContext(); _policy.Text = BuildPolicyPreview(ctx0); } catch { }
-            // Show empty state
-            if (!autoPlan) ShowEmptyState();
-            if (autoPlan) _ = DoPlanAsync();
+            RenderThread();
+            if (autoPlan) _ = DoSendAsync();
         }
 
         private void ShowHistoryDialog()
@@ -276,58 +252,6 @@ namespace SpreadsheetApp.UI.AI
             catch { return "[]"; }
         }
 
-        private void ShowEmptyState()
-        {
-            LogClear();
-            LogAppend("Type a prompt and click Plan to get started.", Theme.TextMuted);
-            LogAppend("", Theme.LogFg);
-            LogAppend("Examples:", Theme.TextMuted);
-            LogAppend("  \u2022 \"Fill column B with the uppercase version of A\"", Theme.TextMuted);
-            LogAppend("  \u2022 \"Sort by column C descending\"", Theme.TextMuted);
-            LogAppend("  \u2022 \"Add a SUM formula in row 11\"", Theme.TextMuted);
-        }
-
-        // ── Colored log helpers ──────────────────────────────────
-
-        private void LogAppend(string text, Color color)
-        {
-            if (IsDisposed || _logBox.IsDisposed) return;
-            _logBox.SelectionStart = _logBox.TextLength;
-            _logBox.SelectionLength = 0;
-            _logBox.SelectionColor = color;
-            _logBox.AppendText(text + "\n");
-            _logBox.ScrollToCaret();
-        }
-
-        private void LogUserBubble(string text)
-        {
-            if (IsDisposed || _logBox.IsDisposed) return;
-            var time = DateTime.Now.ToString("HH:mm");
-            _logBox.SelectionStart = _logBox.TextLength;
-            _logBox.SelectionLength = 0;
-            // Timestamp
-            _logBox.SelectionColor = Theme.TextMuted;
-            _logBox.SelectionFont = Theme.MonoSmall;
-            _logBox.AppendText($"  You \u00B7 {time}\n");
-            // Message body — right-indented with accent
-            _logBox.SelectionColor = Color.FromArgb(147, 197, 253); // light blue
-            _logBox.SelectionFont = Theme.UI;
-            _logBox.AppendText($"  {text}\n\n");
-            _logBox.ScrollToCaret();
-        }
-
-        private void LogAIHeader()
-        {
-            if (IsDisposed || _logBox.IsDisposed) return;
-            var time = DateTime.Now.ToString("HH:mm");
-            _logBox.SelectionStart = _logBox.TextLength;
-            _logBox.SelectionLength = 0;
-            _logBox.SelectionColor = Theme.TextMuted;
-            _logBox.SelectionFont = Theme.MonoSmall;
-            _logBox.AppendText($"  AI \u00B7 {time}\n");
-            _logBox.ScrollToCaret();
-        }
-
         private void StartThinkingAnimation()
         {
             _thinkingDots = 0;
@@ -352,12 +276,6 @@ namespace SpreadsheetApp.UI.AI
             _lblStatus.Visible = false;
         }
 
-        private void LogClear()
-        {
-            if (IsDisposed || _logBox.IsDisposed) return;
-            _logBox.Clear();
-        }
-
         public void FocusInput()
         {
             try { _input.Focus(); } catch { }
@@ -366,19 +284,27 @@ namespace SpreadsheetApp.UI.AI
         public void SetPrompt(string text, bool autoPlan)
         {
             _input.Text = text ?? string.Empty;
-            if (autoPlan) _ = DoPlanAsync();
+            if (autoPlan) _ = DoSendAsync();
         }
 
         public void RefreshPolicy(AIContext ctx)
         {
             try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
+            UpdateSessionStatus();
         }
 
-        private async Task DoPlanAsync()
+        public void RefreshThread()
         {
-            _btnPlan.Enabled = false; _btnApply.Enabled = false; _currentPlan = null;
+            RenderThread();
+        }
+
+        private async Task DoSendAsync()
+        {
+            _btnPlan.Enabled = false;
             StartThinkingAnimation();
-            LogUserBubble(_input.Text ?? string.Empty);
+            var userText = _input.Text ?? string.Empty;
+            _session.AddUser(userText);
+            RenderThread();
             try
             {
                 int timeoutSec = 30;
@@ -386,57 +312,49 @@ namespace SpreadsheetApp.UI.AI
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
                 var ctx = _getContext();
                 try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
-                // Include rolling conversation
                 ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_session.History);
                 AIPlan plan;
                 string[] transcript = Array.Empty<string>();
-                var run = _runAgentLoop; // local for nullability analysis
+                var run = _runAgentLoop;
                 bool useAgent = _chkAgent.Checked && run != null;
                 if (useAgent)
                 {
-                    var res = await run!(_input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
+                    var res = await run!(userText, cts.Token).ConfigureAwait(true);
                     plan = res.plan; transcript = res.transcript;
                 }
                 else
                 {
-                    // Apply UI policy toggles before planning
                     ctx = ApplyUiPolicy(ctx, previewOnly: false);
-                    plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
+                    ctx = ApplyIntentHeuristics(ctx, userText);
+                    plan = await _planner.PlanAsync(ctx, userText, cts.Token).ConfigureAwait(true);
                 }
-                _currentPlan = plan;
                 _lastTranscript = transcript;
-                LogAIHeader();
                 if (useAgent && transcript.Length > 0)
                 {
-                    LogAppend("── Observations ──", Theme.LogObservation);
-                    foreach (var line in transcript) LogAppend("  " + line, Theme.LogObservation);
-                    LogAppend("── Plan ──", Theme.LogCommand);
+                    foreach (var line in transcript) _session.AddObservation(line);
                 }
-                int writeCount = 0;
-                if (plan.Commands.Count == 0)
+                bool hasCommands = plan.Commands != null && plan.Commands.Count > 0;
+                if (!hasCommands)
                 {
-                    LogAppend("No changes suggested.", Theme.LogInfo);
+                    string ans = plan.Answer ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(ans))
+                    {
+                        var cmds = (plan.Commands != null && plan.Commands.Count > 0) ? plan.Commands : System.Linq.Enumerable.Empty<IAICommand>();
+                        ans = string.Join("; ", cmds.Select(c => c.Summarize()));
+                    }
+                    _session.AddAnswer(ans);
                 }
                 else
                 {
-                    foreach (var cmd in plan.Commands)
+                    int idx = _session.AddProposal(plan, ++_lastProposalVersion);
+                    AddOrUpdateProposalCard(idx, plan, _lastProposalVersion);
+                    if (_chkAutoApply.Checked && IsSmallSafeValuesOnly(plan, ctx, maxCells: 50))
                     {
-                        LogAppend(cmd.Summarize(), Theme.LogCommand);
-                        string? rationale = TryGetRationale(cmd);
-                        if (!string.IsNullOrWhiteSpace(rationale)) LogAppend("  \u2192 " + rationale, Theme.LogRationale);
+                        try { _applyPlan(plan); _session.AddAppliedSummary(plan); }
+                        catch (Exception ex) { _session.AddAnswer($"Apply error: {ex.Message}"); }
                     }
-                    writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
-                    writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
-                    LogAppend($"Total writes: {writeCount}", Theme.LogInfo);
-                    _btnApply.Enabled = true;
-                    // Show diff overlay on grid
-                    try { _previewPlan?.Invoke(plan); } catch { }
                 }
-                // Update conversation history (keep last 10 entries)
-                _session.AddUser(_input.Text ?? string.Empty);
-                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
-                _session.AddAssistant(asstSummary);
-                // Build status line with provider/model, latency, tokens, remaining context
+                RenderThread();
                 try
                 {
                     var parts = new System.Collections.Generic.List<string>();
@@ -449,41 +367,40 @@ namespace SpreadsheetApp.UI.AI
                     if (plan.LatencyMs.HasValue) parts.Add(plan.LatencyMs.Value + " ms");
                     if (plan.Usage != null)
                     {
-                        var u = plan.Usage;
-                        string tok = $"tokens {u.InputTokens?.ToString() ?? "-"}/{u.OutputTokens?.ToString() ?? "-"}/{u.TotalTokens?.ToString() ?? "-"}";
+                        var u = plan.Usage; string tok = $"tokens {u.InputTokens?.ToString() ?? "-"}/{u.OutputTokens?.ToString() ?? "-"}/{u.TotalTokens?.ToString() ?? "-"}";
                         parts.Add(tok);
                         if (u.RemainingContext.HasValue) parts.Add($"remaining {u.RemainingContext.Value}");
                     }
-                    if (parts.Count > 0)
-                    {
-                        _lblStatus.Text = string.Join(" · ", parts);
-                        _lblStatus.Visible = true;
-                    }
+                    if (parts.Count > 0) { _lblStatus.Text = string.Join(" · ", parts); _lblStatus.Visible = true; }
                 }
                 catch { }
-                // Optional JSONL debug log
+                UpdateSessionStatus();
                 try
                 {
                     SpreadsheetApp.Core.AI.AILogger.Log(_chkAgent.Checked ? "agent" : "chat",
                         plan.Provider, plan.Model, plan.Usage, plan.LatencyMs,
                         _getContext()?.SheetName, _getContext()?.StartRow, _getContext()?.StartCol, _getContext()?.Rows, _getContext()?.Cols,
                         plan.RawUser, plan.RawSystem,
-                        plan.Commands?.Count, writeCount);
+                        plan.Commands?.Count, (plan.Commands?.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.FirstOrDefault()?.Length ?? 0)) ?? 0));
                 }
                 catch { }
             }
             catch (OperationCanceledException)
             {
-                LogAppend("Planning canceled or timed out.", Theme.LogError);
+                _session.AddAnswer("Planning canceled or timed out.");
+                RenderThread();
             }
             catch (Exception ex)
             {
-                LogAppend($"Error: {ex.Message}", Theme.LogError);
+                _session.AddAnswer($"Error: {ex.Message}");
+                RenderThread();
             }
             finally
             {
                 _btnPlan.Enabled = true;
                 StopThinkingAnimation();
+                _input.Clear();
+                _input.Focus();
             }
         }
 
@@ -550,7 +467,9 @@ namespace SpreadsheetApp.UI.AI
         {
             var sb = new System.Text.StringBuilder();
             // Selection summary
-            string start = SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol);
+            string start = (ctx.StartRow >= 0 && ctx.StartCol >= 0)
+                ? SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol)
+                : "first empty row";
             sb.Append($"Selection {start} · {Math.Max(1, ctx.Rows)}x{Math.Max(1, ctx.Cols)}");
             // Allowed commands
             try
@@ -615,6 +534,199 @@ namespace SpreadsheetApp.UI.AI
             }
             catch { }
             return sb.ToString();
+        }
+
+        private void ToggleAdvanced()
+        {
+            if (_advancedPanel == null) return;
+            _advancedPanel.Visible = !_advancedPanel.Visible;
+            _policyToggle.Text = _advancedPanel.Visible ? "\u25BC Hide advanced" : "\u25B6 Show advanced";
+        }
+
+        // Mode chips removed in unified UI
+
+        private void UpdateSessionStatus()
+        {
+            try
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (_session.History.Count == 0) parts.Add("Fresh request");
+                else parts.Add($"Using prior AI context ({_session.History.Count})");
+                parts.Add("Using current selection + headers");
+                _lblSession.Text = string.Join(" · ", parts);
+                _lblSession.Visible = true;
+            }
+            catch { }
+        }
+
+        // No mode policy in unified UI; heuristics are applied in ApplyIntentHeuristics
+
+        // Preview helpers removed in unified UI (cards render their own samples)
+
+        private void RenderAskThread()
+        {
+            // unused in unified UI
+        }
+
+        private void BuildThreadHost()
+        {
+            _threadHost.Controls.Clear();
+            _threadFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(6),
+                BackColor = Theme.PanelBg
+            };
+            _threadHost.Controls.Add(_threadFlow);
+        }
+
+        private void RenderThread()
+        {
+            try
+            {
+                _threadFlow.SuspendLayout();
+                _threadFlow.Controls.Clear();
+                int width = Math.Max(100, _threadHost.ClientSize.Width - 16);
+                foreach (var e in _session.Thread)
+                {
+                    switch (e.Type)
+                    {
+                        case SpreadsheetApp.Core.AI.ChatEntryType.User:
+                        {
+                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(240, 247, 255), Padding = new Padding(8), Margin = new Padding(0, 0, 0, 8) };
+                            var who = new Label { Dock = DockStyle.Top, Height = 16, Text = "You", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
+                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 16, 0) };
+                            bubble.Controls.Add(lbl); bubble.Controls.Add(who); _threadFlow.Controls.Add(bubble);
+                            break;
+                        }
+                        case SpreadsheetApp.Core.AI.ChatEntryType.Answer:
+                        {
+                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(245, 245, 245), Padding = new Padding(8), Margin = new Padding(0, 0, 0, 8) };
+                            var who = new Label { Dock = DockStyle.Top, Height = 16, Text = "AI", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
+                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 16, 0) };
+                            bubble.Controls.Add(lbl); bubble.Controls.Add(who); _threadFlow.Controls.Add(bubble);
+                            break;
+                        }
+                        case SpreadsheetApp.Core.AI.ChatEntryType.Observation:
+                        {
+                            var lbl = new Label { Width = width, AutoSize = true, Text = e.Content ?? string.Empty, Font = Theme.MonoSmall, ForeColor = Theme.LogObservation, Margin = new Padding(0, 0, 0, 4) };
+                            _threadFlow.Controls.Add(lbl);
+                            break;
+                        }
+                        case SpreadsheetApp.Core.AI.ChatEntryType.ActionProposal:
+                        {
+                            var card = new ActionCardControl();
+                            card.Width = width; card.SetPlan(e.Proposal ?? new AIPlan(), e.ProposalVersion);
+                            card.ApplyRequested += (_, __) => { try { _applyPlan(card.GetPlan()); _session.AddAppliedSummary(card.GetPlan()); RenderThread(); } catch (Exception ex) { _session.AddAnswer($"Apply error: {ex.Message}"); RenderThread(); } };
+                            card.ReviseRequested += async (_, __) => await ReviseProposalAsync(e, card);
+                            card.CardFocused += (_, __) => { try { _previewPlan?.Invoke(card.GetPlan()); } catch { } };
+                            _threadFlow.Controls.Add(card);
+                            break;
+                        }
+                        case SpreadsheetApp.Core.AI.ChatEntryType.AppliedSummary:
+                        {
+                            var lbl = new Label { Width = width, AutoSize = true, Text = $"Applied: {e.Content}", Font = Theme.UI, ForeColor = Theme.LogSuccess, Margin = new Padding(0, 0, 0, 8) };
+                            _threadFlow.Controls.Add(lbl);
+                            break;
+                        }
+                    }
+                }
+                _threadFlow.ResumeLayout();
+                _threadFlow.PerformLayout();
+            }
+            catch { }
+        }
+
+        private void AddOrUpdateProposalCard(int entryIndex, AIPlan plan, int version)
+        {
+            // Simple path: re-render thread and trigger preview
+            RenderThread();
+            try { _previewPlan?.Invoke(plan); } catch { }
+        }
+
+        private async System.Threading.Tasks.Task ReviseProposalAsync(SpreadsheetApp.Core.AI.ChatEntry entry, ActionCardControl card)
+        {
+            try
+            {
+                string feedback = _input.Text ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(feedback)) _session.AddUser(feedback);
+                RenderThread();
+                int timeoutSec = 30; try { var s = Environment.GetEnvironmentVariable("AI_PLAN_TIMEOUT_SEC"); if (!string.IsNullOrWhiteSpace(s)) timeoutSec = Math.Max(5, int.Parse(s)); } catch { }
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
+                var ctx = ApplyIntentHeuristics(ApplyUiPolicy(_getContext(), previewOnly: false), feedback);
+                ctx.Conversation = new System.Collections.Generic.List<ChatMessage>(_session.History);
+                var newPlan = await _planner.PlanAsync(ctx, feedback, cts.Token).ConfigureAwait(true);
+                int newVersion = entry.ProposalVersion + 1;
+                card.SetPlan(newPlan, newVersion);
+                var cmds = (newPlan.Commands != null && newPlan.Commands.Count > 0) ? newPlan.Commands : System.Linq.Enumerable.Empty<IAICommand>();
+                entry.Proposal = newPlan; entry.ProposalVersion = newVersion; entry.Content = string.Join("; ", cmds.Select(c => c.Summarize()));
+                RenderThread();
+            }
+            catch (Exception ex)
+            {
+                _session.AddAnswer($"Revise failed: {ex.Message}");
+                RenderThread();
+            }
+            finally
+            {
+                try { _clearPreview?.Invoke(); } catch { }
+                _input.Clear(); _input.Focus();
+            }
+        }
+
+        private static bool IsSmallSafeValuesOnly(AIPlan plan, AIContext ctx, int maxCells)
+        {
+            try
+            {
+                if (plan.Commands == null || plan.Commands.Count == 0) return false;
+                if (plan.Commands.Any(c => c is not SetValuesCommand)) return false; // values-only
+                int total = plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.FirstOrDefault()?.Length ?? 0));
+                if (total <= 0 || total > maxCells) return false;
+                // within selection bounds
+                int r0 = Math.Max(0, ctx.StartRow); int c0 = Math.Max(0, ctx.StartCol);
+                int r1 = r0 + Math.Max(1, ctx.Rows) - 1; int c1 = c0 + Math.Max(1, ctx.Cols) - 1;
+                foreach (var sv in plan.Commands.OfType<SetValuesCommand>())
+                {
+                    int rows = sv.Values.Length; int cols = rows > 0 ? sv.Values[0].Length : 0;
+                    int sr0 = sv.StartRow; int sc0 = sv.StartCol; int sr1 = sr0 + rows - 1; int sc1 = sc0 + cols - 1;
+                    if (sr0 < r0 || sc0 < c0 || sr1 > r1 || sc1 > c1) return false;
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static AIContext ApplyIntentHeuristics(AIContext ctx, string prompt)
+        {
+            try
+            {
+                var p = (prompt ?? string.Empty).ToLowerInvariant();
+                ctx.RequestQueriesOnly = false; ctx.AnswerOnly = false;
+                if (p.Contains("insert column") || p.Contains("add column") || p.Contains("create column") || p.Contains("new column"))
+                {
+                    ctx.AllowedCommands = new[] { "insert_cols" };
+                    try { var wp = ctx.WritePolicy ?? new SelectionWritePolicy(); wp.HeaderRowReadOnly = false; ctx.WritePolicy = wp; } catch { }
+                }
+                else if (p.Contains("delete column")) ctx.AllowedCommands = new[] { "delete_cols" };
+                else if (p.Contains("insert row")) ctx.AllowedCommands = new[] { "insert_rows" };
+                else if (p.Contains("delete row")) ctx.AllowedCommands = new[] { "delete_rows" };
+                else if (p.Contains("copy ")) ctx.AllowedCommands = new[] { "copy_range" };
+                else if (p.Contains("move ")) ctx.AllowedCommands = new[] { "move_range" };
+                else if (p.Contains("rename sheet")) ctx.AllowedCommands = new[] { "rename_sheet" };
+                else if (p.Contains("clear ")) ctx.AllowedCommands = new[] { "clear_range" };
+                else if (p.Contains("format")) ctx.AllowedCommands = new[] { "set_format" };
+                else if (p.Contains("validation")) ctx.AllowedCommands = new[] { "set_validation" };
+                else if (p.Contains("conditional format") || p.Contains("condfmt")) ctx.AllowedCommands = new[] { "set_conditional_format" };
+                else if (p.Contains("transform ") || p.Contains("cleanup")) ctx.AllowedCommands = new[] { "transform_range" };
+                else if (p.Contains("sort by") || p.Contains("sort ")) ctx.AllowedCommands = new[] { "sort_range" };
+                else if (p.Contains("explain") || p.Contains("what is") || p.Contains("why")) { ctx.AllowedCommands = Array.Empty<string>(); ctx.AnswerOnly = true; }
+                else ctx.AllowedCommands = null;
+            }
+            catch { }
+            return ctx;
         }
     }
 }
