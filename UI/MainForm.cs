@@ -333,7 +333,6 @@ namespace SpreadsheetApp.UI
                 {
                     _chatDockHost.Visible = true;
                     if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
-                    _chatPane?.SetMode("Ask");
                     _chatPane?.FocusInput();
                 }
             }
@@ -2527,6 +2526,17 @@ namespace SpreadsheetApp.UI
             int c = _aiGhostCol;
             HideGhostSuggestions();
             ApplyCellsWithUndo(r, c, cells);
+            try
+            {
+                // Thread the inline accept into the unified chat as a proposal+applied summary
+                var plan = new SpreadsheetApp.Core.AI.AIPlan();
+                plan.Commands.Add(new SpreadsheetApp.Core.AI.SetValuesCommand { StartRow = r, StartCol = c, Values = cells });
+                _chatSession.AddProposal(plan, version: 1, meta: "inline");
+                _chatSession.AddAppliedSummary(plan);
+                try { _aiActionLog.Record("(inline accept)", plan); } catch { }
+                try { _chatPane?.RefreshThread(); } catch { }
+            }
+            catch { }
         }
 
         // --- AI: Chat Assistant ---
@@ -2649,7 +2659,8 @@ namespace SpreadsheetApp.UI
         {
             int sr = grid.CurrentCell?.RowIndex ?? 0;
             int sc = grid.CurrentCell?.ColumnIndex ?? 0;
-            int rowsHint = 5, colsHint = 1;
+            // Less restrictive defaults when no rectangular selection is active
+            int rowsHint = 20, colsHint = 6;
             bool hadSelection = false;
             try
             {
@@ -4565,7 +4576,7 @@ namespace SpreadsheetApp.UI
             try
             {
                 var userMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "user", Content = prompt ?? string.Empty };
-                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
+                var asstSummary = string.Join("; ", (plan.Commands != null && plan.Commands.Count > 0 ? plan.Commands : System.Linq.Enumerable.Empty<SpreadsheetApp.Core.AI.IAICommand>()).Select(c => c.Summarize()));
                 var asstMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "assistant", Content = asstSummary };
                 _automationHistory.Add(userMsg);
                 _automationHistory.Add(asstMsg);
@@ -4581,16 +4592,16 @@ namespace SpreadsheetApp.UI
                 bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
                 if (valuesOnly)
                 {
-                    plan.Commands.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand);
+                    try { plan.Commands?.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand); } catch { }
                 }
                 else if (noTitles)
                 {
-                    plan.Commands.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand);
+                    try { plan.Commands?.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand); } catch { }
                 }
             }
             catch { }
 
-            if (apply && plan.Commands.Count > 0)
+            if (apply && (plan.Commands?.Count > 0))
             {
                 // In automation, if a range was provided, sanitize plan to selection bounds
                 try
@@ -4763,11 +4774,11 @@ namespace SpreadsheetApp.UI
                 bool noTitles = valuesOnly || p.IndexOf("do not add title", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("do not add titles", StringComparison.OrdinalIgnoreCase) >= 0;
                 if (valuesOnly)
                 {
-                    plan.Commands.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand);
+                    try { plan.Commands?.RemoveAll(c => c is not SpreadsheetApp.Core.AI.SetValuesCommand); } catch { }
                 }
                 else if (noTitles)
                 {
-                    plan.Commands.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand);
+                    try { plan.Commands?.RemoveAll(c => c is SpreadsheetApp.Core.AI.SetTitleCommand); } catch { }
                 }
             }
             catch { }
@@ -4776,7 +4787,7 @@ namespace SpreadsheetApp.UI
             try
             {
                 var userMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "user", Content = prompt ?? string.Empty };
-                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
+                var asstSummary = string.Join("; ", (plan.Commands != null && plan.Commands.Count > 0 ? plan.Commands : System.Linq.Enumerable.Empty<SpreadsheetApp.Core.AI.IAICommand>()).Select(c => c.Summarize()));
                 var asstMsg = new SpreadsheetApp.Core.AI.ChatMessage { Role = "assistant", Content = asstSummary };
                 _automationHistory.Add(userMsg);
                 _automationHistory.Add(asstMsg);
@@ -4784,7 +4795,7 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
-            if (apply && plan.Commands.Count > 0)
+            if (apply && (plan.Commands?.Count > 0))
             {
                 try
                 {

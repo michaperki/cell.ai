@@ -498,6 +498,49 @@ Rationale: Smoother undo UX reduces noise and accidental multi‑undo clicks; ke
 - Copy tags the clipboard with origin and a structured payload of raw values. Paste prefers that payload and rewrites cell references and ranges by delta, honoring `$` anchors.
 - Bugfix: Resolved a case where pasting could yield malformed refs like `=B11` by anchoring at the active cell, ending edit before paste, and using a regex‑based rewriter outside string literals.
 
+## Unified Thread UX + Acceptance Tests (2026‑03‑21)
+
+What changed
+- Single threaded AI session
+  - Replaced mode‑first panes with one unified, scrollable thread.
+  - AI turns are either inline answers or inline action proposal cards.
+- Inline Apply/Revise
+  - Each proposal card renders summary + sample and includes Apply/Revise buttons in‑thread.
+  - Apply executes immediately and appends an "Applied" summary entry; Revise regenerates a vN card.
+- Visible context
+  - Status line shows provider/model/tokens/latency; history remains visible via the Chat History viewer.
+- Defaults and intent
+  - Chat defaults to Writable inputs and Hard Mode off (selection fencing opt‑in). Heuristics infer intent (insert/delete/copy/move/format/validation/condfmt/transform/sort/explain).
+  - "Add/Insert column" widens command gating and allows header writes for the new column.
+- Inline ghost acceptance
+  - Accepting inline suggestions logs a proposal + applied summary into the thread for traceability.
+- Narrowing guard removed
+  - BuildPlannerContext default selection widened from 5×1 to 20×6 when no rectangular selection is active, avoiding unintended A1:A5 single‑column bias.
+- Robustness
+  - Fixed nullable warnings where plan.Commands may be absent (summaries and logs now null‑safe).
+
+Files of note
+- UI/AI/ChatAssistantPanel.cs — unified thread, Send flow, action cards, auto‑apply small safe writes, intent heuristics.
+- UI/AI/ActionCardControl.cs — new control for proposal cards (Apply/Revise, sample preview).
+- UI/MainForm.cs — BuildPlannerContext widened defaults; inline ghost accept now logs to the thread.
+- Core/AI/ChatSession.cs — typed thread entries (User/Answer/Observation/ActionProposal/AppliedSummary).
+- Core/AI/AIActionLog.cs — null‑safety improvements.
+
+Acceptance tests added
+- test_35_ui_unified_thread_engineers
+  - Step 1: writes 5 engineers in A2:A6 (applied if small/safe).
+  - Step 2: adds adjacent "Special Ability" column with header in B and applies.
+- test_36_ui_unified_thread_answer_only
+  - Ensures answer‑only turns produce no write plan.
+  - Both added to TEST_SPECS.json and TEST_INDEX.md.
+
+Intent / Model guardrails
+- Contract we test and ship against:
+  - One thread surface; no separate modes.
+  - Every operational turn produces an executable proposal card (Apply/Revise inline).
+  - Answers stay inline; applied changes log back into the thread.
+  - Defaults do not force single‑column or A1:A5 patterns; selection fencing is explicit.
+
 4) CSV async I/O + guards
 - Added `ExportCsvAsync`/`ImportCsvAsync` and wired File → Import/Export CSV to async paths with `SetUiBusy` to disable menus and show wait cursor.
 - Long operations do not block the UI.
@@ -1132,3 +1175,57 @@ Next
 - Make apply=false strictly Phase 1 (skip writes planning) so observe‑only runs leave `plan.commands` empty.
 - Extend SelectionHardMode/SanitizePlan to fence `transform_range` writes to selection bounds.
 - Add lightweight plan assertions in the Test Runner (e.g., error log if apply=false and commands were proposed; structural checks for OOB writes).
+## UI Panel v2 — Mode chips, Preview card, Ask thread (2026‑03‑21)
+
+What we added
+- Mode selector and gating
+  - Added explicit chips near the prompt: Fill / Append / Transform / Ask.
+  - Gating semantics per mode:
+    - Fill → AllowedCommands=[set_values,set_formula]
+    - Append → AllowedCommands=[set_values], StartRow=-1 (append to first empty row within the selection block)
+    - Transform → AllowedCommands=[set_values,set_formula,clear_range,transform_range]
+    - Ask → RequestQueriesOnly=true, AnswerOnly=true (no write commands)
+- Session visibility
+  - Added a compact session status line: “Fresh request” or “Using prior AI context (N)” · “Using current selection + headers”.
+- Preview card (write modes)
+  - Replaced the terminal-style log with a clean card that shows:
+    - “AI will write N cell(s)” when applicable
+    - first target range and shape
+    - a 5×6 mini table sample for values/formulas
+    - human-readable summaries for structural commands
+  - Moved debugging/history/policy details into an Advanced drawer (collapsed by default) with a “Show advanced” toggle.
+- Copy and defaults
+  - “Selection hard mode” → “Strict to selection (no out‑of‑bounds writes)”.
+  - “Let AI explore first” → “Analyze selection first”.
+  - Persist last chosen mode (`AppSettings.LastChatMode`).
+  - Ask mode hides Apply and disables “Analyze selection first”.
+- Context menu consolidation
+  - Grid context menu now has AI ▸ with: Explain Cell…, Smart Schema Fill…, Ask About Sheet…
+
+Ask mode fixes
+- Answer‑only path
+  - Added `AIContext.AnswerOnly` and `AIPlan.Answer`.
+  - Provider planner now supports Ask by returning strict JSON `{ "answer": "..." }`; we parse and surface this as the main artifact.
+- Visible conversation thread
+  - In Ask mode, the main pane renders a scrollable Q/A thread (You vs AI bubbles) from `ChatSession.History` instead of a write preview.
+  - New turns append at the bottom; Reset History clears the thread. Apply is hidden in Ask.
+
+Files
+- Core: `Core/AI/AIContext.cs` (AnswerOnly), `Core/AI/Commands.cs` (AIPlan.Answer), `Core/AI/ProviderChatPlanner.cs` (Ask mode system contract + answer parsing).
+- UI: `UI/AI/ChatAssistantPanel.cs` (mode chips, session status, preview card, Ask thread, Advanced drawer), `UI/MainForm.Designer.cs` (AI submenu), `UI/MainForm.cs` (Ask About Sheet handler), `Core/AppSettings.cs` (LastChatMode).
+
+How to validate
+- Ask mode
+  - Right‑click grid → AI ▸ Ask About Sheet…
+  - Prompt: “What game is this from?” with selection containing Knight/Victory Point/Monopoly/Year of Plenty/Road Building.
+  - Expect: Answer card “These are development cards from Catan.” No Apply button; no write counts/table.
+  - Ask follow‑up questions; verify the Q/A thread accumulates visibly.
+- Write modes
+  - Switch to Fill/Append/Transform; Plan shows preview card with target and a 5×6 sample; Apply is enabled when there are writes.
+  - Append uses StartRow=-1 to append at first empty row within the selection; preview header shows counts; Advanced shows selection/policy.
+- Context menu
+  - Right‑click grid → AI ▸ includes Explain Cell…, Smart Schema Fill…, Ask About Sheet… and works as expected.
+
+Notes
+- The Advanced inspector contains the detailed log, policy preview, and history tools; it’s intentionally collapsed by default to reduce visual clutter.
+- The status line continues to show provider/model/tokens/latency when available.

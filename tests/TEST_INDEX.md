@@ -35,6 +35,8 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 | 32 | test_32_ai_agent_transform_range | AI (Agent) | transform_range normalize_city over a selection |
 | 33 | test_33_ai_agent_observe_only_strict | AI (Agent) | Observe-only scenario to capture transcript without applying writes |
 | 34 | test_34_ai_agent_selection_fencing | AI (Agent) | Selection hard-mode fences writes to selection bounds |
+| 35 | test_35_ui_unified_thread_engineers | UI/AI | Unified thread: small write then adjacent column with header |
+| 36 | test_36_ui_unified_thread_answer_only | UI/AI | Unified thread: answer-only turn yields no writes |
 | 23 | test_23_ai_insert_delete_cols | AI | `insert_cols` and `delete_cols` on a simple table |
 | 24 | test_24_ai_delete_sheet | AI | `delete_sheet` removes a named sheet |
 
