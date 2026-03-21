@@ -452,7 +452,7 @@ namespace SpreadsheetApp.UI.AI
                 }
                 // Update conversation history (keep last 10 entries)
                 _session.AddUser(_input.Text ?? string.Empty);
-                var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
+                var asstSummary = _currentMode == "Ask" ? (plan.Answer ?? string.Empty) : string.Join("; ", plan.Commands.Select(c => c.Summarize()));
                 _session.AddAssistant(asstSummary);
                 // Build status line with provider/model, latency, tokens, remaining context
                 try
@@ -739,19 +739,23 @@ namespace SpreadsheetApp.UI.AI
                 {
                     case "Fill":
                         ctx.RequestQueriesOnly = false;
+                        ctx.AnswerOnly = false;
                         ctx.AllowedCommands = new[] { "set_values", "set_formula" };
                         break;
                     case "Append":
                         ctx.RequestQueriesOnly = false;
+                        ctx.AnswerOnly = false;
                         ctx.AllowedCommands = new[] { "set_values" };
                         ctx.StartRow = -1; // hint: append to first empty row within selection block
                         break;
                     case "Transform":
                         ctx.RequestQueriesOnly = false;
+                        ctx.AnswerOnly = false;
                         ctx.AllowedCommands = new[] { "set_values", "set_formula", "clear_range", "transform_range" };
                         break;
                     case "Ask":
                         ctx.RequestQueriesOnly = true;
+                        ctx.AnswerOnly = true;
                         ctx.AllowedCommands = Array.Empty<string>();
                         break;
                 }
@@ -779,6 +783,15 @@ namespace SpreadsheetApp.UI.AI
                 _previewWarn.Text = string.Empty;
                 _previewTable.Visible = false;
                 _previewTable.Controls.Clear();
+                // Ask mode: show answer card only
+                if (_currentMode == "Ask")
+                {
+                    string ans = plan.Answer ?? string.Empty;
+                    _previewHeader.Text = string.IsNullOrWhiteSpace(ans) ? "No answer" : "Answer";
+                    _previewSub.Text = ans;
+                    // In Ask mode, never render write tables or counts
+                    return 0;
+                }
                 // Build aggregate summary
                 int writeCount = 0;
                 int cmdCount = plan.Commands.Count;
@@ -807,8 +820,7 @@ namespace SpreadsheetApp.UI.AI
                     var summaries = plan.Commands.Take(4).Select(c => "• " + c.Summarize()).ToArray();
                     _previewSub.Text = string.Join("\r\n", summaries);
                 }
-                // Warnings (basic): Ask mode has no apply; selection hard mode enforced; non-writable columns not previewed here
-                if (_currentMode == "Ask") _previewWarn.Text = "Ask mode: no writes (queries only)";
+                // Warnings (basic): selection hard mode enforced; non-writable columns not previewed here
                 return writeCount;
             }
             catch { return 0; }

@@ -36,7 +36,16 @@ namespace SpreadsheetApp.Core.AI
             string sys;
             if (context.RequestQueriesOnly)
             {
-                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"queries\":[{\"type\":\"selection_summary\"},{\"type\":\"profile_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"describe_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"unique_values\",\"col\":\"<letter or 1-based index>\",\"top\":<int optional>},{\"type\":\"sample_rows\",\"rows\":<int>,\"cols\":<int>},{\"type\":\"count_where\",\"filters\":[{\"col\":\"<letter or 1-based index>\",\"op\":\"eq|ne|gt|ge|lt|le|contains|not_contains\",\"value\":\"...\"}]}]} with no extra keys, no prose. Choose a small set of high-value queries to understand the selection (uniques, column descriptions, a few sample rows, and counts under simple filters). Do not include write commands.";
+                if (context.AnswerOnly)
+                {
+                    // Ask mode: return a direct textual answer as JSON {"answer":"..."}
+                    sys = "You are a spreadsheet Q&A assistant. Respond ONLY with strict JSON: {\"answer\":\"<short answer>\"}. Do not include any other keys, no code blocks, no prose outside JSON. Use the provided selection and headers as context to answer the user's question succinctly.";
+                }
+                else
+                {
+                    // Observation mode for agent loop: return queries
+                    sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"queries\":[{\"type\":\"selection_summary\"},{\"type\":\"profile_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"describe_column\",\"col\":\"<letter or 1-based index>\",\"rows\":<int optional>},{\"type\":\"unique_values\",\"col\":\"<letter or 1-based index>\",\"top\":<int optional>},{\"type\":\"sample_rows\",\"rows\":<int>,\"cols\":<int>},{\"type\":\"count_where\",\"filters\":[{\"col\":\"<letter or 1-based index>\",\"op\":\"eq|ne|gt|ge|lt|le|contains|not_contains\",\"value\":\"...\"}]}]} with no extra keys, no prose. Choose a small set of high-value queries to understand the selection (uniques, column descriptions, a few sample rows, and counts under simple filters). Do not include write commands.";
+                }
             }
             else
             {
@@ -205,6 +214,15 @@ namespace SpreadsheetApp.Core.AI
                 // If this was query-only mode, return immediately after parsing queries
                 if (context.RequestQueriesOnly)
                 {
+                    // Also capture Ask mode answers if present
+                    try
+                    {
+                        if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("answer", out var ans) && ans.ValueKind == JsonValueKind.String)
+                        {
+                            plan.Answer = ans.GetString();
+                        }
+                    }
+                    catch { }
                     plan.RawJson = json; plan.RawUser = usr; plan.RawSystem = sys;
                     return plan;
                 }

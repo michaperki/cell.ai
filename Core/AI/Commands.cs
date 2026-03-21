@@ -53,6 +53,8 @@ namespace SpreadsheetApp.Core.AI
         public string? RawSystem { get; set; }
         // Optional: query intents for observation phase (two-phase agent loop)
         public List<IQueryIntent> Queries { get; } = new();
+        // Optional: textual answer for Ask mode
+        public string? Answer { get; set; }
         // Provider/model metadata and token usage (if available)
         public string? Provider { get; set; }
         public string? Model { get; set; }

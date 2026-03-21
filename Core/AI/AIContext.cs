@@ -34,6 +34,9 @@ namespace SpreadsheetApp.Core.AI
 
         // Optional: when true, the planner should produce only observation/query intents instead of write commands.
         public bool RequestQueriesOnly { get; set; }
+
+        // Optional: when true, Ask mode expects a textual answer rather than a write plan.
+        public bool AnswerOnly { get; set; }
     }
 
     public sealed class ChatMessage
