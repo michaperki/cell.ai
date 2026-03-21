@@ -712,8 +712,10 @@ namespace SpreadsheetApp.UI.AI
                     _chkHardMode.Checked = true; // keep on internally
                     _inputPolicy.SelectedIndex = 0;
                     _btnApply.Visible = false; // no Apply in Ask mode
+                    try { _chkAgent.Checked = false; _chkAgent.Enabled = false; } catch { }
                     break;
             }
+            if (_currentMode != "Ask") { try { _chkAgent.Enabled = true; } catch { } }
             UpdateSessionStatus();
         }
 
