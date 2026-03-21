@@ -13,6 +13,12 @@ namespace SpreadsheetApp.Core.AI
             public int CommandCount { get; set; }
             public int CellCount { get; set; }
             public string Summary { get; set; } = string.Empty;
+            public string? Provider { get; set; }
+            public string? Model { get; set; }
+            public int? InputTokens { get; set; }
+            public int? OutputTokens { get; set; }
+            public int? TotalTokens { get; set; }
+            public int? LatencyMs { get; set; }
         }
 
         private readonly List<Entry> _entries = new();
@@ -31,7 +37,13 @@ namespace SpreadsheetApp.Core.AI
                 Prompt = prompt.Length > 120 ? prompt.Substring(0, 120) + "..." : prompt,
                 CommandCount = plan.Commands.Count,
                 CellCount = cells,
-                Summary = summary.Length > 200 ? summary.Substring(0, 200) + "..." : summary
+                Summary = summary.Length > 200 ? summary.Substring(0, 200) + "..." : summary,
+                Provider = plan.Provider,
+                Model = plan.Model,
+                InputTokens = plan.Usage?.InputTokens,
+                OutputTokens = plan.Usage?.OutputTokens,
+                TotalTokens = plan.Usage?.TotalTokens,
+                LatencyMs = plan.LatencyMs
             });
         }
 

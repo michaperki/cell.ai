@@ -50,6 +50,7 @@ namespace SpreadsheetApp.UI
         private Panel _formulaBarPanel = null!;
         private TextBox _cellNameBox = null!;
         private TextBox _formulaBar = null!;
+        private Splitter _formulaBarSplitter = null!;
         private ToolStripMenuItem helpToolStripMenuItem = null!;
         private ToolStripMenuItem docsViewerToolStripMenuItem = null!;
         private ToolStripMenuItem exportDocsJsonToolStripMenuItem = null!;
@@ -321,7 +322,26 @@ namespace SpreadsheetApp.UI
             freezeTopRowToolStripMenuItem.Click += (_, __) => ToggleFreezeTopRow();
             var freezeFirstColToolStripMenuItem = new ToolStripMenuItem("Freeze First Column") { CheckOnClick = true };
             freezeFirstColToolStripMenuItem.Click += (_, __) => ToggleFreezeFirstColumn();
-            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { freezeTopRowToolStripMenuItem, freezeFirstColToolStripMenuItem });
+            var darkModeToolStripMenuItem = new ToolStripMenuItem("Dark Mode") { CheckOnClick = true };
+            darkModeToolStripMenuItem.Click += (_, __) =>
+            {
+                Theme.Toggle();
+                darkModeToolStripMenuItem.Checked = Theme.IsDark;
+                Theme.ApplyToForm(this);
+                // Re-style the grid specifically since it has custom column heights
+                Theme.StyleGrid(grid);
+                grid.ColumnHeadersHeight = 28;
+                // Re-style formula bar
+                _formulaBarPanel.BackColor = Theme.SurfaceMuted;
+                _formulaBar.BackColor = Theme.InputBg;
+                _formulaBar.ForeColor = Theme.TextPrimary;
+                _cellNameBox.BackColor = Theme.InputBg;
+                _cellNameBox.ForeColor = Theme.TextPrimary;
+                _formulaBarSplitter.BackColor = Theme.PanelBorder;
+                grid.Invalidate();
+                grid.Refresh();
+            };
+            viewToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { freezeTopRowToolStripMenuItem, freezeFirstColToolStripMenuItem, new ToolStripSeparator(), darkModeToolStripMenuItem });
             menuStrip1.Items.Insert(menuStrip1.Items.IndexOf(helpToolStripMenuItem), viewToolStripMenuItem);
 
             // sheetsToolStripMenuItem
@@ -373,17 +393,43 @@ namespace SpreadsheetApp.UI
             _formulaBar.Dock = DockStyle.Fill;
             _formulaBar.Font = Theme.UI;
             _formulaBar.BackColor = Theme.InputBg;
-            _formulaBar.BorderStyle = BorderStyle.FixedSingle;
+            _formulaBar.BorderStyle = BorderStyle.None;
+            _formulaBar.Multiline = true;
+            _formulaBar.WordWrap = true;
+            _formulaBar.AcceptsReturn = false;
+            _formulaBar.ScrollBars = ScrollBars.Vertical;
+
+            // Focus indicator wrapper for formula bar
+            var formulaBarWrapper = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(1),
+                BackColor = Theme.PanelBorder
+            };
+            _formulaBar.Enter += (_, __) => formulaBarWrapper.BackColor = Theme.Primary;
+            _formulaBar.Leave += (_, __) => formulaBarWrapper.BackColor = Theme.PanelBorder;
+            formulaBarWrapper.Controls.Add(_formulaBar);
 
             var formulaBarBottom = new Label();
             formulaBarBottom.Dock = DockStyle.Bottom;
             formulaBarBottom.Height = 1;
             formulaBarBottom.BackColor = Theme.PanelBorder;
 
-            _formulaBarPanel.Controls.Add(_formulaBar);       // Fill — added first
+            _formulaBarPanel.Controls.Add(formulaBarWrapper); // Fill — added first
             _formulaBarPanel.Controls.Add(formulaSep);        // Left
             _formulaBarPanel.Controls.Add(_cellNameBox);      // Left
             _formulaBarPanel.Controls.Add(formulaBarBottom);  // Bottom border
+            _formulaBarPanel.MinimumSize = new Size(0, 32);
+
+            // Splitter for resizable formula bar
+            _formulaBarSplitter = new Splitter
+            {
+                Dock = DockStyle.Top,
+                Height = 3,
+                MinSize = 32,
+                BackColor = Theme.PanelBorder,
+                Cursor = Cursors.HSplit
+            };
 
             // grid
             grid.Dock = DockStyle.Fill;
@@ -414,6 +460,26 @@ namespace SpreadsheetApp.UI
             grid.MouseMove += Grid_MouseMove;
             grid.MouseUp += Grid_MouseUp;
             grid.MouseDoubleClick += Grid_MouseDoubleClick;
+            grid.CellPainting += Grid_CellPainting;
+            grid.ShowCellToolTips = true;
+            grid.CellToolTipTextNeeded += Grid_CellToolTipTextNeeded;
+
+            // Grid context menu (right-click)
+            var gridContextMenu = new ContextMenuStrip { Renderer = new FlatToolStripRenderer(), BackColor = Color.White };
+            gridContextMenu.Items.AddRange(new ToolStripItem[]
+            {
+                new ToolStripMenuItem("Cut", null, (_, __) => CutCell()) { ShortcutKeyDisplayString = "Ctrl+X" },
+                new ToolStripMenuItem("Copy", null, (_, __) => CopyCell()) { ShortcutKeyDisplayString = "Ctrl+C" },
+                new ToolStripMenuItem("Paste", null, (_, __) => PasteCell()) { ShortcutKeyDisplayString = "Ctrl+V" },
+                new ToolStripSeparator(),
+                new ToolStripMenuItem("Clear Contents", null, (_, __) => ClearSelectedCells()) { ShortcutKeyDisplayString = "Del" },
+                new ToolStripSeparator(),
+                new ToolStripMenuItem("Explain Cell\u2026", null, async (_, __) => await ExplainCellAsync()),
+                new ToolStripMenuItem("Smart Schema Fill\u2026", null, async (_, __) => await SmartSchemaFillAsync()) { ShortcutKeyDisplayString = "Ctrl+Shift+F" },
+            });
+            gridContextMenu.Font = Theme.UI;
+            gridContextMenu.ForeColor = Theme.TextPrimary;
+            grid.ContextMenuStrip = gridContextMenu;
 
             // statusStrip1
             statusStrip1.Dock = DockStyle.Bottom;
@@ -432,6 +498,7 @@ namespace SpreadsheetApp.UI
             ClientSize = new System.Drawing.Size(1000, 700);
             Controls.Add(grid);              // Fill
             Controls.Add(tabs);              // Top
+            Controls.Add(_formulaBarSplitter); // Top — resize handle below formula bar
             Controls.Add(_formulaBarPanel);  // Top — between tabs and menu
             Controls.Add(statusStrip1);      // Bottom
             Controls.Add(menuStrip1);        // Top — topmost

@@ -185,17 +185,23 @@ namespace SpreadsheetApp.Core.AI
             sbUsr.Append($" Instruction={(prompt ?? string.Empty)}.{guidance}");
             string usr = sbUsr.ToString();
 
-            string json = provider switch
+            var call = provider switch
             {
-                "OpenAI" => await CallOpenAIAsync(sys, usr, cancellationToken).ConfigureAwait(false),
-                "Anthropic" => await CallAnthropicAsync(sys, usr, cancellationToken).ConfigureAwait(false),
-                _ => string.Empty
+                "OpenAI" => await CallOpenAIWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
+                "Anthropic" => await CallAnthropicWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
+                _ => new ChatCallResult { Content = string.Empty, Provider = provider }
             };
+            string json = call.Content ?? string.Empty;
             if (string.IsNullOrWhiteSpace(json)) return new AIPlan();
             try
             {
                 var doc = JsonDocument.Parse(json);
                 var plan = ParsePlan(doc);
+                // Attach provider usage metadata
+                plan.Provider = string.IsNullOrWhiteSpace(call.Provider) ? provider : call.Provider;
+                plan.Model = call.Model;
+                plan.Usage = call.Usage;
+                plan.LatencyMs = call.LatencyMs;
                 // If this was query-only mode, return immediately after parsing queries
                 if (context.RequestQueriesOnly)
                 {
@@ -225,18 +231,23 @@ namespace SpreadsheetApp.Core.AI
                 {
                     // Build a concise revision user message including constraints and first few violations
                     var rev = BuildRevisionUserMessage(context, usr, allowedCmds, expectedWidth, violations, plan.RawJson ?? string.Empty);
-                    string json2 = provider switch
+                    var call2 = provider switch
                     {
-                        "OpenAI" => await CallOpenAIAsync(sys, rev, cancellationToken).ConfigureAwait(false),
-                        "Anthropic" => await CallAnthropicAsync(sys, rev, cancellationToken).ConfigureAwait(false),
-                        _ => string.Empty
+                        "OpenAI" => await CallOpenAIWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                        "Anthropic" => await CallAnthropicWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                        _ => new ChatCallResult { Content = string.Empty, Provider = provider }
                     };
+                    string json2 = call2.Content ?? string.Empty;
                     if (!string.IsNullOrWhiteSpace(json2))
                     {
                         try
                         {
                             var doc2 = JsonDocument.Parse(json2);
                             var plan2 = ParsePlan(doc2);
+                            plan2.Provider = string.IsNullOrWhiteSpace(call2.Provider) ? provider : call2.Provider;
+                            plan2.Model = call2.Model;
+                            plan2.Usage = call2.Usage;
+                            plan2.LatencyMs = call2.LatencyMs;
                             if (allowedCmds != null && allowedCmds.Length > 0)
                             {
                                 plan2.Commands.RemoveAll(c => !IsCommandAllowedByList(c, allowedCmds));
@@ -541,6 +552,105 @@ namespace SpreadsheetApp.Core.AI
                 if (string.Equals(a?.Trim(), type, StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
+        }
+
+        private sealed class ChatCallResult
+        {
+            public string Content { get; set; } = string.Empty;
+            public string Provider { get; set; } = string.Empty;
+            public string? Model { get; set; }
+            public AIUsage? Usage { get; set; }
+            public int LatencyMs { get; set; }
+        }
+
+        private static async System.Threading.Tasks.Task<ChatCallResult> CallOpenAIWithUsageAsync(string system, string user, System.Threading.CancellationToken ct)
+        {
+            var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            if (string.IsNullOrWhiteSpace(key)) return new ChatCallResult { Provider = "OpenAI", Content = string.Empty };
+            var model = Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? "gpt-4o-mini";
+            var endpoint = Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? "https://api.openai.com/v1/chat/completions";
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            var body = new { model, temperature = 0.0, messages = new object[] { new { role = "system", content = system }, new { role = "user", content = user } } };
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json") };
+            var t0 = DateTime.UtcNow;
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+            var result = new ChatCallResult { Provider = "OpenAI", Model = model, LatencyMs = (int)(DateTime.UtcNow - t0).TotalMilliseconds };
+            try { if (doc.RootElement.TryGetProperty("model", out var mdl) && mdl.ValueKind == JsonValueKind.String) result.Model = mdl.GetString(); } catch { }
+            try
+            {
+                if (doc.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                {
+                    var u = new AIUsage();
+                    if (usage.TryGetProperty("prompt_tokens", out var pt) && pt.ValueKind == JsonValueKind.Number) u.InputTokens = pt.GetInt32();
+                    if (usage.TryGetProperty("completion_tokens", out var ctok) && ctok.ValueKind == JsonValueKind.Number) u.OutputTokens = ctok.GetInt32();
+                    if (usage.TryGetProperty("total_tokens", out var tt) && tt.ValueKind == JsonValueKind.Number) u.TotalTokens = tt.GetInt32();
+                    try { var lim = Environment.GetEnvironmentVariable("OPENAI_CONTEXT_TOKENS"); if (!string.IsNullOrWhiteSpace(lim)) u.ContextLimit = int.Parse(lim); } catch { }
+                    result.Usage = u;
+                }
+            }
+            catch { }
+            if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+            {
+                var msg = choices[0].GetProperty("message");
+                if (msg.TryGetProperty("content", out var cnt))
+                {
+                    if (cnt.ValueKind == JsonValueKind.String) { result.Content = cnt.GetString() ?? string.Empty; return result; }
+                    if (cnt.ValueKind == JsonValueKind.Array)
+                    {
+                        var sb = new StringBuilder();
+                        foreach (var part in cnt.EnumerateArray()) if (part.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String) sb.Append(t.GetString());
+                        result.Content = sb.ToString();
+                        return result;
+                    }
+                }
+            }
+            result.Content = string.Empty; return result;
+        }
+
+        private static async System.Threading.Tasks.Task<ChatCallResult> CallAnthropicWithUsageAsync(string system, string user, System.Threading.CancellationToken ct)
+        {
+            var key = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            if (string.IsNullOrWhiteSpace(key)) return new ChatCallResult { Provider = "Anthropic", Content = string.Empty };
+            var model = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL") ?? "claude-3-haiku-20240307";
+            var endpoint = Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL") ?? "https://api.anthropic.com/v1/messages";
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            http.DefaultRequestHeaders.Add("x-api-key", key);
+            http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+            int maxTokens = 2048; try { var s = Environment.GetEnvironmentVariable("ANTHROPIC_MAX_TOKENS"); if (!string.IsNullOrWhiteSpace(s)) maxTokens = int.Parse(s); } catch { }
+            var body = new { model, max_tokens = maxTokens, temperature = 0.0, system = system, messages = new object[] { new { role = "user", content = new object[] { new { type = "text", text = user } } } } };
+            using var req = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json") };
+            var t0 = DateTime.UtcNow;
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+            var result = new ChatCallResult { Provider = "Anthropic", Model = model, LatencyMs = (int)(DateTime.UtcNow - t0).TotalMilliseconds };
+            try { if (doc.RootElement.TryGetProperty("model", out var mdl) && mdl.ValueKind == JsonValueKind.String) result.Model = mdl.GetString(); } catch { }
+            try
+            {
+                if (doc.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                {
+                    var u = new AIUsage();
+                    if (usage.TryGetProperty("input_tokens", out var it) && it.ValueKind == JsonValueKind.Number) u.InputTokens = it.GetInt32();
+                    if (usage.TryGetProperty("output_tokens", out var ot) && ot.ValueKind == JsonValueKind.Number) u.OutputTokens = ot.GetInt32();
+                    if (u.InputTokens.HasValue && u.OutputTokens.HasValue) u.TotalTokens = u.InputTokens + u.OutputTokens;
+                    try { var lim = Environment.GetEnvironmentVariable("ANTHROPIC_CONTEXT_TOKENS"); if (!string.IsNullOrWhiteSpace(lim)) u.ContextLimit = int.Parse(lim); } catch { }
+                    result.Usage = u;
+                }
+            }
+            catch { }
+            if (doc.RootElement.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.Array && contentEl.GetArrayLength() > 0)
+            {
+                string? text = null;
+                foreach (var part in contentEl.EnumerateArray()) { if (part.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String) { text = t.GetString(); break; } }
+                if (!string.IsNullOrEmpty(text)) { result.Content = text!; return result; }
+            }
+            result.Content = string.Empty; return result;
         }
 
         private static async Task<string> CallOpenAIAsync(string system, string user, CancellationToken ct)

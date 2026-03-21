@@ -114,13 +114,23 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - Consider DataGridView VirtualMode for very large sheets.
   - Batch UI updates and avoid per-cell painting where possible.
 
-- UI modernization (visual polish, zero perf cost) — DONE (first pass)
-  - Grid: flat borders (`BorderStyle.None`), single-horizontal cell borders, subtle alternating row colors.
-  - Headers: disabled `EnableHeadersVisualStyles`, flat custom-colored column/row headers.
-  - Selection: modern accent color (`Color.FromArgb(200, 220, 240)`) instead of default royal blue, dark text on selection.
-  - Double-buffered DataGridView via reflection to eliminate flicker.
-  - Default cell font set to Segoe UI 9pt for consistency.
-  - Future: menu icons, dark mode toggle, owner-drawn tabs.
+- UI modernization (visual polish) — DONE (pass 1 + pass 2)
+  - Pass 1: flat grid borders, modern selection accent, flat headers, double-buffered DataGridView, Segoe UI 9pt.
+  - Pass 2 (2026‑03‑21): `UI/Theme.cs` centralized constants; chat panel overhaul (RichTextBox terminal log, button hierarchy); formula bar taller + bottom border; owner-drawn flat tabs; flat menu/status renderer; AI write flash; dialog styling (FindReplace, Settings, GenerateFill); ghost popup polish.
+
+- **UI modernization — pass 3 (queued, priority order)**
+  1. Context menu (right-click) styling — flat renderer, themed items
+  2. Tooltip styling — custom ToolTip with white bg, subtle border, themed font
+  3. Input focus indicators — blue accent border on focused TextBox/ComboBox
+  4. Plan preview diff overlay — green=add, yellow=modify, red=clear cells before Apply
+  5. Dark mode toggle — Theme.cs already structured; add DarkTheme + View menu item
+  6. Chat message bubbles — user right-aligned, AI left-aligned, timestamps
+  7. Loading spinner animation — replace "Thinking…" with animated indicator
+  8. Keyboard shortcut badges — subtle right-aligned shortcut text on menu items
+  9. Empty state for chat log — placeholder text when log is empty
+  10. Collapsible policy panel — toggle show/hide for policy preview
+  11. Resizable formula bar — drag to expand for long formulas
+  12. Cell editing inline improvements — border highlight on edited cell, formula ref color-coding
 
 - Workbook summary header detection — DONE
   - Heuristic picks the first non-empty text-dominant row.
@@ -142,7 +152,36 @@ This file tracks follow-ups and refinements discovered while implementing the en
   - External link handling: open in system browser; keep viewer sandboxed.
 
 - **AI Action Log counters — PLANNED**
-  - Track last plan latency, estimated tokens and total writes; show in status bar/debug view.
+  - Track last plan latency, token usage (prompt/input, completion/output, total), provider/model, and total writes; show in a compact status line in the Chat pane and in the Action Log dialog.
+  - Acceptance:
+    - Chat shows provider/model and tokens for the last plan.
+    - Action Log columns include Model and Tokens.
+    - Mock provider displays “~estimated tokens”.
+
+---
+
+## Active — AI Telemetry & Debugging
+
+- Usage parsing in providers — PLANNED
+  - OpenAI Chat Completions: parse `usage.prompt_tokens`/`completion_tokens` and surface via AIPlan/AIResult metadata.
+  - Anthropic Messages: parse `usage.input_tokens`/`output_tokens` and surface similarly.
+  - Unknown providers: estimate tokens by chars/4.
+
+- Context window remaining — PLANNED
+  - Maintain a small model→context map with env overrides (e.g., `OPENAI_CONTEXT_TOKENS`, `ANTHROPIC_CONTEXT_TOKENS`).
+  - Compute `remaining = context_limit - input_tokens` and display in Chat status.
+
+- Conversation history viewer — PLANNED
+  - Docked Chat pane gets a “History…” button to open a simple viewer over `ChatSession.History` (last 10 messages).
+  - Export to JSON from the viewer.
+
+- JSONL debug logs (opt‑in) — PLANNED
+  - `AI_DEBUG_LOG=1` writes one JSON object per request to `logs/ai/` with: timestamp, surface (`chat|generate_fill|inline|agent_phase1|agent_phase2`), provider/model, tokens, latency, selection/policy summary, prompt/system sizes, plan summary, and write counts.
+  - `AI_DEBUG_PROMPT=1` includes full prompts; otherwise prompts are truncated to 256 chars.
+
+Dependencies
+- Minimal model change: extend `AIPlan`/`AIResult` to carry an optional `Usage` payload and provider/model ID.
+- UI: ChatAssistantPanel status line; Action Log extra columns; optional “History…” button.
 
 ---
 

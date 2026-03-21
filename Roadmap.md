@@ -198,6 +198,19 @@ The motivating use case: a user enters Hebrew roots in column A with headers des
 - Scenario: grocery list single‑column fill; cancel mid‑request; preview accept; cache hit on repeat.
 - Performance: debounce effectiveness; no main‑thread stalls; memory stable over repeated requests.
 
+### Telemetry & Debugging (AI) — IMPLEMENTED (first pass)
+- Per‑request counters across Chat, Generate Fill, Inline, and Agent Loop:
+  - Provider/model, latency, token usage (input/prompt, output/completion, total), and remaining context (when limit is set via env) shown in a compact status line in Chat.
+  - Command and cell write counts continue to appear in the Chat log.
+- Conversation history: docked Chat pane adds a “History…” viewer with JSON export/copy of the last N turns (session memory).
+- AI Action Log: entries now include provider/model, token counts, and latency, in addition to command/cell summaries.
+- JSONL debug logs (opt‑in) under `logs/ai/`: one line per request; prompts included only when `AI_DEBUG_PROMPT=1`.
+- Env toggles: `AI_DEBUG_LOG`, `AI_DEBUG_DIR`, `AI_DEBUG_PROMPT`. Context limit overrides supported via `OPENAI_CONTEXT_TOKENS` / `ANTHROPIC_CONTEXT_TOKENS`.
+
+Follow‑ups
+- Add per‑provider default context limits to show “remaining” without env when safe.
+- Expose a compact in‑status write cap indicator when caps are enabled.
+
 ## Quality & Verification
 - Build gate and quick manual checklist per release.
 - Unit tests for parser, functions, I/O, and formatting.
@@ -287,6 +300,20 @@ Session‑scoped log of applied AI plans (timestamp, prompt, command count, cell
 
 ### Schema Fill Hotkey + Selection Heuristic — IMPLEMENTED
 Added Smart Schema Fill (Ctrl+Shift+F). When a single cell is selected, it auto‑expands to the likely output rectangle using header/input detection before invoking schema fill.
+
+## UI Polish — Pass 3 (queued, priority order)
+1. Context menu styling — flat renderer + themed items (right-click grid/tab)
+2. Tooltip styling — custom ToolTip with white bg, themed font
+3. Input focus indicators — blue accent border on focused controls
+4. Plan preview diff overlay — colored cell highlights before Apply (green/yellow/red)
+5. Dark mode toggle — swap Theme colors via View menu
+6. Chat message bubbles — user/AI alignment + timestamps
+7. Loading spinner — animated indicator during AI planning
+8. Keyboard shortcut badges on menu items
+9. Empty state placeholder for chat log
+10. Collapsible policy panel
+11. Resizable formula bar
+12. Cell editing inline improvements — active cell border, formula ref coloring
 
 ## Backlog (Triage Pool)
 - Advanced number formats (patterns), more functions, keyboard/selection refinements.

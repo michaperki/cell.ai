@@ -107,6 +107,15 @@ namespace SpreadsheetApp.UI.AI
                 ResultCells = res.Cells;
                 RenderPreview(res.Cells);
                 _btnAccept.Enabled = true;
+                try
+                {
+                    int writes = 0; if (res.Cells != null && res.Cells.Length > 0) { var w = res.Cells[0]?.Length ?? 0; writes = res.Cells.Length * w; }
+                    SpreadsheetApp.Core.AI.AILogger.Log("generate_fill", res.Provider, res.Model, res.Usage, res.LatencyMs,
+                        ctx.SheetName, ctx.StartRow, ctx.StartCol, ctx.Rows, ctx.Cols,
+                        _txtPrompt.Text, null,
+                        null, writes);
+                }
+                catch { }
             }
             catch (OperationCanceledException)
             {

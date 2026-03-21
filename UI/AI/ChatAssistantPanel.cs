@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -15,6 +16,8 @@ namespace SpreadsheetApp.UI.AI
         private readonly IChatPlanner _planner;
         private readonly Func<AIContext> _getContext;
         private readonly Action<AIPlan> _applyPlan;
+        private readonly Action<AIPlan>? _previewPlan;
+        private readonly Action? _clearPreview;
         private readonly SpreadsheetApp.Core.AI.ChatSession _session;
 
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
@@ -22,24 +25,31 @@ namespace SpreadsheetApp.UI.AI
         private readonly CheckBox _chkAgent = new() { Text = "Let AI explore first", Dock = DockStyle.Top, Height = 20 };
         private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 28 };
         private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
+        private readonly Button _btnHistory = new() { Text = "History…", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Primary, Visible = false };
         private readonly RichTextBox _logBox = new() { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Theme.LogBg, ForeColor = Theme.LogFg, WordWrap = true };
         private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 32, Enabled = false };
-        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None };
+        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None, Visible = false };
+        private readonly LinkLabel _policyToggle = new() { Dock = DockStyle.Top, Height = 16, Text = "\u25B6 Show details", TextAlign = ContentAlignment.MiddleLeft };
         private readonly CheckBox _chkHardMode = new() { Text = "Selection hard mode (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
         private readonly ComboBox _inputPolicy = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 22 };
 
+        private Panel _inputWrapper = null!;
         private AIPlan? _currentPlan;
         private readonly Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? _runAgentLoop;
         private string[] _lastTranscript = Array.Empty<string>();
+        private System.Windows.Forms.Timer? _thinkingTimer;
+        private int _thinkingDots;
 
-        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false)
+        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null)
         {
             _planner = planner;
             _session = session;
             _getContext = getContext;
             _applyPlan = applyPlan;
+            _previewPlan = previewPlan;
+            _clearPreview = clearPreview;
             _runAgentLoop = runAgentLoop;
 
             Dock = DockStyle.Fill;
@@ -52,17 +62,39 @@ namespace SpreadsheetApp.UI.AI
             Theme.StyleSecondary(_btnRevise);
             Theme.StyleGhost(_btnCopyObs);
             Theme.StyleDanger(_btnReset);
+            Theme.StyleGhost(_btnHistory);
 
             // ── Style log box ─────────────────────────────────────
             _logBox.Font = Theme.MonoSmall;
 
-            // ── Style policy preview ──────────────────────────────
+            // ── Style policy preview (collapsible) ───────────────
             _policy.BackColor = Theme.SurfaceMuted;
             _policy.ForeColor = Theme.TextSecondary;
             _policy.Font = Theme.MonoSmall;
+            _policyToggle.Font = Theme.MonoSmall;
+            _policyToggle.LinkColor = Theme.TextSecondary;
+            _policyToggle.ActiveLinkColor = Theme.Primary;
+            _policyToggle.LinkBehavior = LinkBehavior.NeverUnderline;
+            _policyToggle.Click += (_, __) =>
+            {
+                _policy.Visible = !_policy.Visible;
+                _policyToggle.Text = _policy.Visible ? "\u25BC Hide details" : "\u25B6 Show details";
+            };
 
-            // ── Style input ───────────────────────────────────────
+            // ── Style input with focus indicator ─────────────────
             _input.Font = Theme.UI;
+            _input.BorderStyle = BorderStyle.None;
+            _inputWrapper = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = _input.Height + 2,
+                Padding = new Padding(1),
+                BackColor = Theme.PanelBorder
+            };
+            _input.Dock = DockStyle.Fill;
+            _input.Enter += (_, __) => _inputWrapper.BackColor = Theme.Primary;
+            _input.Leave += (_, __) => _inputWrapper.BackColor = Theme.PanelBorder;
+            _inputWrapper.Controls.Add(_input);
 
             // ── Style checkboxes ──────────────────────────────────
             _chkAgent.Font = Theme.UI;
@@ -91,15 +123,17 @@ namespace SpreadsheetApp.UI.AI
             container.Controls.Add(spacer1);         // Top — gap before Plan
             container.Controls.Add(_btnRevise);      // Top
             container.Controls.Add(_btnCopyObs);     // Top
+            container.Controls.Add(_btnHistory);     // Top
             container.Controls.Add(_chkAgent);       // Top
             container.Controls.Add(_lblStatus);      // Top
             container.Controls.Add(spacer2);         // Top — gap before action buttons
             container.Controls.Add(_btnReset);       // Top
             container.Controls.Add(policySep);       // Top — 1px line under policy
-            container.Controls.Add(_policy);         // Top
+            container.Controls.Add(_policy);         // Top (hidden by default)
+            container.Controls.Add(_policyToggle);   // Top — toggle link
             container.Controls.Add(_chkHardMode);    // Top
             container.Controls.Add(_inputPolicy);    // Top
-            container.Controls.Add(_input);          // Top — topmost
+            container.Controls.Add(_inputWrapper);    // Top — topmost (wraps _input with focus border)
             Controls.Add(container);
 
             _btnPlan.Click += async (_, __) => await DoPlanAsync();
@@ -123,7 +157,8 @@ namespace SpreadsheetApp.UI.AI
                 }
                 catch { }
             };
-            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); };
+            _btnHistory.Click += (_, __) => ShowHistoryDialog();
+            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); try { _clearPreview?.Invoke(); } catch { } };
             _btnApply.Click += (_, __) =>
             {
                 if (_currentPlan != null)
@@ -144,6 +179,7 @@ namespace SpreadsheetApp.UI.AI
                         _btnApply.Enabled = false;
                         _input.Clear();
                         _input.Focus();
+                        try { _clearPreview?.Invoke(); } catch { }
                     }
                 }
             };
@@ -165,7 +201,90 @@ namespace SpreadsheetApp.UI.AI
             }
             catch { }
             try { var ctx0 = _getContext(); _policy.Text = BuildPolicyPreview(ctx0); } catch { }
+            // Show empty state
+            if (!autoPlan) ShowEmptyState();
             if (autoPlan) _ = DoPlanAsync();
+        }
+
+        private void ShowHistoryDialog()
+        {
+            try
+            {
+                var form = new Form
+                {
+                    Text = "Chat History",
+                    StartPosition = FormStartPosition.CenterParent,
+                    Size = new Size(680, 480),
+                    MinimizeBox = false,
+                    MaximizeBox = false,
+                    FormBorderStyle = FormBorderStyle.Sizable
+                };
+                var list = new ListView
+                {
+                    Dock = DockStyle.Fill,
+                    View = View.Details,
+                    FullRowSelect = true,
+                    GridLines = true
+                };
+                list.Columns.Add("Role", 100);
+                list.Columns.Add("Content", 520);
+                foreach (var m in _session.History)
+                {
+                    var it = new ListViewItem(m.Role ?? string.Empty);
+                    it.SubItems.Add(m.Content ?? string.Empty);
+                    list.Items.Add(it);
+                }
+                var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 6, 8, 6) };
+                var btnClose = new Button { Text = "Close", Width = 80 };
+                var btnSave = new Button { Text = "Save JSON…", Width = 110 };
+                var btnCopy = new Button { Text = "Copy JSON", Width = 100 };
+                Theme.StyleGhost(btnCopy);
+                Theme.StyleSecondary(btnSave);
+                Theme.StylePrimary(btnClose);
+                btnClose.Click += (_, __) => form.Close();
+                btnCopy.Click += (_, __) =>
+                {
+                    try { Clipboard.SetText(SerializeHistoryJson()); } catch { }
+                };
+                btnSave.Click += (_, __) =>
+                {
+                    try
+                    {
+                        using var sfd = new SaveFileDialog { Filter = "JSON (*.json)|*.json|All files (*.*)|*.*", FileName = "chat_history.json" };
+                        if (sfd.ShowDialog(this) == DialogResult.OK)
+                        {
+                            System.IO.File.WriteAllText(sfd.FileName, SerializeHistoryJson());
+                        }
+                    }
+                    catch { }
+                };
+                btnPanel.Controls.AddRange(new Control[] { btnClose, btnSave, btnCopy });
+                form.Controls.Add(list);
+                form.Controls.Add(btnPanel);
+                form.ShowDialog(this);
+            }
+            catch { }
+        }
+
+        private string SerializeHistoryJson()
+        {
+            try
+            {
+                var opts = new JsonSerializerOptions { WriteIndented = true };
+                return JsonSerializer.Serialize(_session.History, opts);
+            }
+            catch { return "[]"; }
+        }
+
+        private void ShowEmptyState()
+        {
+            LogClear();
+            LogAppend("Type a prompt and click Plan to get started.", Theme.TextMuted);
+            LogAppend("", Theme.LogFg);
+            LogAppend("Examples:", Theme.TextMuted);
+            LogAppend("  \u2022 \"Fill column B with the uppercase version of A\"", Theme.TextMuted);
+            LogAppend("  \u2022 \"Sort by column C descending\"", Theme.TextMuted);
+            LogAppend("  \u2022 \"Add a SUM formula in row 11\"", Theme.TextMuted);
         }
 
         // ── Colored log helpers ──────────────────────────────────
@@ -178,6 +297,59 @@ namespace SpreadsheetApp.UI.AI
             _logBox.SelectionColor = color;
             _logBox.AppendText(text + "\n");
             _logBox.ScrollToCaret();
+        }
+
+        private void LogUserBubble(string text)
+        {
+            if (IsDisposed || _logBox.IsDisposed) return;
+            var time = DateTime.Now.ToString("HH:mm");
+            _logBox.SelectionStart = _logBox.TextLength;
+            _logBox.SelectionLength = 0;
+            // Timestamp
+            _logBox.SelectionColor = Theme.TextMuted;
+            _logBox.SelectionFont = Theme.MonoSmall;
+            _logBox.AppendText($"  You \u00B7 {time}\n");
+            // Message body — right-indented with accent
+            _logBox.SelectionColor = Color.FromArgb(147, 197, 253); // light blue
+            _logBox.SelectionFont = Theme.UI;
+            _logBox.AppendText($"  {text}\n\n");
+            _logBox.ScrollToCaret();
+        }
+
+        private void LogAIHeader()
+        {
+            if (IsDisposed || _logBox.IsDisposed) return;
+            var time = DateTime.Now.ToString("HH:mm");
+            _logBox.SelectionStart = _logBox.TextLength;
+            _logBox.SelectionLength = 0;
+            _logBox.SelectionColor = Theme.TextMuted;
+            _logBox.SelectionFont = Theme.MonoSmall;
+            _logBox.AppendText($"  AI \u00B7 {time}\n");
+            _logBox.ScrollToCaret();
+        }
+
+        private void StartThinkingAnimation()
+        {
+            _thinkingDots = 0;
+            _lblStatus.Text = "Thinking";
+            _lblStatus.Visible = true;
+            _thinkingTimer?.Stop();
+            _thinkingTimer?.Dispose();
+            _thinkingTimer = new System.Windows.Forms.Timer { Interval = 350 };
+            _thinkingTimer.Tick += (_, __) =>
+            {
+                _thinkingDots = (_thinkingDots % 3) + 1;
+                _lblStatus.Text = "Thinking" + new string('.', _thinkingDots);
+            };
+            _thinkingTimer.Start();
+        }
+
+        private void StopThinkingAnimation()
+        {
+            _thinkingTimer?.Stop();
+            _thinkingTimer?.Dispose();
+            _thinkingTimer = null;
+            _lblStatus.Visible = false;
         }
 
         private void LogClear()
@@ -205,8 +377,8 @@ namespace SpreadsheetApp.UI.AI
         private async Task DoPlanAsync()
         {
             _btnPlan.Enabled = false; _btnApply.Enabled = false; _currentPlan = null;
-            _lblStatus.Text = "Thinking\u2026"; _lblStatus.Visible = true;
-            LogAppend("Planning\u2026", Theme.LogInfo);
+            StartThinkingAnimation();
+            LogUserBubble(_input.Text ?? string.Empty);
             try
             {
                 int timeoutSec = 30;
@@ -232,14 +404,15 @@ namespace SpreadsheetApp.UI.AI
                     plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
                 }
                 _currentPlan = plan;
-                LogClear();
                 _lastTranscript = transcript;
+                LogAIHeader();
                 if (useAgent && transcript.Length > 0)
                 {
                     LogAppend("── Observations ──", Theme.LogObservation);
                     foreach (var line in transcript) LogAppend("  " + line, Theme.LogObservation);
                     LogAppend("── Plan ──", Theme.LogCommand);
                 }
+                int writeCount = 0;
                 if (plan.Commands.Count == 0)
                 {
                     LogAppend("No changes suggested.", Theme.LogInfo);
@@ -252,16 +425,52 @@ namespace SpreadsheetApp.UI.AI
                         string? rationale = TryGetRationale(cmd);
                         if (!string.IsNullOrWhiteSpace(rationale)) LogAppend("  \u2192 " + rationale, Theme.LogRationale);
                     }
-                    int writeCount = 0;
                     writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
                     writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
                     LogAppend($"Total writes: {writeCount}", Theme.LogInfo);
                     _btnApply.Enabled = true;
+                    // Show diff overlay on grid
+                    try { _previewPlan?.Invoke(plan); } catch { }
                 }
                 // Update conversation history (keep last 10 entries)
                 _session.AddUser(_input.Text ?? string.Empty);
                 var asstSummary = string.Join("; ", plan.Commands.Select(c => c.Summarize()));
                 _session.AddAssistant(asstSummary);
+                // Build status line with provider/model, latency, tokens, remaining context
+                try
+                {
+                    var parts = new System.Collections.Generic.List<string>();
+                    if (!string.IsNullOrWhiteSpace(plan.Provider) || !string.IsNullOrWhiteSpace(plan.Model))
+                    {
+                        string pv = (plan.Provider ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(plan.Model)) pv = string.IsNullOrWhiteSpace(pv) ? plan.Model! : (pv + "/" + plan.Model);
+                        if (!string.IsNullOrWhiteSpace(pv)) parts.Add(pv);
+                    }
+                    if (plan.LatencyMs.HasValue) parts.Add(plan.LatencyMs.Value + " ms");
+                    if (plan.Usage != null)
+                    {
+                        var u = plan.Usage;
+                        string tok = $"tokens {u.InputTokens?.ToString() ?? "-"}/{u.OutputTokens?.ToString() ?? "-"}/{u.TotalTokens?.ToString() ?? "-"}";
+                        parts.Add(tok);
+                        if (u.RemainingContext.HasValue) parts.Add($"remaining {u.RemainingContext.Value}");
+                    }
+                    if (parts.Count > 0)
+                    {
+                        _lblStatus.Text = string.Join(" · ", parts);
+                        _lblStatus.Visible = true;
+                    }
+                }
+                catch { }
+                // Optional JSONL debug log
+                try
+                {
+                    SpreadsheetApp.Core.AI.AILogger.Log(_chkAgent.Checked ? "agent" : "chat",
+                        plan.Provider, plan.Model, plan.Usage, plan.LatencyMs,
+                        _getContext()?.SheetName, _getContext()?.StartRow, _getContext()?.StartCol, _getContext()?.Rows, _getContext()?.Cols,
+                        plan.RawUser, plan.RawSystem,
+                        plan.Commands?.Count, writeCount);
+                }
+                catch { }
             }
             catch (OperationCanceledException)
             {
@@ -274,7 +483,7 @@ namespace SpreadsheetApp.UI.AI
             finally
             {
                 _btnPlan.Enabled = true;
-                _lblStatus.Visible = false;
+                StopThinkingAnimation();
             }
         }
 

@@ -41,10 +41,26 @@ namespace SpreadsheetApp.Core.AI
             {
                 Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
             };
+            var t0 = DateTime.UtcNow;
             using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
             await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = new AIResult { Provider = "OpenAI", Model = _model, LatencyMs = (int)(DateTime.UtcNow - t0).TotalMilliseconds };
+            try
+            {
+                if (doc.RootElement.TryGetProperty("model", out var mdl) && mdl.ValueKind == JsonValueKind.String) result.Model = mdl.GetString();
+                if (doc.RootElement.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+                {
+                    var u = new AIUsage();
+                    if (usage.TryGetProperty("prompt_tokens", out var pt) && pt.ValueKind == JsonValueKind.Number) u.InputTokens = pt.GetInt32();
+                    if (usage.TryGetProperty("completion_tokens", out var ctok) && ctok.ValueKind == JsonValueKind.Number) u.OutputTokens = ctok.GetInt32();
+                    if (usage.TryGetProperty("total_tokens", out var tt) && tt.ValueKind == JsonValueKind.Number) u.TotalTokens = tt.GetInt32();
+                    try { var lim = Environment.GetEnvironmentVariable("OPENAI_CONTEXT_TOKENS"); if (!string.IsNullOrWhiteSpace(lim)) u.ContextLimit = int.Parse(lim); } catch { }
+                    result.Usage = u;
+                }
+            }
+            catch { }
             // Try choices[0].message.content (string or array)
             if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
             {
@@ -72,17 +88,19 @@ namespace SpreadsheetApp.Core.AI
                         if (cellsDoc.RootElement.ValueKind == JsonValueKind.Object && cellsDoc.RootElement.TryGetProperty("cells", out var cellsEl))
                         {
                             var rows = ExternalApiProvider.ParseCellsArray(cellsEl);
-                            return new AIResult { Cells = ExternalApiProvider.FitToShape(rows, context.Rows, context.Cols) };
+                            result.Cells = ExternalApiProvider.FitToShape(rows, context.Rows, context.Cols);
+                            return result;
                         }
                     }
                     catch { }
                     // Fallback: split lines
                     var lines = content.Replace("\r", string.Empty).Split('\n');
-                    return new AIResult { Cells = ExternalApiProvider.FitToShape(lines, context.Rows, context.Cols) };
+                    result.Cells = ExternalApiProvider.FitToShape(lines, context.Rows, context.Cols);
+                    return result;
                 }
             }
-            return new AIResult { Cells = ExternalApiProvider.FitToShape(Array.Empty<string>(), context.Rows, context.Cols) };
+            result.Cells = ExternalApiProvider.FitToShape(Array.Empty<string>(), context.Rows, context.Cols);
+            return result;
         }
     }
 }
-

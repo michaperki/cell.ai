@@ -128,11 +128,23 @@ Full visual overhaul driven by two independent design reviews (GPT + Claude). Ac
 - **SettingsDialog:** White background, themed buttons (OK = primary, Test = secondary, Cancel = ghost), removed dead fields (`_tbUrl`, `_tbKey`, `_chkClearKey`).
 - **GenerateFillDialog:** White background, themed buttons, preview DataGridView styled via `Theme.StyleGrid()`, fixed pre-existing `SetColumnSpan` ordering bug.
 
+### UI Polish Pass 3 (same day)
+- **Context menu:** Right-click on grid now shows styled context menu (Cut/Copy/Paste/Clear + Explain Cell + Smart Schema Fill) with flat renderer.
+- **Cell tooltips:** Hovering a formula cell shows "Formula: =... / Result: ..." via `CellToolTipTextNeeded`.
+- **Focus indicators:** Formula bar and chat input get a blue accent border on focus (via wrapper Panel with Enter/Leave events).
+- **Plan preview diff overlay:** When a plan is ready, affected cells are painted with colored overlays (green=add, yellow=modify, red=clear) via `Grid_Paint`. Clears on Apply/Reset.
+- **Animated planning indicator:** "Thinking." → "Thinking.." → "Thinking..." cycles at 350ms via Timer during AI planning.
+- **Chat empty state:** Placeholder text with example prompts shown when the log is empty.
+- **Collapsible policy panel:** "Show details" / "Hide details" toggle link hides the policy preview by default.
+- **Theme.WrapWithFocusBorder:** Reusable helper for wrapping TextBoxes with focus-colored border panels.
+
 ### Design Decisions
 - All colors centralized in `Theme.cs` to enable future dark mode without scattershot edits.
 - RichTextBox for the chat log enables per-line coloring without owner-draw complexity.
 - AI write flash uses a single-shot `System.Windows.Forms.Timer` (500ms) — lightweight, no background threads.
 - Owner-drawn tabs use `TextRenderer.DrawText` for subpixel-accurate rendering with theme fonts.
+- Plan diff overlay uses semi-transparent fills in Grid_Paint — zero allocations outside paint cycle.
+- Collapsible policy defaults to hidden to reduce visual noise for typical users.
 
 ## Next Steps (linked to BACKLOG)
 - Incremental repaint after `_sheet.RecalculateDirty(...)` with AST-driven reference collection.
@@ -235,6 +247,38 @@ Full visual overhaul driven by two independent design reviews (GPT + Claude). Ac
 2) Multi-cell Clear Contents + safety
    - New: Edit → Clear Contents (Delete/Backspace) clears multi-selection in a single bulk undo group.
    - Added confirmation when clearing if any selected cells contain formulas.
+
+## AI Telemetry & Chat History (2026‑03‑21)
+
+What we added
+- Usage parsing and provider metadata
+  - OpenAI/Anthropic providers now parse response usage and model IDs and capture per‑request latency.
+  - Planner calls (ProviderChatPlanner) carry Provider/Model/Usage/Latency into AIPlan for both the initial and revision calls.
+
+- Chat status line
+  - The docked Chat pane displays a compact status line after planning: `provider/model · latency · tokens in/out/total · remaining`.
+  - Remaining context is computed when a context limit env var is provided (e.g., `OPENAI_CONTEXT_TOKENS`, `ANTHROPIC_CONTEXT_TOKENS`).
+
+- JSONL debug logging (opt‑in)
+  - When `AI_DEBUG_LOG=1`, per‑request JSON Lines are written to `logs/ai/YYYYMMDD.jsonl` with: surface (`chat|agent|inline|generate_fill`), provider/model, latency, tokens, selection/policy summary, prompt lengths, plan command count, and write counts.
+  - `AI_DEBUG_PROMPT=1` includes full prompts in logs; otherwise only lengths are recorded.
+
+- Action Log enrichment
+  - The in‑app AI Action Log adds Model/Tokens/Latency columns alongside the existing time/prompt/cmd/cell summary.
+
+- Chat History viewer
+  - “History…” button in the docked chat pane opens a lightweight viewer listing the recent `ChatSession` messages (role + content).
+  - Provides Copy JSON and Save JSON; export uses pretty‑printed JSON of the current session history.
+
+Environment toggles (.env)
+- `AI_DEBUG_LOG=1` (default in repo .env)
+- `AI_DEBUG_PROMPT=0` (default; set to 1 to include full prompts)
+- Optional: `OPENAI_CONTEXT_TOKENS`, `ANTHROPIC_CONTEXT_TOKENS` to show remaining context in the Chat status.
+
+How to validate
+- Chat planning: trigger a plan; verify status line shows model, latency, tokens; open History… and export JSON.
+- Action Log: after Apply, open AI > View Action Log… and confirm Model/Tokens/Latency columns populate for provider‑backed plans.
+- Logs: set `AI_DEBUG_LOG=1`, perform Chat/Inline/Generate Fill; inspect `logs/ai/YYYYMMDD.jsonl`.
 
 3) Async Open/Save in UI
    - File → Open/Save now use async IO with a wait cursor and disabled UI during operations.

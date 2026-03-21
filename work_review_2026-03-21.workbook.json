@@ -1,0 +1,100 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Overview",
+      "Rows": 100,
+      "Columns": 26,
+      "FreezeTopRow": true,
+      "FreezeFirstColumn": true,
+      "Cells": {
+        "A1": "Work Review: Dev Journal + Roadmap + Backlog (2026-03-21)",
+        "A2": "Generated at: 2026-03-21",
+        "A3": "Summary",
+        "A4": "- Accomplished: multi-sheet workbook Save/Open; async I/O; incremental repaint; undo polish; chat planner gating; AI agent loop; docs viewer; formula bar; fill down/right; selection outline.",
+        "A5": "- Implemented deterministic transform_range and values-only enforcement; sanitized set_values width and header echo; copy/paste reference rewriting.",
+        "A6": "- E2E tests expanded; Test Runner exports plan and observations; policy preview and revise loop improvements.",
+        "A7": "- Remaining: UI modernization, plan simulator overlay, policy toggles, structural-op gating, persist freeze panes, workbook-level recalc, conditional formatting rules.",
+        "A8": "- Agentic: observation-only mode, more queries, tool-calling alignment; batch schema fill orchestration and cost estimation (paused).",
+        "A9": "Open the 'Accomplished' and 'Remaining' sheets for details.",
+        "A11": "Source docs: Dev Journal.md; Roadmap.md; BACKLOG.md"
+      },
+      "Formats": {
+        "A1": { "Bold": true, "HAlign": "Left" },
+        "A3": { "Bold": true, "HAlign": "Left" }
+      }
+    },
+    {
+      "Name": "Accomplished",
+      "Rows": 100,
+      "Columns": 26,
+      "FreezeTopRow": true,
+      "FreezeFirstColumn": true,
+      "Cells": {
+        "A1": "Category", "B1": "Item", "C1": "Status", "D1": "Notes",
+        "A2": "I/O", "B2": "Multi-sheet workbook Save/Open (.workbook.json)", "C2": "Shipped", "D2": "FormatVersion=1; names+formats; backward compatible; UI adds async Open/Save.",
+        "A3": "I/O", "B3": "Async CSV Import/Export", "C3": "Done", "D3": "Busy guards; UI menus wired to async paths.",
+        "A4": "UI", "B4": "Docked Chat Pane (single surface)", "C4": "Done", "D4": "Toggle via AI > Toggle Chat; Revise/Apply; stays open after apply.",
+        "A5": "UI", "B5": "Formula bar / name box", "C5": "Done", "D5": "Editable; Enter/Tab commit to cell.",
+        "A6": "UI", "B6": "Clipboard selection outline", "C6": "Done", "D6": "Solid for Copy; dashed for Cut; clears on Escape/Paste.",
+        "A7": "Editing", "B7": "Fill Down/Right; drag-fill handle", "C7": "Done", "D7": "Basic v1; grouped undo; relative ref rewrite.",
+        "A8": "Editing", "B8": "Clear multi-cell contents", "C8": "Done", "D8": "Single undo group; confirmation for formulas.",
+        "A9": "Perf", "B9": "Incremental repaint for bulk ops", "C9": "Done", "D9": "RecalculateDirty with 5% fallback; full-sheet recalc on edit.",
+        "A10": "Undo/Redo", "B10": "Menu state + grouped actions", "C10": "Done", "D10": "Enable/disable reflects stack; composite apply for AI plans.",
+        "A11": "AI", "B11": "Generate Fill (v0.1)", "C11": "Done", "D11": "Selection-bounded; one-shot apply with undo.",
+        "A12": "AI", "B12": "Inline Ghost Fill (v0.2)", "C12": "Shipped", "D12": "Debounced; cancellable; cached by shape/context.",
+        "A13": "AI", "B13": "Values-only gating + revise loop", "C13": "Done", "D13": "Filter disallowed commands; de-bias Title; auto-repair on violations.",
+        "A14": "AI", "B14": "transform_range tools (e.g., NORMALIZE_CITY)", "C14": "Done (first pass)", "D14": "Deterministic transforms; selection fencing.",
+        "A15": "AI", "B15": "Observation tools + Agent Loop (MVP)", "C15": "Implemented", "D15": "unique_values, describe_column, count_where, sample_rows; transcript export.",
+        "A16": "Docs", "B16": "Docs Viewer + JSON export", "C16": "Done", "D16": "In-app markdown render; Help > Export Docs JSON; --export-docs CLI.",
+        "A17": "UI", "B17": "Freeze panes toggles", "C17": "Done", "D17": "Freeze Top Row / First Column in View menu.",
+        "A18": "Editing", "B18": "Copy/paste reference rewriting", "C18": "Done", "D18": "Honors $ anchors; rewrites refs/ranges correctly.",
+        "A19": "Tests", "B19": "E2E suite + runner exports", "C19": "Done", "D19": "Snapshots, plan JSON, prompts, observations.json.",
+        "A20": "AI", "B20": "Selection sanitization + header-echo suppression", "C20": "Done", "D20": "Align rows to selection; drop repeated header row."
+      },
+      "Formats": {
+        "A1": { "Bold": true, "HAlign": "Left" },
+        "B1": { "Bold": true, "HAlign": "Left" },
+        "C1": { "Bold": true, "HAlign": "Left" },
+        "D1": { "Bold": true, "HAlign": "Left" }
+      }
+    },
+    {
+      "Name": "Remaining",
+      "Rows": 200,
+      "Columns": 26,
+      "FreezeTopRow": true,
+      "FreezeFirstColumn": true,
+      "Cells": {
+        "A1": "Category", "B1": "Item", "C1": "Status", "D1": "Priority", "E1": "Notes",
+        "A2": "UI", "B2": "UI modernization (grid, headers, font)", "C2": "Planned", "D2": "Near-term", "E2": "Flat borders, selection accent, double-buffered grid.",
+        "A3": "UI", "B3": "Unique sheet name guard", "C3": "Planned", "D3": "Near-term", "E3": "Prevent duplicates; auto-suffix.",
+        "A4": "AI UX", "B4": "Plan simulator overlay (pre-apply diff)", "C4": "Planned", "D4": "Near-term", "E4": "Highlight adds/modifies/clears before apply.",
+        "A5": "Policy", "B5": "Policy quick toggles (input/hard mode)", "C5": "Planned", "D5": "Near-term", "E5": "Expose in chat pane.",
+        "A6": "Policy", "B6": "Structural-op strict gating", "C6": "Planned", "D6": "Near-term", "E6": "Restrict AllowedCommands on insert/delete prompts.",
+        "A7": "Agent", "B7": "Observe-only mode", "C7": "Planned", "D7": "Near-term", "E7": "Run observation phase only when apply=false.",
+        "A8": "Agent", "B8": "Observation tools expansion", "C8": "Planned", "D8": "Near-term", "E8": "Multi-column profiles, outlier scan, string profiles.",
+        "A9": "Batch Fill", "B9": "Batch schema fill orchestration", "C9": "Paused", "D9": "Deferred", "E9": "20–50 row batches; progress, retry, cancel.",
+        "A10": "Batch Fill", "B10": "Cost estimation dialog", "C10": "Paused", "D10": "Deferred", "E10": "Estimate tokens/cost before run.",
+        "A11": "Batch Fill", "B11": "AI drag-to-fill gesture", "C11": "Not started", "D11": "Deferred", "E11": "Detect header+input; fill selection.",
+        "A12": "Batch Fill", "B12": "Anthropic batch API integration", "C12": "Stretch", "D12": "Deferred", "E12": "Large datasets (1000+ rows).",
+        "A13": "I/O", "B13": "Persist freeze panes in workbook JSON", "C13": "Planned", "D13": "Near-term", "E13": "Save/restore per-sheet.",
+        "A14": "Calc", "B14": "Workbook-level recalc across sheets", "C14": "Planned", "D14": "Near-term", "E14": "Simple full-workbook pass first.",
+        "A15": "Formatting", "B15": "Conditional formatting rule engine (persistent)", "C15": "Planned", "D15": "Later", "E15": "Beyond immediate-apply MVP.",
+        "A16": "Safety", "B16": "Write caps per apply; Action Log counters", "C16": "Planned", "D16": "Near-term", "E16": "Cell/command caps; latency/tokens.",
+        "A17": "Testing", "B17": "Unit tests for planner/observation tools", "C17": "In progress", "D17": "Near-term", "E17": "Bounds, schema width, input policy.",
+        "A18": "Interop", "B18": "XLSX interop; packaging", "C18": "Stretch", "D18": "Later", "E18": "Distribution, crash reporting.",
+        "A19": "Messages", "B19": "Error messaging normalization", "C19": "Active", "D19": "Ongoing", "E19": "Consistent #ERR: prefix; clarity.",
+        "A20": "Planner", "B20": "Tool-calling alignment; typed schema hints v2", "C20": "Planned", "D20": "Near-term", "E20": "Per-column constraints; provider tool schema."
+      },
+      "Formats": {
+        "A1": { "Bold": true, "HAlign": "Left" },
+        "B1": { "Bold": true, "HAlign": "Left" },
+        "C1": { "Bold": true, "HAlign": "Left" },
+        "D1": { "Bold": true, "HAlign": "Left" },
+        "E1": { "Bold": true, "HAlign": "Left" }
+      }
+    }
+  ]
+}
+

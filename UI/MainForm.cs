@@ -14,6 +14,8 @@ using SpreadsheetApp.UI;
 
 namespace SpreadsheetApp.UI
 {
+    internal enum PlanDiffKind { Add, Modify, Clear }
+
     public partial class MainForm : Form
     {
         private const string ClipboardCopyOriginFormat = "SpreadsheetApp.CopyOrigin";
@@ -62,6 +64,11 @@ namespace SpreadsheetApp.UI
         // AI write flash
         private System.Windows.Forms.Timer? _flashTimer;
         private HashSet<(int row, int col)>? _flashCells;
+        // Plan preview diff overlay
+        private Dictionary<(int row, int col), PlanDiffKind>? _planDiffOverlay;
+        // Active edit cell highlight + formula ref highlights
+        private (int row, int col)? _editingCell;
+        private List<(int row, int col)>? _formulaRefCells;
         // Drag-fill handle + preview state
         private bool _dragFillActive;
         private bool _dragFillPreview;
@@ -87,6 +94,15 @@ namespace SpreadsheetApp.UI
             _formulaBar.KeyDown += FormulaBar_KeyDown;
             _formulaBar.Enter += (_, __) => _suppressFormulaBarSync = true;
             _formulaBar.Leave += FormulaBar_Leave;
+            _formulaBar.TextChanged += (_, __) =>
+            {
+                if (_editingCell != null || _suppressFormulaBarSync)
+                {
+                    ClearFormulaRefHighlights();
+                    UpdateFormulaRefHighlights(_formulaBar.Text);
+                    grid.Invalidate();
+                }
+            };
             _cellNameBox.KeyDown += CellNameBox_KeyDown;
             // Create docked chat pane (initially hidden or visible per settings)
             try { CreateDockedChatPane(); } catch { }
@@ -144,7 +160,9 @@ namespace SpreadsheetApp.UI
                 var res = await SpreadsheetApp.Core.AI.AgentLoop.RunAsync(_chatPlanner, _sheet, ctx, prompt, ct).ConfigureAwait(true);
                 return (res.Plan, res.Transcript);
             }
-            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply, runAgentAsync);
+            _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply, runAgentAsync,
+                previewPlan: plan => ShowPlanDiffOverlay(plan),
+                clearPreview: () => ClearPlanDiffOverlay());
             _chatPane.Dock = DockStyle.Fill;
             _chatDockHost.Controls.Add(_chatPane);
 
@@ -245,13 +263,23 @@ namespace SpreadsheetApp.UI
             list.Columns.Add("Prompt", 200);
             list.Columns.Add("Cmds", 50);
             list.Columns.Add("Cells", 50);
-            list.Columns.Add("Summary", 300);
+            list.Columns.Add("Model", 160);
+            list.Columns.Add("Tokens", 120);
+            list.Columns.Add("Latency", 70);
+            list.Columns.Add("Summary", 260);
             foreach (var e in _aiActionLog.Entries)
             {
                 var item = new ListViewItem(e.Timestamp.ToString("HH:mm:ss"));
                 item.SubItems.Add(e.Prompt);
                 item.SubItems.Add(e.CommandCount.ToString());
                 item.SubItems.Add(e.CellCount.ToString());
+                var model = string.IsNullOrWhiteSpace(e.Provider) ? (e.Model ?? string.Empty) : ($"{e.Provider}/{e.Model}");
+                item.SubItems.Add(model);
+                string tok = (e.InputTokens.HasValue || e.OutputTokens.HasValue || e.TotalTokens.HasValue)
+                    ? $"{e.InputTokens?.ToString() ?? "-"}/{e.OutputTokens?.ToString() ?? "-"}/{e.TotalTokens?.ToString() ?? "-"}"
+                    : string.Empty;
+                item.SubItems.Add(tok);
+                item.SubItems.Add(e.LatencyMs.HasValue ? ($"{e.LatencyMs.Value} ms") : string.Empty);
                 item.SubItems.Add(e.Summary);
                 list.Items.Add(item);
             }
@@ -462,11 +490,19 @@ namespace SpreadsheetApp.UI
         {
             var raw = _sheet.GetRaw(e.RowIndex, e.ColumnIndex);
             grid[e.ColumnIndex, e.RowIndex].Value = raw ?? string.Empty;
+            _editingCell = (e.RowIndex, e.ColumnIndex);
+            UpdateFormulaRefHighlights(raw);
+            grid.InvalidateCell(e.ColumnIndex, e.RowIndex);
             UpdateStatus();
         }
 
         private void Grid_CellEndEdit(object? sender, DataGridViewCellEventArgs e)
         {
+            // Clear edit cell highlight and formula ref highlights
+            var prevEdit = _editingCell;
+            _editingCell = null;
+            ClearFormulaRefHighlights();
+            if (prevEdit != null) grid.InvalidateCell(prevEdit.Value.col, prevEdit.Value.row);
             var cell = grid[e.ColumnIndex, e.RowIndex];
             var raw = cell.Value?.ToString() ?? string.Empty;
             var oldRaw = _sheet.GetRaw(e.RowIndex, e.ColumnIndex);
@@ -714,6 +750,59 @@ namespace SpreadsheetApp.UI
             _flashTimer.Start();
         }
 
+        private void ShowPlanDiffOverlay(AIPlan plan)
+        {
+            _planDiffOverlay = new Dictionary<(int row, int col), PlanDiffKind>();
+            foreach (var cmd in plan.Commands)
+            {
+                if (cmd is SetValuesCommand sv)
+                {
+                    int baseRow = sv.StartRow < 0 ? 0 : sv.StartRow;
+                    for (int r = 0; r < sv.Values.Length; r++)
+                        for (int c = 0; c < (sv.Values[r]?.Length ?? 0); c++)
+                        {
+                            int rr = baseRow + r, cc = sv.StartCol + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            var existing = _sheet.GetRaw(rr, cc);
+                            _planDiffOverlay[(rr, cc)] = string.IsNullOrEmpty(existing) ? PlanDiffKind.Add : PlanDiffKind.Modify;
+                        }
+                }
+                else if (cmd is SetFormulaCommand sf)
+                {
+                    int baseRow = sf.StartRow;
+                    for (int r = 0; r < sf.Formulas.Length; r++)
+                        for (int c = 0; c < (sf.Formulas[r]?.Length ?? 0); c++)
+                        {
+                            int rr = baseRow + r, cc = sf.StartCol + c;
+                            if (rr < 0 || rr >= _sheet.Rows || cc < 0 || cc >= _sheet.Columns) continue;
+                            var existing = _sheet.GetRaw(rr, cc);
+                            _planDiffOverlay[(rr, cc)] = string.IsNullOrEmpty(existing) ? PlanDiffKind.Add : PlanDiffKind.Modify;
+                        }
+                }
+                else if (cmd is ClearRangeCommand cr)
+                {
+                    for (int r = cr.StartRow; r < cr.StartRow + cr.Rows; r++)
+                        for (int c = cr.StartCol; c < cr.StartCol + cr.Cols; c++)
+                        {
+                            if (r < 0 || r >= _sheet.Rows || c < 0 || c >= _sheet.Columns) continue;
+                            _planDiffOverlay[(r, c)] = PlanDiffKind.Clear;
+                        }
+                }
+            }
+            grid.Invalidate();
+            grid.Refresh();
+        }
+
+        private void ClearPlanDiffOverlay()
+        {
+            if (_planDiffOverlay != null)
+            {
+                _planDiffOverlay = null;
+                grid.Invalidate();
+                grid.Refresh();
+            }
+        }
+
         private void RefreshGridDisplays()
         {
             for (int r = 0; r < _sheet.Rows; r++)
@@ -806,6 +895,27 @@ namespace SpreadsheetApp.UI
             {
                 style.Alignment = DataGridViewContentAlignment.MiddleLeft;
             }
+        }
+
+        private void Grid_CellToolTipTextNeeded(object? sender, DataGridViewCellToolTipTextNeededEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            try
+            {
+                var raw = _sheet.GetRaw(e.RowIndex, e.ColumnIndex);
+                if (string.IsNullOrEmpty(raw)) return;
+                var val = _sheet.GetValue(e.RowIndex, e.ColumnIndex);
+                if (raw.StartsWith("="))
+                {
+                    var display = val.ToDisplay();
+                    e.ToolTipText = $"Formula: {raw}\nResult: {display}";
+                }
+                else if (val.Error != null)
+                {
+                    e.ToolTipText = $"Error: {val.Error}";
+                }
+            }
+            catch { }
         }
 
         private void Grid_SelectionChanged(object? sender, EventArgs e)
@@ -1863,6 +1973,86 @@ namespace SpreadsheetApp.UI
             try { grid.Invalidate(); } catch { }
         }
 
+        // ── Formula reference highlighting ──────────────────────
+        private static readonly Regex _cellRefRegex = new(@"(?<![A-Za-z])([A-Z]{1,3})(\d{1,5})(?![A-Za-z0-9])", RegexOptions.Compiled);
+        private static readonly Color[] _refColors = new[]
+        {
+            Color.FromArgb(60, 37, 99, 235),   // blue
+            Color.FromArgb(60, 220, 38, 38),    // red
+            Color.FromArgb(60, 22, 163, 74),    // green
+            Color.FromArgb(60, 217, 119, 6),    // amber
+            Color.FromArgb(60, 147, 51, 234),   // purple
+            Color.FromArgb(60, 6, 182, 212),    // cyan
+        };
+
+        private void UpdateFormulaRefHighlights(string? raw)
+        {
+            _formulaRefCells = null;
+            if (string.IsNullOrEmpty(raw) || !raw.StartsWith("=")) return;
+            var refs = new List<(int row, int col)>();
+            foreach (Match m in _cellRefRegex.Matches(raw))
+            {
+                try
+                {
+                    int col = CellAddress.ColumnNameToIndex(m.Groups[1].Value);
+                    int row = int.Parse(m.Groups[2].Value) - 1;
+                    if (row >= 0 && row < grid.RowCount && col >= 0 && col < grid.ColumnCount)
+                        refs.Add((row, col));
+                }
+                catch { }
+            }
+            if (refs.Count > 0) _formulaRefCells = refs;
+        }
+
+        private void ClearFormulaRefHighlights()
+        {
+            if (_formulaRefCells != null)
+            {
+                var old = _formulaRefCells;
+                _formulaRefCells = null;
+                foreach (var (r, c) in old)
+                    try { grid.InvalidateCell(c, r); } catch { }
+            }
+        }
+
+        private void Grid_CellPainting(object? sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0 || e.Graphics == null) return;
+
+            // Accent border on editing cell
+            if (_editingCell != null && e.RowIndex == _editingCell.Value.row && e.ColumnIndex == _editingCell.Value.col)
+            {
+                e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+                using var pen = new Pen(Theme.Primary, 2f);
+                var rect = e.CellBounds;
+                rect.Inflate(-1, -1);
+                e.Graphics.DrawRectangle(pen, rect);
+                e.Handled = true;
+                return;
+            }
+
+            // Formula reference cell highlights
+            if (_formulaRefCells != null)
+            {
+                int idx = _formulaRefCells.FindIndex(r => r.row == e.RowIndex && r.col == e.ColumnIndex);
+                if (idx >= 0)
+                {
+                    e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+                    var color = _refColors[idx % _refColors.Length];
+                    using var brush = new SolidBrush(color);
+                    e.Graphics.FillRectangle(brush, e.CellBounds);
+                    // Draw a solid border in the same hue but opaque
+                    var borderColor = Color.FromArgb(180, color.R, color.G, color.B);
+                    using var pen = new Pen(borderColor, 1.5f);
+                    var rect = e.CellBounds;
+                    rect.Inflate(-1, -1);
+                    e.Graphics.DrawRectangle(pen, rect);
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         private void Grid_Paint(PaintEventArgs e)
         {
             // Clipboard outline
@@ -1910,6 +2100,28 @@ namespace SpreadsheetApp.UI
                 }
             }
             catch { }
+            // Plan diff overlay
+            if (_planDiffOverlay != null && _planDiffOverlay.Count > 0)
+            {
+                try
+                {
+                    foreach (var kv in _planDiffOverlay)
+                    {
+                        var cellRect = grid.GetCellDisplayRectangle(kv.Key.col, kv.Key.row, true);
+                        if (cellRect.Width <= 0 || cellRect.Height <= 0) continue;
+                        var overlayColor = kv.Value switch
+                        {
+                            PlanDiffKind.Add    => Color.FromArgb(40, 22, 163, 74),   // green tint
+                            PlanDiffKind.Modify => Color.FromArgb(40, 234, 179, 8),   // yellow tint
+                            PlanDiffKind.Clear  => Color.FromArgb(40, 220, 38, 38),   // red tint
+                            _ => Color.Transparent
+                        };
+                        using var brush = new SolidBrush(overlayColor);
+                        e.Graphics.FillRectangle(brush, cellRect);
+                    }
+                }
+                catch { }
+            }
         }
 
         private void Grid_MouseDown(object? sender, MouseEventArgs e)
@@ -2225,6 +2437,14 @@ namespace SpreadsheetApp.UI
                 var arr = filtered.ToArray();
                 _aiInlineCache[cacheKey] = arr;
                 ShowGhostSuggestions(r, c, arr);
+                try
+                {
+                    SpreadsheetApp.Core.AI.AILogger.Log("inline", res.Provider, res.Model, res.Usage, res.LatencyMs,
+                        sheetName, r, c, n, 1,
+                        ctx.Prompt, null,
+                        null, arr.Length);
+                }
+                catch { }
             }
             catch (OperationCanceledException)
             {
@@ -2609,6 +2829,8 @@ namespace SpreadsheetApp.UI
 
         private void ApplyPlan(AIPlan plan)
         {
+            // Clear any diff overlay before applying
+            ClearPlanDiffOverlay();
             // Log the AI action
             try { _aiActionLog.Record("(applied plan)", plan); } catch { }
             var edits = new List<(int row, int col, string? oldRaw, string? newRaw)>();
