@@ -14,6 +14,7 @@ namespace SpreadsheetApp.Core
         public string? ApiKeyProtectedBase64 { get; set; } = null; // DPAPI-protected key
         public bool ChatPaneVisible { get; set; } = false; // Docked chat pane visibility
         public int ChatPaneWidth { get; set; } = 340; // Width in pixels when visible
+        public string LastChatMode { get; set; } = "Fill"; // Fill | Append | Transform | Ask
 
         public static string SettingsPath()
         {

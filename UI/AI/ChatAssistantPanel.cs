@@ -22,18 +22,36 @@ namespace SpreadsheetApp.UI.AI
 
         private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
         private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 32 };
-        private readonly CheckBox _chkAgent = new() { Text = "Let AI explore first", Dock = DockStyle.Top, Height = 20 };
+        private readonly CheckBox _chkAgent = new() { Text = "Analyze selection first", Dock = DockStyle.Top, Height = 20 };
         private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 28 };
         private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnHistory = new() { Text = "History…", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
         private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Primary, Visible = false };
+        // Advanced inspector log (hidden by default)
         private readonly RichTextBox _logBox = new() { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Theme.LogBg, ForeColor = Theme.LogFg, WordWrap = true };
         private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 32, Enabled = false };
-        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None, Visible = false };
-        private readonly LinkLabel _policyToggle = new() { Dock = DockStyle.Top, Height = 16, Text = "\u25B6 Show details", TextAlign = ContentAlignment.MiddleLeft };
-        private readonly CheckBox _chkHardMode = new() { Text = "Selection hard mode (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
+        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None };
+        private readonly LinkLabel _policyToggle = new() { Dock = DockStyle.Top, Height = 16, Text = "\u25B6 Show advanced", TextAlign = ContentAlignment.MiddleLeft };
+        private readonly CheckBox _chkHardMode = new() { Text = "Strict to selection (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
         private readonly ComboBox _inputPolicy = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 22 };
+        private Panel _advancedPanel = null!;
+        // Session context indicator
+        private readonly Label _lblSession = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.TextSecondary };
+        // Mode chips
+        private readonly FlowLayoutPanel _modeBar = new() { Dock = DockStyle.Top, Height = 28, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(0, 0, 0, 4) };
+        private RadioButton _modeFill = null!;
+        private RadioButton _modeAppend = null!;
+        private RadioButton _modeTransform = null!;
+        private RadioButton _modeAsk = null!;
+        private string _currentMode = "Fill"; // persisted label
+        private readonly Action<string>? _onModeChanged;
+        // Preview card (replaces terminal-style log by default)
+        private readonly Panel _previewPanel = new() { Dock = DockStyle.Fill, BackColor = Theme.PanelBg };
+        private readonly Label _previewHeader = new() { Dock = DockStyle.Top, Height = 22, Font = Theme.UISemiBold, ForeColor = Theme.TextPrimary };
+        private readonly Label _previewSub = new() { Dock = DockStyle.Top, Height = 18, Font = Theme.UI, ForeColor = Theme.TextSecondary };
+        private readonly Label _previewWarn = new() { Dock = DockStyle.Top, Height = 18, Font = Theme.UI, ForeColor = Theme.LogInfo };
+        private readonly TableLayoutPanel _previewTable = new() { Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 6, BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single, Visible = false };
 
         private Panel _inputWrapper = null!;
         private AIPlan? _currentPlan;
@@ -42,7 +60,7 @@ namespace SpreadsheetApp.UI.AI
         private System.Windows.Forms.Timer? _thinkingTimer;
         private int _thinkingDots;
 
-        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null)
+        public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null, string? initialMode = null, Action<string>? onModeChanged = null)
         {
             _planner = planner;
             _session = session;
@@ -51,6 +69,8 @@ namespace SpreadsheetApp.UI.AI
             _previewPlan = previewPlan;
             _clearPreview = clearPreview;
             _runAgentLoop = runAgentLoop;
+            _currentMode = string.IsNullOrWhiteSpace(initialMode) ? "Fill" : initialMode!;
+            _onModeChanged = onModeChanged;
 
             Dock = DockStyle.Fill;
             Padding = new Padding(8);
@@ -64,7 +84,7 @@ namespace SpreadsheetApp.UI.AI
             Theme.StyleDanger(_btnReset);
             Theme.StyleGhost(_btnHistory);
 
-            // ── Style log box ─────────────────────────────────────
+            // ── Style log box (advanced) ─────────────────────────
             _logBox.Font = Theme.MonoSmall;
 
             // ── Style policy preview (collapsible) ───────────────
@@ -75,11 +95,7 @@ namespace SpreadsheetApp.UI.AI
             _policyToggle.LinkColor = Theme.TextSecondary;
             _policyToggle.ActiveLinkColor = Theme.Primary;
             _policyToggle.LinkBehavior = LinkBehavior.NeverUnderline;
-            _policyToggle.Click += (_, __) =>
-            {
-                _policy.Visible = !_policy.Visible;
-                _policyToggle.Text = _policy.Visible ? "\u25BC Hide details" : "\u25B6 Show details";
-            };
+            _policyToggle.Click += (_, __) => ToggleAdvanced();
 
             // ── Style input with focus indicator ─────────────────
             _input.Font = Theme.UI;
@@ -108,6 +124,7 @@ namespace SpreadsheetApp.UI.AI
 
             // ── Status label ──────────────────────────────────────
             _lblStatus.Font = Theme.UISemiBold;
+            _lblSession.Font = Theme.UI;
 
             // ── Spacers ───────────────────────────────────────────
             var spacer1 = new Label { Dock = DockStyle.Top, Height = 6, BackColor = Color.Transparent };
@@ -117,20 +134,30 @@ namespace SpreadsheetApp.UI.AI
             // ── Layout ────────────────────────────────────────────
             // Added last-to-first for Top dock (last added = topmost)
             var container = new Panel { Dock = DockStyle.Fill };
-            container.Controls.Add(_logBox);         // Fill — center
+            // Preview panel replaces terminal log by default
+            BuildPreviewPanel();
+            container.Controls.Add(_previewPanel);   // Fill — center
             container.Controls.Add(_btnApply);       // Bottom
             container.Controls.Add(_btnPlan);        // Top
             container.Controls.Add(spacer1);         // Top — gap before Plan
             container.Controls.Add(_btnRevise);      // Top
-            container.Controls.Add(_btnCopyObs);     // Top
-            container.Controls.Add(_btnHistory);     // Top
+            // Advanced controls are added inside _advancedPanel (hidden by default)
+            _advancedPanel = new Panel { Dock = DockStyle.Top, Visible = false };
+            _advancedPanel.Controls.Add(_logBox);
+            var advButtons = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.LeftToRight, Height = 28 };
+            advButtons.Controls.Add(_btnCopyObs);
+            advButtons.Controls.Add(_btnHistory);
+            advButtons.Controls.Add(_btnReset);
+            _advancedPanel.Controls.Add(advButtons);
+            _advancedPanel.Controls.Add(policySep);       // separator
+            _advancedPanel.Controls.Add(_policy);         // policy text
+            container.Controls.Add(_advancedPanel);
             container.Controls.Add(_chkAgent);       // Top
-            container.Controls.Add(_lblStatus);      // Top
+            container.Controls.Add(_lblStatus);      // Top (provider/model)
+            container.Controls.Add(_lblSession);     // Top (session status)
+            container.Controls.Add(_modeBar);        // Top (mode chips)
             container.Controls.Add(spacer2);         // Top — gap before action buttons
-            container.Controls.Add(_btnReset);       // Top
-            container.Controls.Add(policySep);       // Top — 1px line under policy
-            container.Controls.Add(_policy);         // Top (hidden by default)
-            container.Controls.Add(_policyToggle);   // Top — toggle link
+            container.Controls.Add(_policyToggle);   // Top — advanced toggle
             container.Controls.Add(_chkHardMode);    // Top
             container.Controls.Add(_inputPolicy);    // Top
             container.Controls.Add(_inputWrapper);    // Top — topmost (wraps _input with focus border)
@@ -189,7 +216,9 @@ namespace SpreadsheetApp.UI.AI
             try
             {
                 _inputPolicy.Items.AddRange(new object[] { "Input read-only", "Append-only (empty rows)", "Writable" });
-                _inputPolicy.SelectedIndex = 1; // default append-only
+                // Mode chips
+                CreateModeChips(_currentMode);
+                ApplyModeUiDefaults();
                 _inputPolicy.SelectedIndexChanged += (_, __) =>
                 {
                     try { var ctx = _getContext(); _policy.Text = BuildPolicyPreview(ApplyUiPolicy(ctx, previewOnly: true)); } catch { }
@@ -372,6 +401,7 @@ namespace SpreadsheetApp.UI.AI
         public void RefreshPolicy(AIContext ctx)
         {
             try { _policy.Text = BuildPolicyPreview(ctx); } catch { }
+            UpdateSessionStatus();
         }
 
         private async Task DoPlanAsync()
@@ -399,8 +429,9 @@ namespace SpreadsheetApp.UI.AI
                 }
                 else
                 {
-                    // Apply UI policy toggles before planning
+                    // Apply mode + UI policy before planning
                     ctx = ApplyUiPolicy(ctx, previewOnly: false);
+                    ctx = ApplyModePolicy(ctx);
                     plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
                 }
                 _currentPlan = plan;
@@ -412,24 +443,11 @@ namespace SpreadsheetApp.UI.AI
                     foreach (var line in transcript) LogAppend("  " + line, Theme.LogObservation);
                     LogAppend("── Plan ──", Theme.LogCommand);
                 }
-                int writeCount = 0;
-                if (plan.Commands.Count == 0)
+                // Build preview card and enable Apply if applicable
+                int writeCount = BuildPreview(plan, ctx);
+                _btnApply.Enabled = (plan.Commands.Count > 0) && _currentMode != "Ask";
+                if (_btnApply.Enabled)
                 {
-                    LogAppend("No changes suggested.", Theme.LogInfo);
-                }
-                else
-                {
-                    foreach (var cmd in plan.Commands)
-                    {
-                        LogAppend(cmd.Summarize(), Theme.LogCommand);
-                        string? rationale = TryGetRationale(cmd);
-                        if (!string.IsNullOrWhiteSpace(rationale)) LogAppend("  \u2192 " + rationale, Theme.LogRationale);
-                    }
-                    writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
-                    writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
-                    LogAppend($"Total writes: {writeCount}", Theme.LogInfo);
-                    _btnApply.Enabled = true;
-                    // Show diff overlay on grid
                     try { _previewPlan?.Invoke(plan); } catch { }
                 }
                 // Update conversation history (keep last 10 entries)
@@ -461,6 +479,7 @@ namespace SpreadsheetApp.UI.AI
                     }
                 }
                 catch { }
+                UpdateSessionStatus();
                 // Optional JSONL debug log
                 try
                 {
@@ -550,7 +569,9 @@ namespace SpreadsheetApp.UI.AI
         {
             var sb = new System.Text.StringBuilder();
             // Selection summary
-            string start = SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol);
+            string start = (ctx.StartRow >= 0 && ctx.StartCol >= 0)
+                ? SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol)
+                : "first empty row";
             sb.Append($"Selection {start} · {Math.Max(1, ctx.Rows)}x{Math.Max(1, ctx.Cols)}");
             // Allowed commands
             try
@@ -615,6 +636,205 @@ namespace SpreadsheetApp.UI.AI
             }
             catch { }
             return sb.ToString();
+        }
+
+        private void ToggleAdvanced()
+        {
+            if (_advancedPanel == null) return;
+            _advancedPanel.Visible = !_advancedPanel.Visible;
+            _policyToggle.Text = _advancedPanel.Visible ? "\u25BC Hide advanced" : "\u25B6 Show advanced";
+        }
+
+        private void CreateModeChips(string initial)
+        {
+            _modeBar.Controls.Clear();
+            _modeFill = NewModeChip("Fill");
+            _modeAppend = NewModeChip("Append");
+            _modeTransform = NewModeChip("Transform");
+            _modeAsk = NewModeChip("Ask");
+            _modeBar.Controls.AddRange(new Control[] { _modeFill, _modeAppend, _modeTransform, _modeAsk });
+            SetMode(initial);
+        }
+
+        private RadioButton NewModeChip(string label)
+        {
+            var rb = new RadioButton
+            {
+                Appearance = Appearance.Button,
+                AutoSize = true,
+                Text = label,
+                Padding = new Padding(10, 2, 10, 2),
+                Margin = new Padding(0, 0, 8, 0),
+                FlatStyle = FlatStyle.Flat
+            };
+            rb.CheckedChanged += (_, __) =>
+            {
+                if (rb.Checked) { _currentMode = label; ApplyModeUiDefaults(); _onModeChanged?.Invoke(_currentMode); }
+            };
+            return rb;
+        }
+
+        public void SetMode(string label)
+        {
+            _currentMode = label;
+            _modeFill.Checked = label == "Fill";
+            _modeAppend.Checked = label == "Append";
+            _modeTransform.Checked = label == "Transform";
+            _modeAsk.Checked = label == "Ask";
+            ApplyModeUiDefaults();
+        }
+
+        private void ApplyModeUiDefaults()
+        {
+            // Defaults per mode and UI text emphasis
+            switch (_currentMode)
+            {
+                case "Fill":
+                    _chkHardMode.Text = "Strict to selection (no out-of-bounds writes)";
+                    _chkHardMode.Checked = true;
+                    _inputPolicy.SelectedIndex = 0; // Input read-only
+                    _btnApply.Visible = true;
+                    break;
+                case "Append":
+                    _chkHardMode.Text = "Strict to selection (no out-of-bounds writes)";
+                    _chkHardMode.Checked = true;
+                    _inputPolicy.SelectedIndex = 1; // Append-only (empty rows)
+                    _btnApply.Visible = true;
+                    break;
+                case "Transform":
+                    _chkHardMode.Text = "Strict to selection (no out-of-bounds writes)";
+                    _chkHardMode.Checked = true;
+                    _inputPolicy.SelectedIndex = 0; // Input read-only
+                    _btnApply.Visible = true;
+                    break;
+                case "Ask":
+                    _chkHardMode.Text = "Context limited to current selection";
+                    _chkHardMode.Checked = true; // keep on internally
+                    _inputPolicy.SelectedIndex = 0;
+                    _btnApply.Visible = false; // no Apply in Ask mode
+                    break;
+            }
+            UpdateSessionStatus();
+        }
+
+        private void UpdateSessionStatus()
+        {
+            try
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (_session.History.Count == 0) parts.Add("Fresh request");
+                else parts.Add($"Using prior AI context ({_session.History.Count})");
+                parts.Add("Using current selection + headers");
+                _lblSession.Text = string.Join(" · ", parts);
+                _lblSession.Visible = true;
+            }
+            catch { }
+        }
+
+        private AIContext ApplyModePolicy(AIContext ctx)
+        {
+            try
+            {
+                switch (_currentMode)
+                {
+                    case "Fill":
+                        ctx.RequestQueriesOnly = false;
+                        ctx.AllowedCommands = new[] { "set_values", "set_formula" };
+                        break;
+                    case "Append":
+                        ctx.RequestQueriesOnly = false;
+                        ctx.AllowedCommands = new[] { "set_values" };
+                        ctx.StartRow = -1; // hint: append to first empty row within selection block
+                        break;
+                    case "Transform":
+                        ctx.RequestQueriesOnly = false;
+                        ctx.AllowedCommands = new[] { "set_values", "set_formula", "clear_range", "transform_range" };
+                        break;
+                    case "Ask":
+                        ctx.RequestQueriesOnly = true;
+                        ctx.AllowedCommands = Array.Empty<string>();
+                        break;
+                }
+            }
+            catch { }
+            return ctx;
+        }
+
+        private void BuildPreviewPanel()
+        {
+            _previewPanel.Controls.Clear();
+            _previewPanel.Padding = new Padding(6);
+            _previewPanel.Controls.Add(_previewTable);
+            _previewPanel.Controls.Add(_previewWarn);
+            _previewPanel.Controls.Add(_previewSub);
+            _previewPanel.Controls.Add(_previewHeader);
+        }
+
+        private int BuildPreview(AIPlan plan, AIContext ctx)
+        {
+            try
+            {
+                _previewHeader.Text = string.Empty;
+                _previewSub.Text = string.Empty;
+                _previewWarn.Text = string.Empty;
+                _previewTable.Visible = false;
+                _previewTable.Controls.Clear();
+                // Build aggregate summary
+                int writeCount = 0;
+                int cmdCount = plan.Commands.Count;
+                writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
+                writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
+                string modeLabel = _currentMode;
+                _previewHeader.Text = (cmdCount == 0)
+                    ? "No changes suggested"
+                    : $"{(writeCount > 0 ? $"AI will write {writeCount} cell(s)" : "Planned actions")}";
+                // Subheader: affected range (first command) and shape
+                var firstWrite = plan.Commands.FirstOrDefault(c => c is SetValuesCommand || c is SetFormulaCommand);
+                if (firstWrite is SetValuesCommand sv)
+                {
+                    _previewSub.Text = $"Target {SpreadsheetApp.Core.CellAddress.ToAddress(sv.StartRow, sv.StartCol)} · {sv.Values.Length}x{(sv.Values.Length>0?sv.Values[0].Length:0)}";
+                    // Build 5x6 sample
+                    RenderSampleTable(sv.Values);
+                }
+                else if (firstWrite is SetFormulaCommand sf)
+                {
+                    _previewSub.Text = $"Target {SpreadsheetApp.Core.CellAddress.ToAddress(sf.StartRow, sf.StartCol)} · {sf.Formulas.Length}x{(sf.Formulas.Length>0?sf.Formulas[0].Length:0)}";
+                    RenderSampleTable(sf.Formulas);
+                }
+                else
+                {
+                    // Structural ops only — summarize
+                    var summaries = plan.Commands.Take(4).Select(c => "• " + c.Summarize()).ToArray();
+                    _previewSub.Text = string.Join("\r\n", summaries);
+                }
+                // Warnings (basic): Ask mode has no apply; selection hard mode enforced; non-writable columns not previewed here
+                if (_currentMode == "Ask") _previewWarn.Text = "Ask mode: no writes (queries only)";
+                return writeCount;
+            }
+            catch { return 0; }
+        }
+
+        private void RenderSampleTable(string[][] values)
+        {
+            try
+            {
+                int rows = Math.Min(5, values.Length);
+                int cols = Math.Min(6, values.Length > 0 ? values[0].Length : 0);
+                _previewTable.ColumnCount = Math.Max(1, cols);
+                _previewTable.RowCount = Math.Max(1, rows);
+                _previewTable.Controls.Clear();
+                for (int r = 0; r < rows; r++)
+                {
+                    for (int c = 0; c < cols; c++)
+                    {
+                        var txt = (c < values[r].Length) ? values[r][c] : string.Empty;
+                        var lab = new Label { Text = txt, AutoEllipsis = true, Dock = DockStyle.Fill, Padding = new Padding(4), Font = Theme.UI };
+                        _previewTable.Controls.Add(lab, c, r);
+                    }
+                }
+                _previewTable.Visible = rows > 0 && cols > 0;
+            }
+            catch { _previewTable.Visible = false; }
         }
     }
 }

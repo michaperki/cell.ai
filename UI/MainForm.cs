@@ -162,7 +162,9 @@ namespace SpreadsheetApp.UI
             }
             _chatPane = new UI.AI.ChatAssistantPanel(_chatPlanner, _chatSession, getCtx, apply, runAgentAsync,
                 previewPlan: plan => ShowPlanDiffOverlay(plan),
-                clearPreview: () => ClearPlanDiffOverlay());
+                clearPreview: () => ClearPlanDiffOverlay(),
+                initialMode: _settings.LastChatMode,
+                onModeChanged: mode => { try { _settings.LastChatMode = mode; _settings.Save(); } catch { } });
             _chatPane.Dock = DockStyle.Fill;
             _chatDockHost.Controls.Add(_chatPane);
 
@@ -318,6 +320,24 @@ namespace SpreadsheetApp.UI
             {
                 MessageBox.Show(this, $"Error: {ex.Message}", "Explain Cell");
             }
+            return System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        private System.Threading.Tasks.Task AskAboutSheetAsync()
+        {
+            if (!_settings.AiEnabled || !ProviderReady()) return System.Threading.Tasks.Task.CompletedTask;
+            try
+            {
+                if (_chatDockHost == null || _chatDockSplitter == null) { try { CreateDockedChatPane(); } catch { } }
+                if (_chatDockHost != null)
+                {
+                    _chatDockHost.Visible = true;
+                    if (_chatDockSplitter != null) _chatDockSplitter.Visible = true;
+                    _chatPane?.SetMode("Ask");
+                    _chatPane?.FocusInput();
+                }
+            }
+            catch { }
             return System.Threading.Tasks.Task.CompletedTask;
         }
 
