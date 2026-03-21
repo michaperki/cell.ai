@@ -52,6 +52,8 @@ namespace SpreadsheetApp.UI.AI
         private readonly Label _previewSub = new() { Dock = DockStyle.Top, Height = 18, Font = Theme.UI, ForeColor = Theme.TextSecondary };
         private readonly Label _previewWarn = new() { Dock = DockStyle.Top, Height = 18, Font = Theme.UI, ForeColor = Theme.LogInfo };
         private readonly TableLayoutPanel _previewTable = new() { Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 6, BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single, Visible = false };
+        // Ask-mode thread panel (scrollable Q/A turns)
+        private readonly Panel _askThreadPanel = new() { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.PanelBg, Visible = false };
 
         private Panel _inputWrapper = null!;
         private AIPlan? _currentPlan;
@@ -134,9 +136,10 @@ namespace SpreadsheetApp.UI.AI
             // ── Layout ────────────────────────────────────────────
             // Added last-to-first for Top dock (last added = topmost)
             var container = new Panel { Dock = DockStyle.Fill };
-            // Preview panel replaces terminal log by default
+            // Preview panel (non-Ask) and Ask thread panel share the main area
             BuildPreviewPanel();
-            container.Controls.Add(_previewPanel);   // Fill — center
+            container.Controls.Add(_askThreadPanel); // Fill — Ask mode
+            container.Controls.Add(_previewPanel);   // Fill — other modes
             container.Controls.Add(_btnApply);       // Bottom
             container.Controls.Add(_btnPlan);        // Top
             container.Controls.Add(spacer1);         // Top — gap before Plan
@@ -185,7 +188,7 @@ namespace SpreadsheetApp.UI.AI
                 catch { }
             };
             _btnHistory.Click += (_, __) => ShowHistoryDialog();
-            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); try { _clearPreview?.Invoke(); } catch { } };
+            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); try { if (_currentMode == "Ask") RenderAskThread(); _clearPreview?.Invoke(); } catch { } };
             _btnApply.Click += (_, __) =>
             {
                 if (_currentPlan != null)
@@ -454,6 +457,7 @@ namespace SpreadsheetApp.UI.AI
                 _session.AddUser(_input.Text ?? string.Empty);
                 var asstSummary = _currentMode == "Ask" ? (plan.Answer ?? string.Empty) : string.Join("; ", plan.Commands.Select(c => c.Summarize()));
                 _session.AddAssistant(asstSummary);
+                if (_currentMode == "Ask") RenderAskThread();
                 // Build status line with provider/model, latency, tokens, remaining context
                 try
                 {
@@ -694,18 +698,21 @@ namespace SpreadsheetApp.UI.AI
                     _chkHardMode.Checked = true;
                     _inputPolicy.SelectedIndex = 0; // Input read-only
                     _btnApply.Visible = true;
+                    _previewPanel.Visible = true; _askThreadPanel.Visible = false;
                     break;
                 case "Append":
                     _chkHardMode.Text = "Strict to selection (no out-of-bounds writes)";
                     _chkHardMode.Checked = true;
                     _inputPolicy.SelectedIndex = 1; // Append-only (empty rows)
                     _btnApply.Visible = true;
+                    _previewPanel.Visible = true; _askThreadPanel.Visible = false;
                     break;
                 case "Transform":
                     _chkHardMode.Text = "Strict to selection (no out-of-bounds writes)";
                     _chkHardMode.Checked = true;
                     _inputPolicy.SelectedIndex = 0; // Input read-only
                     _btnApply.Visible = true;
+                    _previewPanel.Visible = true; _askThreadPanel.Visible = false;
                     break;
                 case "Ask":
                     _chkHardMode.Text = "Context limited to current selection";
@@ -713,6 +720,8 @@ namespace SpreadsheetApp.UI.AI
                     _inputPolicy.SelectedIndex = 0;
                     _btnApply.Visible = false; // no Apply in Ask mode
                     try { _chkAgent.Checked = false; _chkAgent.Enabled = false; } catch { }
+                    _previewPanel.Visible = false; _askThreadPanel.Visible = true;
+                    RenderAskThread();
                     break;
             }
             if (_currentMode != "Ask") { try { _chkAgent.Enabled = true; } catch { } }
@@ -849,6 +858,31 @@ namespace SpreadsheetApp.UI.AI
                 _previewTable.Visible = rows > 0 && cols > 0;
             }
             catch { _previewTable.Visible = false; }
+        }
+
+        private void RenderAskThread()
+        {
+            try
+            {
+                _askThreadPanel.SuspendLayout();
+                _askThreadPanel.Controls.Clear();
+                var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(6), BackColor = Theme.PanelBg };
+                foreach (var m in _session.History)
+                {
+                    var isUser = string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase);
+                    var bubble = new Panel { Width = Math.Max(100, _askThreadPanel.ClientSize.Width - 32), BackColor = isUser ? Color.FromArgb(240, 247, 255) : Color.FromArgb(245, 245, 245), Padding = new Padding(8), Margin = new Padding(0, 0, 0, 8) };
+                    var who = new Label { Dock = DockStyle.Top, Height = 16, Text = isUser ? "You" : "AI", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
+                    var lbl = new Label { AutoSize = false, Dock = DockStyle.Top, Text = m.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(bubble.Width - 16, 0) };
+                    lbl.AutoSize = true;
+                    bubble.Controls.Add(lbl);
+                    bubble.Controls.Add(who);
+                    flow.Controls.Add(bubble);
+                }
+                _askThreadPanel.Controls.Add(flow);
+                _askThreadPanel.ResumeLayout();
+                _askThreadPanel.PerformLayout();
+            }
+            catch { }
         }
     }
 }
