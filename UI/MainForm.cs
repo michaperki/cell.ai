@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Globalization;
 using System.Collections.Generic;
 using System.IO;
@@ -58,6 +59,9 @@ namespace SpreadsheetApp.UI
         private System.Windows.Forms.Splitter? _chatDockSplitter;
         private SpreadsheetApp.UI.AI.ChatAssistantPanel? _chatPane;
         private SpreadsheetApp.Core.AI.ChatSession _chatSession = new SpreadsheetApp.Core.AI.ChatSession();
+        // AI write flash
+        private System.Windows.Forms.Timer? _flashTimer;
+        private HashSet<(int row, int col)>? _flashCells;
         // Drag-fill handle + preview state
         private bool _dragFillActive;
         private bool _dragFillPreview;
@@ -116,12 +120,15 @@ namespace SpreadsheetApp.UI
                 Width = Math.Max(220, Math.Min(800, _settingsChatPaneWidth())),
                 Visible = _settingsChatPaneVisible()
             };
-            _chatDockHost.BackColor = System.Drawing.Color.FromArgb(248, 248, 248);
+            _chatDockHost.BackColor = Theme.PanelBg;
+            // 1px left border inside the chat host
+            var chatBorder = new Panel { Dock = DockStyle.Left, Width = 1, BackColor = Theme.PanelBorder };
+            _chatDockHost.Controls.Add(chatBorder);
             _chatDockSplitter = new Splitter
             {
                 Dock = DockStyle.Right,
-                Width = 4,
-                BackColor = System.Drawing.Color.FromArgb(234, 234, 234),
+                Width = 3,
+                BackColor = Theme.PanelBorder,
                 Visible = _chatDockHost.Visible
             };
             Controls.Add(_chatDockSplitter);
@@ -665,6 +672,46 @@ namespace SpreadsheetApp.UI
             {
                 try { RefreshGridValues(); grid.Invalidate(); grid.Refresh(); UpdateStatus(); } catch { }
             }
+        }
+
+        private void FlashAffectedCells(System.Collections.Generic.IReadOnlyCollection<(int r, int c)> affected)
+        {
+            if (affected == null || affected.Count == 0) return;
+            // Stop any previous flash
+            _flashTimer?.Stop();
+            _flashTimer?.Dispose();
+
+            _flashCells = new HashSet<(int row, int col)>();
+            foreach (var (r, c) in affected)
+            {
+                if (r < 0 || r >= grid.RowCount || c < 0 || c >= grid.ColumnCount) continue;
+                _flashCells.Add((r, c));
+                grid[c, r].Style.BackColor = Theme.FlashHighlight;
+            }
+            grid.Refresh();
+
+            _flashTimer = new System.Windows.Forms.Timer { Interval = 500 };
+            _flashTimer.Tick += (_, __) =>
+            {
+                _flashTimer?.Stop();
+                if (_flashCells != null)
+                {
+                    foreach (var (r, c) in _flashCells)
+                    {
+                        if (r < 0 || r >= grid.RowCount || c < 0 || c >= grid.ColumnCount) continue;
+                        // Restore to user-formatted color or default white
+                        var fmt = _sheet.GetFormat(r, c);
+                        grid[c, r].Style.BackColor = (fmt?.BackColorArgb != null)
+                            ? Color.FromArgb(fmt.BackColorArgb.Value)
+                            : Color.White;
+                    }
+                    _flashCells = null;
+                    grid.Refresh();
+                }
+                _flashTimer?.Dispose();
+                _flashTimer = null;
+            };
+            _flashTimer.Start();
         }
 
         private void RefreshGridDisplays()
@@ -1645,18 +1692,29 @@ namespace SpreadsheetApp.UI
             _aiGhostPanel = new Panel
             {
                 Visible = false,
-                BackColor = System.Drawing.Color.FromArgb(16, 0, 128, 255),
-                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
+                BorderStyle = BorderStyle.None,
                 Height = 120,
                 Width = 240
             };
-            _aiGhostStatus = new Label { Dock = DockStyle.Top, Height = 18, ForeColor = System.Drawing.Color.Gray, Text = string.Empty };
-            _aiGhostApplyBtn = new Button { Text = "Apply", Dock = DockStyle.Bottom, Height = 22 };
-            _aiGhostDismissBtn = new Button { Text = "Dismiss", Dock = DockStyle.Bottom, Height = 22 };
+            // Subtle border via Paint
+            _aiGhostPanel.Paint += (s, pe) =>
+            {
+                using var pen = new Pen(Theme.PanelBorder);
+                pe.Graphics.DrawRectangle(pen, 0, 0, _aiGhostPanel!.Width - 1, _aiGhostPanel.Height - 1);
+            };
+            _aiGhostStatus = new Label { Dock = DockStyle.Top, Height = 18, ForeColor = Theme.TextMuted, Font = Theme.MonoSmall, Text = string.Empty };
+            _aiGhostApplyBtn = new Button { Text = "Apply", Dock = DockStyle.Bottom, Height = 24 };
+            _aiGhostDismissBtn = new Button { Text = "Dismiss", Dock = DockStyle.Bottom, Height = 24 };
+            Theme.StylePrimary(_aiGhostApplyBtn);
+            Theme.StyleGhost(_aiGhostDismissBtn);
             _aiGhostList = new ListBox
             {
                 Dock = DockStyle.Fill,
-                ForeColor = System.Drawing.Color.Gray
+                ForeColor = Theme.TextSecondary,
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
+                BorderStyle = BorderStyle.None,
+                Font = Theme.UI
             };
             _aiGhostPanel.Controls.Add(_aiGhostList);
             _aiGhostPanel.Controls.Add(_aiGhostApplyBtn);
@@ -3191,6 +3249,8 @@ namespace SpreadsheetApp.UI
                 _undo.RecordComposite(be, sheetAddArg);
                 try { RefreshDirtyOrFull(affected); } catch { }
                 try { UpdateAiMenuItemsState(); } catch { }
+                // Flash affected cells yellow briefly
+                try { FlashAffectedCells(affected); } catch { }
             }
 
             // Post-apply error feedback loop: prompt to fix cells that evaluated to errors
@@ -3720,6 +3780,31 @@ namespace SpreadsheetApp.UI
             {
                 _suppressTabChange = false;
             }
+        }
+
+        private void Tabs_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            var tabCtrl = sender as TabControl;
+            if (tabCtrl == null || e.Index < 0 || e.Index >= tabCtrl.TabCount) return;
+            var page = tabCtrl.TabPages[e.Index];
+            bool selected = (e.Index == tabCtrl.SelectedIndex);
+            var bounds = tabCtrl.GetTabRect(e.Index);
+
+            // Background
+            using var bgBrush = new SolidBrush(selected ? Theme.PanelBg : Theme.SurfaceMuted);
+            e.Graphics.FillRectangle(bgBrush, bounds);
+
+            // Accent underline for selected tab
+            if (selected)
+            {
+                using var accentPen = new Pen(Theme.Primary, 2f);
+                e.Graphics.DrawLine(accentPen, bounds.Left + 2, bounds.Bottom - 1, bounds.Right - 2, bounds.Bottom - 1);
+            }
+
+            // Text
+            var textColor = selected ? Theme.TextPrimary : Theme.TextSecondary;
+            TextRenderer.DrawText(e.Graphics, page.Text, Theme.UI, bounds, textColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
 
         private void Tabs_SelectedIndexChanged(object? sender, EventArgs e)

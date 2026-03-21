@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SpreadsheetApp.Core.AI;
+using SpreadsheetApp.UI;
 
 namespace SpreadsheetApp.UI.AI
 {
@@ -16,16 +17,16 @@ namespace SpreadsheetApp.UI.AI
         private readonly Action<AIPlan> _applyPlan;
         private readonly SpreadsheetApp.Core.AI.ChatSession _session;
 
-        private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60 };
-        private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 28 };
-        private readonly CheckBox _chkAgent = new() { Text = "Use Agent Loop (MVP)", Dock = DockStyle.Top, Height = 20 };
-        private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 24 };
+        private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
+        private readonly Button _btnPlan = new() { Text = "Plan", Dock = DockStyle.Top, Height = 32 };
+        private readonly CheckBox _chkAgent = new() { Text = "Let AI explore first", Dock = DockStyle.Top, Height = 20 };
+        private readonly Button _btnRevise = new() { Text = "Revise", Dock = DockStyle.Top, Height = 28 };
         private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
         private readonly Button _btnReset = new() { Text = "Reset History", Dock = DockStyle.Top, Height = 24 };
-        private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray, Visible = false };
-        private readonly ListBox _lst = new() { Dock = DockStyle.Fill };
-        private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 28, Enabled = false };
-        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 56, ReadOnly = true, BackColor = SystemColors.Info, Font = new Font("Consolas", 8.5f) };
+        private readonly Label _lblStatus = new() { Dock = DockStyle.Top, Height = 18, Text = string.Empty, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Primary, Visible = false };
+        private readonly RichTextBox _logBox = new() { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Theme.LogBg, ForeColor = Theme.LogFg, WordWrap = true };
+        private readonly Button _btnApply = new() { Text = "Apply", Dock = DockStyle.Bottom, Height = 32, Enabled = false };
+        private readonly TextBox _policy = new() { Dock = DockStyle.Top, Multiline = true, Height = 48, ReadOnly = true, BorderStyle = BorderStyle.None };
         private readonly CheckBox _chkHardMode = new() { Text = "Selection hard mode (no out-of-bounds writes)", Dock = DockStyle.Top, Height = 20 };
         private readonly ComboBox _inputPolicy = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, Height = 22 };
 
@@ -42,22 +43,63 @@ namespace SpreadsheetApp.UI.AI
             _runAgentLoop = runAgentLoop;
 
             Dock = DockStyle.Fill;
-            Padding = new Padding(6);
-            BackColor = Color.White;
+            Padding = new Padding(8);
+            BackColor = Theme.PanelBg;
 
+            // ── Apply theme styles to buttons ─────────────────────
+            Theme.StylePrimary(_btnPlan);
+            Theme.StyleSuccess(_btnApply);
+            Theme.StyleSecondary(_btnRevise);
+            Theme.StyleGhost(_btnCopyObs);
+            Theme.StyleDanger(_btnReset);
+
+            // ── Style log box ─────────────────────────────────────
+            _logBox.Font = Theme.MonoSmall;
+
+            // ── Style policy preview ──────────────────────────────
+            _policy.BackColor = Theme.SurfaceMuted;
+            _policy.ForeColor = Theme.TextSecondary;
+            _policy.Font = Theme.MonoSmall;
+
+            // ── Style input ───────────────────────────────────────
+            _input.Font = Theme.UI;
+
+            // ── Style checkboxes ──────────────────────────────────
+            _chkAgent.Font = Theme.UI;
+            _chkAgent.ForeColor = Theme.TextSecondary;
+            _chkHardMode.Font = Theme.UI;
+            _chkHardMode.ForeColor = Theme.TextSecondary;
+
+            // ── Style combo ───────────────────────────────────────
+            _inputPolicy.Font = Theme.UI;
+            _inputPolicy.FlatStyle = FlatStyle.Flat;
+
+            // ── Status label ──────────────────────────────────────
+            _lblStatus.Font = Theme.UISemiBold;
+
+            // ── Spacers ───────────────────────────────────────────
+            var spacer1 = new Label { Dock = DockStyle.Top, Height = 6, BackColor = Color.Transparent };
+            var spacer2 = new Label { Dock = DockStyle.Top, Height = 4, BackColor = Color.Transparent };
+            var policySep = new Label { Dock = DockStyle.Top, Height = 1, BackColor = Theme.PanelBorder };
+
+            // ── Layout ────────────────────────────────────────────
+            // Added last-to-first for Top dock (last added = topmost)
             var container = new Panel { Dock = DockStyle.Fill };
-            container.Controls.Add(_lst);
-            container.Controls.Add(_btnApply);
-            container.Controls.Add(_btnPlan);
-            container.Controls.Add(_btnRevise);
-            container.Controls.Add(_btnCopyObs);
-            container.Controls.Add(_chkAgent);
-            container.Controls.Add(_lblStatus);
-            container.Controls.Add(_btnReset);
-            container.Controls.Add(_policy);
-            container.Controls.Add(_chkHardMode);
-            container.Controls.Add(_inputPolicy);
-            container.Controls.Add(_input);
+            container.Controls.Add(_logBox);         // Fill — center
+            container.Controls.Add(_btnApply);       // Bottom
+            container.Controls.Add(_btnPlan);        // Top
+            container.Controls.Add(spacer1);         // Top — gap before Plan
+            container.Controls.Add(_btnRevise);      // Top
+            container.Controls.Add(_btnCopyObs);     // Top
+            container.Controls.Add(_chkAgent);       // Top
+            container.Controls.Add(_lblStatus);      // Top
+            container.Controls.Add(spacer2);         // Top — gap before action buttons
+            container.Controls.Add(_btnReset);       // Top
+            container.Controls.Add(policySep);       // Top — 1px line under policy
+            container.Controls.Add(_policy);         // Top
+            container.Controls.Add(_chkHardMode);    // Top
+            container.Controls.Add(_inputPolicy);    // Top
+            container.Controls.Add(_input);          // Top — topmost
             Controls.Add(container);
 
             _btnPlan.Click += async (_, __) => await DoPlanAsync();
@@ -81,7 +123,7 @@ namespace SpreadsheetApp.UI.AI
                 }
                 catch { }
             };
-            _btnReset.Click += (_, __) => { _session.Clear(); _lst.Items.Add("History cleared."); };
+            _btnReset.Click += (_, __) => { _session.Clear(); LogAppend("History cleared.", Theme.LogInfo); };
             _btnApply.Click += (_, __) =>
             {
                 if (_currentPlan != null)
@@ -90,11 +132,11 @@ namespace SpreadsheetApp.UI.AI
                     {
                         _applyPlan(_currentPlan);
                         var summary = string.Join("; ", _currentPlan.Commands.Select(c => c.Summarize()));
-                        _lst.Items.Add($"Applied: {summary}");
+                        LogAppend($"Applied: {summary}", Theme.LogSuccess);
                     }
                     catch (Exception ex)
                     {
-                        _lst.Items.Add($"Apply error: {ex.Message}");
+                        LogAppend($"Apply error: {ex.Message}", Theme.LogError);
                     }
                     finally
                     {
@@ -126,6 +168,24 @@ namespace SpreadsheetApp.UI.AI
             if (autoPlan) _ = DoPlanAsync();
         }
 
+        // ── Colored log helpers ──────────────────────────────────
+
+        private void LogAppend(string text, Color color)
+        {
+            if (IsDisposed || _logBox.IsDisposed) return;
+            _logBox.SelectionStart = _logBox.TextLength;
+            _logBox.SelectionLength = 0;
+            _logBox.SelectionColor = color;
+            _logBox.AppendText(text + "\n");
+            _logBox.ScrollToCaret();
+        }
+
+        private void LogClear()
+        {
+            if (IsDisposed || _logBox.IsDisposed) return;
+            _logBox.Clear();
+        }
+
         public void FocusInput()
         {
             try { _input.Focus(); } catch { }
@@ -145,8 +205,8 @@ namespace SpreadsheetApp.UI.AI
         private async Task DoPlanAsync()
         {
             _btnPlan.Enabled = false; _btnApply.Enabled = false; _currentPlan = null;
-            _lblStatus.Text = "Thinking..."; _lblStatus.Visible = true;
-            int planningMarkerIndex = _lst.Items.Add("Planning...");
+            _lblStatus.Text = "Thinking\u2026"; _lblStatus.Visible = true;
+            LogAppend("Planning\u2026", Theme.LogInfo);
             try
             {
                 int timeoutSec = 30;
@@ -172,30 +232,30 @@ namespace SpreadsheetApp.UI.AI
                     plan = await _planner.PlanAsync(ctx, _input.Text ?? string.Empty, cts.Token).ConfigureAwait(true);
                 }
                 _currentPlan = plan;
-                _lst.Items.Clear();
+                LogClear();
                 _lastTranscript = transcript;
                 if (useAgent && transcript.Length > 0)
                 {
-                    _lst.Items.Add("Observations:");
-                    foreach (var line in transcript) _lst.Items.Add("  " + line);
-                    _lst.Items.Add("Plan:");
+                    LogAppend("── Observations ──", Theme.LogObservation);
+                    foreach (var line in transcript) LogAppend("  " + line, Theme.LogObservation);
+                    LogAppend("── Plan ──", Theme.LogCommand);
                 }
                 if (plan.Commands.Count == 0)
                 {
-                    _lst.Items.Add("No changes suggested.");
+                    LogAppend("No changes suggested.", Theme.LogInfo);
                 }
                 else
                 {
                     foreach (var cmd in plan.Commands)
                     {
-                        _lst.Items.Add(cmd.Summarize());
+                        LogAppend(cmd.Summarize(), Theme.LogCommand);
                         string? rationale = TryGetRationale(cmd);
-                        if (!string.IsNullOrWhiteSpace(rationale)) _lst.Items.Add("  reason: " + rationale);
+                        if (!string.IsNullOrWhiteSpace(rationale)) LogAppend("  \u2192 " + rationale, Theme.LogRationale);
                     }
                     int writeCount = 0;
                     writeCount += plan.Commands.OfType<SetValuesCommand>().Sum(c => c.Values.Length * (c.Values.Length > 0 ? c.Values[0].Length : 0));
                     writeCount += plan.Commands.OfType<SetFormulaCommand>().Sum(c => c.Formulas.Length * (c.Formulas.Length > 0 ? c.Formulas[0].Length : 0));
-                    _lst.Items.Add($"Total writes: {writeCount}");
+                    LogAppend($"Total writes: {writeCount}", Theme.LogInfo);
                     _btnApply.Enabled = true;
                 }
                 // Update conversation history (keep last 10 entries)
@@ -205,11 +265,11 @@ namespace SpreadsheetApp.UI.AI
             }
             catch (OperationCanceledException)
             {
-                _lst.Items.Add("Planning canceled or timed out.");
+                LogAppend("Planning canceled or timed out.", Theme.LogError);
             }
             catch (Exception ex)
             {
-                _lst.Items.Add($"Error: {ex.Message}");
+                LogAppend($"Error: {ex.Message}", Theme.LogError);
             }
             finally
             {

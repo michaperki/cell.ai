@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms;
 using SpreadsheetApp.Core;
+using SpreadsheetApp.UI;
 
 namespace SpreadsheetApp.UI.AI
 {
@@ -8,10 +9,7 @@ namespace SpreadsheetApp.UI.AI
     {
         private readonly CheckBox _chkEnableAi = new() { Text = "Enable AI features", AutoSize = true };
         private readonly ComboBox _cmbProvider = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-        private readonly TextBox _tbUrl = new() { Width = 240 };
-        private readonly TextBox _tbKey = new() { Width = 240, UseSystemPasswordChar = true };
-        private readonly CheckBox _chkClearKey = new() { Text = "Clear stored key", AutoSize = true };
-        private readonly Label _lblKeyHint = new() { AutoSize = true, ForeColor = System.Drawing.Color.Gray };
+        private readonly Label _lblKeyHint = new() { AutoSize = true, ForeColor = Theme.TextMuted };
         private readonly Button _btnTest = new() { Text = "Test Connection" };
         private readonly Button _btnOK = new() { Text = "OK", DialogResult = DialogResult.OK };
         private readonly Button _btnCancel = new() { Text = "Cancel", DialogResult = DialogResult.Cancel };
@@ -26,8 +24,16 @@ namespace SpreadsheetApp.UI.AI
             FormBorderStyle = FormBorderStyle.FixedDialog;
             ClientSize = new System.Drawing.Size(420, 220);
             MinimizeBox = false; MaximizeBox = false;
+            BackColor = System.Drawing.Color.White;
+            Font = Theme.UI;
 
-            var lblProvider = new Label { Text = "Provider:", AutoSize = true, Left = 20, Top = 60 };
+            Theme.StyleSecondary(_btnTest);
+            Theme.StylePrimary(_btnOK);
+            Theme.StyleGhost(_btnCancel);
+
+            _chkEnableAi.ForeColor = Theme.TextPrimary;
+
+            var lblProvider = new Label { Text = "Provider:", AutoSize = true, Left = 20, Top = 60, ForeColor = Theme.TextPrimary };
             _chkEnableAi.Left = 20; _chkEnableAi.Top = 20;
             _cmbProvider.Left = 120; _cmbProvider.Top = 56;
             _cmbProvider.Items.AddRange(new object[] { "Auto (env)", "OpenAI", "Anthropic", "Mock (local)", "External API" });

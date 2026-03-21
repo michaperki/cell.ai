@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SpreadsheetApp.Core.AI;
+using SpreadsheetApp.UI;
 
 namespace SpreadsheetApp.UI.AI
 {
@@ -30,6 +31,13 @@ namespace SpreadsheetApp.UI.AI
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false; MaximizeBox = false;
             Width = 640; Height = 480;
+            BackColor = System.Drawing.Color.White;
+            Font = Theme.UI;
+
+            Theme.StyleSecondary(_btnPreview);
+            Theme.StylePrimary(_btnAccept);
+            Theme.StyleGhost(_btnCancel);
+            Theme.StyleGrid(_preview);
 
             var pnlTop = new TableLayoutPanel { Dock = DockStyle.Top, Height = 120, ColumnCount = 6, RowCount = 2, AutoSize = false };
             pnlTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -39,13 +47,13 @@ namespace SpreadsheetApp.UI.AI
             pnlTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             pnlTop.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            var lblPrompt = new Label { Text = "Prompt:", AutoSize = true, Anchor = AnchorStyles.Left };
-            var lblRows = new Label { Text = "Rows:", AutoSize = true, Anchor = AnchorStyles.Right };
-            var lblCols = new Label { Text = "Cols:", AutoSize = true, Anchor = AnchorStyles.Right };
+            var lblPrompt = new Label { Text = "Prompt:", AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Theme.TextPrimary };
+            var lblRows = new Label { Text = "Rows:", AutoSize = true, Anchor = AnchorStyles.Right, ForeColor = Theme.TextPrimary };
+            var lblCols = new Label { Text = "Cols:", AutoSize = true, Anchor = AnchorStyles.Right, ForeColor = Theme.TextPrimary };
 
             pnlTop.Controls.Add(lblPrompt, 0, 0);
-            pnlTop.SetColumnSpan(_txtPrompt, 5);
             pnlTop.Controls.Add(_txtPrompt, 1, 0);
+            pnlTop.SetColumnSpan(_txtPrompt, 5);
             pnlTop.Controls.Add(lblRows, 2, 1);
             pnlTop.Controls.Add(_numRows, 3, 1);
             pnlTop.Controls.Add(lblCols, 4, 1);

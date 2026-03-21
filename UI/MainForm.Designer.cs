@@ -107,6 +107,9 @@ namespace SpreadsheetApp.UI
             menuStrip1.Size = new System.Drawing.Size(1000, 24);
             menuStrip1.TabIndex = 0;
             menuStrip1.Text = "menuStrip1";
+            menuStrip1.BackColor = Theme.SurfaceMuted;
+            menuStrip1.ForeColor = Theme.TextPrimary;
+            menuStrip1.Renderer = new FlatToolStripRenderer();
 
             // fileToolStripMenuItem
             fileToolStripMenuItem.Name = "fileToolStripMenuItem";
@@ -338,39 +341,49 @@ namespace SpreadsheetApp.UI
             removeSheetToolStripMenuItem.Text = "Remove Sheet";
             removeSheetToolStripMenuItem.Click += (_, __) => RemoveSheet();
 
-            // tabs
+            // tabs — owner-draw flat style
             tabs.Dock = DockStyle.Top;
-            tabs.Height = 26;
+            tabs.Height = 28;
+            tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+            tabs.ItemSize = new Size(80, 24);
+            tabs.SizeMode = TabSizeMode.Normal;
+            tabs.DrawItem += Tabs_DrawItem;
             tabs.SelectedIndexChanged += Tabs_SelectedIndexChanged;
 
             // Formula bar
             _formulaBarPanel = new Panel();
             _formulaBarPanel.Dock = DockStyle.Top;
-            _formulaBarPanel.Height = 26;
-            _formulaBarPanel.BackColor = Color.FromArgb(240, 240, 240);
-            _formulaBarPanel.Padding = new Padding(0);
+            _formulaBarPanel.Height = 32;
+            _formulaBarPanel.BackColor = Theme.SurfaceMuted;
+            _formulaBarPanel.Padding = new Padding(2, 3, 2, 0);
 
             _cellNameBox = new TextBox();
             _cellNameBox.Dock = DockStyle.Left;
-            _cellNameBox.Width = 60;
-            _cellNameBox.Font = new Font("Segoe UI", 9F);
+            _cellNameBox.Width = 80;
+            _cellNameBox.Font = Theme.UISemiBold;
             _cellNameBox.TextAlign = HorizontalAlignment.Center;
             _cellNameBox.BorderStyle = BorderStyle.FixedSingle;
 
             var formulaSep = new Label();
             formulaSep.Dock = DockStyle.Left;
             formulaSep.Width = 1;
-            formulaSep.BackColor = Color.FromArgb(200, 200, 200);
+            formulaSep.BackColor = Theme.PanelBorder;
 
             _formulaBar = new TextBox();
             _formulaBar.Dock = DockStyle.Fill;
-            _formulaBar.Font = new Font("Segoe UI", 9F);
-            _formulaBar.BackColor = Color.White;
+            _formulaBar.Font = Theme.UI;
+            _formulaBar.BackColor = Theme.InputBg;
             _formulaBar.BorderStyle = BorderStyle.FixedSingle;
 
-            _formulaBarPanel.Controls.Add(_formulaBar);     // Fill — added first
-            _formulaBarPanel.Controls.Add(formulaSep);      // Left
-            _formulaBarPanel.Controls.Add(_cellNameBox);    // Left
+            var formulaBarBottom = new Label();
+            formulaBarBottom.Dock = DockStyle.Bottom;
+            formulaBarBottom.Height = 1;
+            formulaBarBottom.BackColor = Theme.PanelBorder;
+
+            _formulaBarPanel.Controls.Add(_formulaBar);       // Fill — added first
+            _formulaBarPanel.Controls.Add(formulaSep);        // Left
+            _formulaBarPanel.Controls.Add(_cellNameBox);      // Left
+            _formulaBarPanel.Controls.Add(formulaBarBottom);  // Bottom border
 
             // grid
             grid.Dock = DockStyle.Fill;
@@ -387,38 +400,9 @@ namespace SpreadsheetApp.UI
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
             grid.AllowUserToResizeColumns = true;
 
-            // Modern flat styling
-            grid.BorderStyle = BorderStyle.None;
-            grid.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-            grid.GridColor = Color.FromArgb(228, 228, 228);
-            grid.BackgroundColor = Color.White;
-
-            // Default cell style
-            grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F);
-            grid.DefaultCellStyle.BackColor = Color.White;
-            grid.DefaultCellStyle.ForeColor = Color.FromArgb(30, 30, 30);
-            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(200, 220, 240);
-            grid.DefaultCellStyle.SelectionForeColor = Color.FromArgb(30, 30, 30);
-            grid.DefaultCellStyle.Padding = new Padding(2, 0, 2, 0);
-
-            // Flat column headers
-            grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(60, 60, 60);
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F);
-            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(240, 240, 240);
-            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(60, 60, 60);
-            grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-            grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+            // Modern flat styling (centralized in Theme)
+            Theme.StyleGrid(grid);
             grid.ColumnHeadersHeight = 28;
-
-            // Flat row headers
-            grid.RowHeadersDefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240);
-            grid.RowHeadersDefaultCellStyle.ForeColor = Color.FromArgb(60, 60, 60);
-            grid.RowHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F);
-            grid.RowHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(240, 240, 240);
-            grid.RowHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(60, 60, 60);
-            grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
 
             grid.CellBeginEdit += Grid_CellBeginEdit;
             grid.CellEndEdit += Grid_CellEndEdit;
@@ -435,9 +419,11 @@ namespace SpreadsheetApp.UI
             statusStrip1.Dock = DockStyle.Bottom;
             statusStrip1.Name = "statusStrip1";
             statusStrip1.SizingGrip = false;
-            statusCell = new ToolStripStatusLabel { Name = "statusCell", Text = "Cell: -" };
-            statusRaw = new ToolStripStatusLabel { Name = "statusRaw", Text = "Raw: " };
-            statusValue = new ToolStripStatusLabel { Name = "statusValue", Text = "Value: ", Spring = true, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
+            statusStrip1.BackColor = Theme.SurfaceMuted;
+            statusStrip1.Renderer = new FlatToolStripRenderer();
+            statusCell = new ToolStripStatusLabel { Name = "statusCell", Text = "Cell: -", Font = Theme.UISemiBold, ForeColor = Theme.TextPrimary };
+            statusRaw = new ToolStripStatusLabel { Name = "statusRaw", Text = "Raw: ", Font = Theme.UI, ForeColor = Theme.TextSecondary };
+            statusValue = new ToolStripStatusLabel { Name = "statusValue", Text = "Value: ", Spring = true, TextAlign = System.Drawing.ContentAlignment.MiddleLeft, Font = Theme.UI, ForeColor = Theme.TextSecondary };
             statusStrip1.Items.AddRange(new ToolStripItem[] { statusCell, statusRaw, statusValue });
 
             // MainForm

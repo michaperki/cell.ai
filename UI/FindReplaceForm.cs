@@ -49,17 +49,24 @@ namespace SpreadsheetApp.UI
             MinimizeBox = false;
             MaximizeBox = false;
             ClientSize = new Size(420, 160);
+            BackColor = Color.White;
+            Font = Theme.UI;
 
-            var lblFind = new Label { Text = "Find:", AutoSize = true, Location = new Point(12, 16) };
-            _findBox = new TextBox { Location = new Point(80, 12), Width = 320 };
-            var lblReplace = new Label { Text = "Replace:", AutoSize = true, Location = new Point(12, 48) };
-            _replaceBox = new TextBox { Location = new Point(80, 44), Width = 320 };
-            _matchCase = new CheckBox { Text = "Match case", AutoSize = true, Location = new Point(80, 76) };
+            var lblFind = new Label { Text = "Find:", AutoSize = true, Location = new Point(12, 16), ForeColor = Theme.TextPrimary };
+            _findBox = new TextBox { Location = new Point(80, 12), Width = 320, BorderStyle = BorderStyle.FixedSingle };
+            var lblReplace = new Label { Text = "Replace:", AutoSize = true, Location = new Point(12, 48), ForeColor = Theme.TextPrimary };
+            _replaceBox = new TextBox { Location = new Point(80, 44), Width = 320, BorderStyle = BorderStyle.FixedSingle };
+            _matchCase = new CheckBox { Text = "Match case", AutoSize = true, Location = new Point(80, 76), ForeColor = Theme.TextSecondary };
 
             _btnFindNext = new Button { Text = "Find Next", Location = new Point(12, 110), Size = new Size(90, 28) };
             _btnReplace = new Button { Text = "Replace", Location = new Point(108, 110), Size = new Size(90, 28) };
             _btnReplaceAll = new Button { Text = "Replace All", Location = new Point(204, 110), Size = new Size(90, 28) };
             _btnClose = new Button { Text = "Close", Location = new Point(310, 110), Size = new Size(90, 28) };
+
+            Theme.StylePrimary(_btnFindNext);
+            Theme.StyleSecondary(_btnReplace);
+            Theme.StyleSecondary(_btnReplaceAll);
+            Theme.StyleGhost(_btnClose);
 
             _btnFindNext.Click += (s, e) => FindNextClicked?.Invoke(this, EventArgs.Empty);
             _btnReplace.Click += (s, e) => ReplaceClicked?.Invoke(this, EventArgs.Empty);

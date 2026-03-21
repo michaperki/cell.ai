@@ -97,6 +97,43 @@ Notes
 - Multi-sheet: Implemented UI first, deferred workbook-level Save/Open for a dedicated pass (tracked in BACKLOG).
 - Async I/O: Added API first, UI adoption next (busy cursor/disable menus while loading).
 
+## UI Polish Pass (2026‑03‑21)
+
+Full visual overhaul driven by two independent design reviews (GPT + Claude). Accent color: `#2563EB` blue.
+
+### New: `UI/Theme.cs`
+- Centralized static class with all color, font, and button-styling constants.
+- Helpers: `StylePrimary`, `StyleSuccess`, `StyleSecondary`, `StyleDanger`, `StyleGhost` apply consistent flat button styles.
+- `StyleGrid(DataGridView)` replaces 30+ lines of inline grid styling with one call.
+- `FlatToolStripRenderer` + custom `ProfessionalColorTable` removes gradients from menus and toolbars.
+
+### Chat Panel (`ChatAssistantPanel.cs`)
+- **Button hierarchy:** Plan = filled blue primary, Apply = filled green, Revise = outlined blue, Copy Observations = ghost, Reset History = outlined red.
+- **Log area:** ListBox → RichTextBox with dark terminal background (`#1E1E1E`). Log entries are color-coded: commands in white, rationales in gray, errors in red, "Applied" in green, observations in cyan.
+- **Policy preview:** Changed from yellow `SystemColors.Info` to subtle gray `#F5F5F5` with muted text.
+- **Label rename:** "Use Agent Loop (MVP)" → "Let AI explore first."
+- Added spacer labels between control groups for visual breathing room.
+
+### MainForm
+- **Formula bar:** Height 26→32px, name box 60→80px, added 1px bottom border separator, semibold font on cell address.
+- **Grid:** Inline styling replaced with `Theme.StyleGrid(grid)`.
+- **Menu strip + status bar:** Flat renderer, themed background (`#F5F5F5`), semibold cell label, muted secondary labels.
+- **Sheet tabs:** Owner-drawn flat tabs — white active tab with blue accent underline, muted gray inactive tabs.
+- **Chat border:** 1px left border on chat dock host panel, splitter width 4→3px with themed color.
+- **AI write flash:** After `ApplyPlan()`, affected cells flash pale yellow (`#FFFFCC`) for 500ms, then restore to their original/formatted background.
+- **Ghost popup:** Styled Apply (primary blue) and Dismiss (ghost) buttons; cleaner background and border via Paint handler.
+
+### Secondary Dialogs
+- **FindReplaceForm:** White background, themed buttons (Find Next = primary, Replace / Replace All = secondary, Close = ghost), consistent font.
+- **SettingsDialog:** White background, themed buttons (OK = primary, Test = secondary, Cancel = ghost), removed dead fields (`_tbUrl`, `_tbKey`, `_chkClearKey`).
+- **GenerateFillDialog:** White background, themed buttons, preview DataGridView styled via `Theme.StyleGrid()`, fixed pre-existing `SetColumnSpan` ordering bug.
+
+### Design Decisions
+- All colors centralized in `Theme.cs` to enable future dark mode without scattershot edits.
+- RichTextBox for the chat log enables per-line coloring without owner-draw complexity.
+- AI write flash uses a single-shot `System.Windows.Forms.Timer` (500ms) — lightweight, no background threads.
+- Owner-drawn tabs use `TextRenderer.DrawText` for subpixel-accurate rendering with theme fonts.
+
 ## Next Steps (linked to BACKLOG)
 - Incremental repaint after `_sheet.RecalculateDirty(...)` with AST-driven reference collection.
 - Workbook Save/Open supporting multiple named sheets in one file; maintain backward compatibility with single-sheet JSON.
