@@ -1,0 +1,17 @@
+{
+  "table_creation": ["01", "06", "35", "41"],
+  "table_extension": ["16", "17", "35", "41"],
+  "transformation": ["29", "31", "32", "37"],
+  "qa_over_sheet": ["30", "33", "36", "40"],
+  "multi_turn_continuity": ["06", "16", "17", "41"],
+  "destination_selection": ["07", "14", "15", "35", "40"],
+  "safe_write_judgment": ["18", "34", "42"],
+  "structural_operations": ["03", "23", "24", "25", "42"],
+  "formula_intelligence": ["02", "19", "22", "38", "40"],
+  "data_cleaning": ["29", "32", "37"],
+  "classification_enrichment": ["16", "21"],
+  "ambiguity_handling": ["39"],
+  "preview_quality": ["35", "36"],
+  "boundary_stress": ["43"],
+  "analyst_reasoning": ["40", "44"]
+}

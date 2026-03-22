@@ -204,9 +204,10 @@ namespace SpreadsheetApp.Core.AI
                     _ => new ChatCallResult { Content = string.Empty, Provider = provider }
                 };
             }
-            catch
+            catch (Exception ex)
             {
                 // Network/provider failed — gracefully fall back to mock planner
+                try { Console.Error.WriteLine($"[ProviderChatPlanner] API call failed, falling back to mock: {ex.GetType().Name}: {ex.Message}"); } catch { }
                 try
                 {
                     var mockPlan = new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
@@ -291,8 +292,9 @@ namespace SpreadsheetApp.Core.AI
                             _ => new ChatCallResult { Content = string.Empty, Provider = provider }
                         };
                     }
-                    catch
+                    catch (Exception ex2)
                     {
+                        try { Console.Error.WriteLine($"[ProviderChatPlanner] Revision API call failed, falling back to mock: {ex2.GetType().Name}: {ex2.Message}"); } catch { }
                         try
                         {
                             var fallback = new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
@@ -354,14 +356,26 @@ namespace SpreadsheetApp.Core.AI
                 }
                 return plan;
             }
-            catch
+            catch (Exception exParse)
             {
+                try { Console.Error.WriteLine($"[ProviderChatPlanner] Post-API parse/validation failed: {exParse.GetType().Name}: {exParse.Message}"); } catch { }
                 // Try to extract JSON substring if model wrapped it
                 int i1 = json.IndexOf('{');
                 int i2 = json.LastIndexOf('}');
                 if (i1 >= 0 && i2 > i1)
                 {
-                    try { var s = json.Substring(i1, i2 - i1 + 1); var doc = JsonDocument.Parse(s); var plan = ParsePlan(doc); plan.RawJson = s; plan.RawUser = usr; plan.RawSystem = sys; return plan; }
+                    try {
+                        var s = json.Substring(i1, i2 - i1 + 1);
+                        var doc = JsonDocument.Parse(s);
+                        var plan = ParsePlan(doc);
+                        plan.RawJson = s; plan.RawUser = usr; plan.RawSystem = sys;
+                        // Preserve provider metadata from the successful API call
+                        plan.Provider = string.IsNullOrWhiteSpace(call.Provider) ? provider : call.Provider;
+                        plan.Model = call.Model;
+                        plan.Usage = call.Usage;
+                        plan.LatencyMs = call.LatencyMs;
+                        return plan;
+                    }
                     catch { }
                 }
                 // If parsing fails, return empty plan

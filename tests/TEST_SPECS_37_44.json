@@ -1,0 +1,210 @@
+{
+  "tests": [
+    {
+      "file": "test_37_data_cleaning_mixed.workbook.json",
+      "description": "Clean inconsistent contact data: normalize names to Title Case, standardize phone format, lowercase emails. Tests real data cleaning ability.",
+      "steps": [
+        {
+          "action": "ai_chat",
+          "prompt": "Clean up the Name column: trim whitespace, fix inconsistent casing to proper Title Case (e.g. 'JOHN SMITH' -> 'John Smith', 'jane doe' -> 'Jane Doe'). Only modify column A. Use set_values only.",
+          "location": "A2:A8",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 5,
+          "ExpectedCells": {
+            "A2": "John Smith",
+            "A3": "Jane Doe",
+            "A4": "Bob Johnson",
+            "A5": "Alice Williams",
+            "A7": "Diana Prince",
+            "A8": "Edward Norton"
+          }
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Now lowercase all email addresses in column C. Only modify column C. Use set_values only.",
+          "location": "C2:C8",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 3,
+          "ExpectedCells": {
+            "C2": "john.smith@gmail.com",
+            "C4": "bob_j@outlook.com",
+            "C6": "charlie.brown@gmail.com",
+            "C8": "edward@norton.net"
+          }
+        }
+      ]
+    },
+    {
+      "file": "test_38_formula_complex.workbook.json",
+      "description": "Add computed columns using formulas: annual total, best quarter, growth rate. Tests formula intelligence beyond basic SUM.",
+      "steps": [
+        {
+          "action": "ai_chat",
+          "prompt": "Add three new columns: F1='Annual Total' with SUM of Q1-Q4 for each product, G1='Best Quarter' showing the MAX quarterly value, H1='Growth %' showing the percentage change from Q1 to Q4 as a formula like =(E2-B2)/B2. Use set_values for headers and set_formula for the computed cells. Write headers in row 1 and formulas in rows 2-5.",
+          "location": "F1:H5",
+          "apply": true,
+          "AllowedCommands": ["set_values", "set_formula"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 10
+        }
+      ]
+    },
+    {
+      "file": "test_39_ambiguity_vague_prompt.workbook.json",
+      "description": "Vague prompt on messy data with duplicates, blanks, typos. Tests whether LLM can identify and fix real issues without being told exactly what to fix.",
+      "steps": [
+        {
+          "action": "ai_agent",
+          "prompt": "Look at this data and tell me what problems you see.",
+          "location": "A1:D9",
+          "apply": false,
+          "ExpectNoWrites": true,
+          "ExpectTranscript": true
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Fix the status column: normalize all values to lowercase ('active', 'inactive', 'pending'). Fix the typo 'actve' to 'active'. Only modify column C. Use set_values only.",
+          "location": "C2:C9",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 3,
+          "ExpectedCells": {
+            "C3": "active",
+            "C4": "inactive",
+            "C9": "active"
+          }
+        }
+      ]
+    },
+    {
+      "file": "test_40_analyst_reasoning.workbook.json",
+      "description": "Analyst-style questions about financial data. Tests reasoning without writes, then targeted formula addition.",
+      "steps": [
+        {
+          "action": "ai_agent",
+          "prompt": "Analyze this revenue data. Which month had the worst performance and why might that be? What is the overall trend?",
+          "location": "A1:D13",
+          "apply": false,
+          "ExpectNoWrites": true,
+          "ExpectTranscript": true
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Add a Profit column in E (E1='Profit') with formulas E2:E13 computing Revenue minus Expenses for each month. Then add a summary row: A14='Summary', B14=SUM of all revenue, C14=SUM of all expenses, E14=SUM of all profit. Use set_values for labels and set_formula for computed cells.",
+          "location": "E1:E14",
+          "apply": true,
+          "AllowedCommands": ["set_values", "set_formula"],
+          "MinChangesTotal": 10
+        }
+      ]
+    },
+    {
+      "file": "test_41_multi_turn_deep.workbook.json",
+      "description": "4-turn conversation building a complete inventory tracker from scratch. Tests context memory and incremental building.",
+      "steps": [
+        {
+          "action": "ai_chat",
+          "prompt": "Create an inventory table with headers: Item, SKU, Quantity, Unit Price, Total Value. Place headers in A1:E1. Add 4 sample items (use realistic office supply items). Use set_values only for everything including the Total Value column (compute the values yourself, don't use formulas).",
+          "location": "A1:E5",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 20
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Add a Reorder Level column in F with header 'Reorder Level'. Set reorder levels based on the items: items with quantity below 20 should have reorder level of 50, others should have reorder level of 25. Use set_values only.",
+          "location": "F1:F5",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 5
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Add 3 more items in rows 6-8 following the same pattern. Include the Reorder Level column too. Make sure the SKU format matches the existing pattern. Use set_values only. Do not modify existing rows.",
+          "location": "A6:F8",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 15
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Now add a summary section below the data. In A10 put 'Total Items:', B10 should have a COUNT formula for column A data rows. In A11 put 'Total Value:', B11 should have a SUM formula for column E data rows. In A12 put 'Avg Price:', B12 should have an AVERAGE formula for column D data rows. Use set_values for labels and set_formula for the computed cells.",
+          "location": "A10:B12",
+          "apply": true,
+          "AllowedCommands": ["set_values", "set_formula"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 6
+        }
+      ]
+    },
+    {
+      "file": "test_42_safe_write_protection.workbook.json",
+      "description": "Existing budget with formulas. Add new rows WITHOUT breaking existing formula references or overwriting the totals row.",
+      "steps": [
+        {
+          "action": "ai_chat",
+          "prompt": "Add two new budget categories: 'Entertainment' with budgeted=150 and actual=200, and 'Savings' with budgeted=500 and actual=500. Insert them as rows 7-8, pushing the current Totals row down to row 9. Update the Totals formulas in row 9 to include the new rows. Use insert_rows, set_values for the new data, and set_formula for the updated totals.",
+          "location": "A1:D9",
+          "apply": true,
+          "AllowedCommands": ["insert_rows", "set_values", "set_formula"],
+          "MinChangesTotal": 4
+        }
+      ]
+    },
+    {
+      "file": "test_43_boundary_stress.workbook.json",
+      "description": "Sparse data scattered across the sheet with orphan notes. Tests whether LLM can work with non-contiguous data without touching unrelated cells.",
+      "steps": [
+        {
+          "action": "ai_agent",
+          "prompt": "Observe the data in this sheet. Describe what you see including any isolated values.",
+          "location": "A1:J30",
+          "apply": false,
+          "ExpectNoWrites": true,
+          "ExpectTranscript": true
+        },
+        {
+          "action": "ai_chat",
+          "prompt": "Create a proper summary table in A1:C4 with headers Region, Value, Pct of Total. Fill in the three regions (North=100, South=200, East=150) with their values from column C, and calculate each region's percentage of the total (450) as a plain number rounded to 1 decimal. Use set_values only. Do NOT modify F30.",
+          "location": "A1:C4",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 9
+        }
+      ]
+    },
+    {
+      "file": "test_44_cross_sheet_reasoning.workbook.json",
+      "description": "Cross-sheet data aggregation: fill department summary from employee data. Tests ability to read one sheet and write computed results to another.",
+      "steps": [
+        {
+          "action": "ai_chat",
+          "sheet": "Departments",
+          "prompt": "Fill in the Departments summary table using data from the Employees sheet. For each department: B column = number of employees in that department, C column = average salary (rounded to nearest whole number), D column = total salary budget. Compute the values yourself from the Employees sheet data and use set_values only. Engineering has 3 employees (Alice 95k, Carol 98k, Eve 102k). Marketing has 2 (Bob 72k, Frank 75k). Sales has 2 (Dave 68k, Grace 71k).",
+          "location": "B2:D4",
+          "apply": true,
+          "AllowedCommands": ["set_values"],
+          "MaxChangesOutside": 0,
+          "MinChangesTotal": 9,
+          "ExpectedCells": {
+            "B2": "3",
+            "B3": "2",
+            "B4": "2",
+            "D2": "295000",
+            "D3": "147000",
+            "D4": "139000"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Sparse",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Region",
+        "E1": "Total",
+        "A5": "North",
+        "C5": "100",
+        "A12": "South",
+        "C12": "200",
+        "A20": "East",
+        "C20": "150",
+        "F30": "Orphan note: do not touch"
+      }
+    }
+  ]
+}

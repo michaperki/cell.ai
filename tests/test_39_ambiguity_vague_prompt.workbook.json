@@ -1,0 +1,48 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Messy",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "id",
+        "B1": "name",
+        "C1": "status",
+        "D1": "score",
+        "A2": "1",
+        "B2": "Alice",
+        "C2": "active",
+        "D2": "85",
+        "A3": "2",
+        "B3": "Bob",
+        "C3": "Active",
+        "D3": "92",
+        "A4": "3",
+        "B4": "carol",
+        "C4": "INACTIVE",
+        "D4": "45",
+        "A5": "4",
+        "B5": "Dave",
+        "C5": "active",
+        "D5": "78",
+        "A6": "4",
+        "B6": "Dave",
+        "C6": "active",
+        "D6": "78",
+        "A7": "5",
+        "B7": "Eve",
+        "C7": "pending",
+        "D7": "",
+        "A8": "6",
+        "B8": "",
+        "C8": "active",
+        "D8": "88",
+        "A9": "7",
+        "B9": "Grace",
+        "C9": "actve",
+        "D9": "91"
+      }
+    }
+  ]
+}

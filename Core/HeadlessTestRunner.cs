@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -139,6 +140,67 @@ namespace SpreadsheetApp.Core
                     }, new JsonSerializerOptions { WriteIndented = true }));
                 }
                 catch { }
+
+                // Append to run history (JSONL)
+                try
+                {
+                    // Collect failure keys from this run
+                    var failureKeys = new List<string>();
+                    foreach (var t in testSummaries)
+                    {
+                        try
+                        {
+                            if (!t.TryGetValue("steps", out var stepsObj) || stepsObj is not IEnumerable<object> stepsList) continue;
+                            foreach (var stepObj in stepsList)
+                            {
+                                if (stepObj is not Dictionary<string, object?> st) continue;
+                                if (st.TryGetValue("assert_failures", out var af) && af is IEnumerable<object> arr)
+                                    foreach (var x in arr) { var k = Convert.ToString(x); if (!string.IsNullOrWhiteSpace(k)) failureKeys.Add(k!); }
+                            }
+                        }
+                        catch { }
+                    }
+                    // Detect provider/model from first non-null step
+                    string? runProvider = null, runModel = null;
+                    foreach (var t in testSummaries)
+                    {
+                        try
+                        {
+                            if (!t.TryGetValue("steps", out var stepsObj) || stepsObj is not IEnumerable<object> stepsList) continue;
+                            foreach (var stepObj in stepsList)
+                            {
+                                if (stepObj is not Dictionary<string, object?> st) continue;
+                                if (runProvider == null && st.TryGetValue("provider", out var pv) && pv is string ps && !string.IsNullOrWhiteSpace(ps)) runProvider = ps;
+                                if (runModel == null && st.TryGetValue("model", out var mv) && mv is string ms && !string.IsNullOrWhiteSpace(ms)) runModel = ms;
+                                if (runProvider != null && runModel != null) break;
+                            }
+                            if (runProvider != null) break;
+                        }
+                        catch { }
+                    }
+                    var historyEntry = new Dictionary<string, object?>
+                    {
+                        ["timestamp"] = DateTime.UtcNow.ToString("o"),
+                        ["commit"] = GetGitCommitShort(),
+                        ["provider"] = runProvider,
+                        ["model"] = runModel,
+                        ["spec_file"] = Path.GetFileName(specsPath),
+                        ["tests_total"] = total,
+                        ["tests_passed"] = total - failed,
+                        ["steps_total"] = totalSteps,
+                        ["steps_passed"] = passedSteps,
+                        ["pass_rate"] = totalSteps > 0 ? Math.Round((double)passedSteps / totalSteps, 3) : 0.0,
+                        ["failure_keys"] = failureKeys.Distinct().ToArray()
+                    };
+                    string historyPath = Path.Combine(outputDir, "run_history.jsonl");
+                    string line = JsonSerializer.Serialize(historyEntry);
+                    File.AppendAllText(historyPath, line + Environment.NewLine);
+                }
+                catch { }
+
+                // Generate dashboard
+                try { GenerateDashboard(outputDir, specsPath); } catch { }
+
                 return failed > 0 ? 1 : 0;
             }
             catch (Exception ex)
@@ -850,7 +912,7 @@ namespace SpreadsheetApp.Core
 
         private static AIPlan SanitizePlanToBounds(AIPlan plan, int rStart, int cStart, int rEnd, int cEnd)
         {
-            var outPlan = new AIPlan { RawJson = plan.RawJson, RawUser = plan.RawUser, RawSystem = plan.RawSystem };
+            var outPlan = new AIPlan { RawJson = plan.RawJson, RawUser = plan.RawUser, RawSystem = plan.RawSystem, Provider = plan.Provider, Model = plan.Model, Usage = plan.Usage, LatencyMs = plan.LatencyMs };
             foreach (var cmd in plan.Commands)
             {
                 switch (cmd)
@@ -1277,6 +1339,460 @@ namespace SpreadsheetApp.Core
             string digits = s.Substring(digitsStart, pos - digitsStart);
             string addr = (letters + digits).ToUpperInvariant();
             if (!CellAddress.TryParse(addr, out row, out col)) return false; i = pos; return true;
+        }
+
+        // --- Run history & dashboard ---
+
+        private static string? GetGitCommitShort()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("git", "rev-parse --short HEAD")
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                if (proc == null) return null;
+                string output = proc.StandardOutput.ReadToEnd().Trim();
+                proc.WaitForExit(3000);
+                return string.IsNullOrWhiteSpace(output) ? null : output;
+            }
+            catch { return null; }
+        }
+
+        private static void GenerateDashboard(string outputDir, string specsPath)
+        {
+            string historyPath = Path.Combine(outputDir, "run_history.jsonl");
+            if (!File.Exists(historyPath)) return;
+
+            var runs = new List<Dictionary<string, JsonElement>>();
+            foreach (var line in File.ReadAllLines(historyPath))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try { var doc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(line); if (doc != null) runs.Add(doc); } catch { }
+            }
+            if (runs.Count == 0) return;
+
+            // Load capability map if available
+            var capMap = new Dictionary<string, List<string>>();
+            try
+            {
+                string? testsDir = Path.GetDirectoryName(specsPath);
+                if (testsDir == null) testsDir = FindTestsDir(Environment.CurrentDirectory);
+                if (testsDir != null)
+                {
+                    string capPath = Path.Combine(testsDir, "capability_map.json");
+                    if (File.Exists(capPath))
+                    {
+                        var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(capPath));
+                        if (raw != null)
+                        {
+                            foreach (var kv in raw)
+                            {
+                                var ids = new List<string>();
+                                if (kv.Value.ValueKind == JsonValueKind.Array)
+                                    foreach (var el in kv.Value.EnumerateArray()) ids.Add(el.GetString() ?? "");
+                                capMap[kv.Key] = ids;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // Load latest results_summary for per-test pass/fail
+            var testResults = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string sumPath = Path.Combine(outputDir, "results_summary.json");
+                if (File.Exists(sumPath))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(sumPath));
+                    if (doc.RootElement.TryGetProperty("tests", out var testsEl) && testsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var t in testsEl.EnumerateArray())
+                        {
+                            string? file = t.TryGetProperty("file", out var f) ? f.GetString() : null;
+                            bool passed = t.TryGetProperty("passed", out var p) && p.ValueKind == JsonValueKind.True;
+                            if (file != null)
+                            {
+                                // Extract test number from filename like "test_01_..."
+                                var match = System.Text.RegularExpressions.Regex.Match(file, @"test_(\d+)");
+                                if (match.Success) testResults[match.Groups[1].Value] = passed;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("# Dashboard");
+            sb.AppendLine();
+            sb.AppendLine($"Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine();
+
+            // Section 1: Latest run summary
+            var latest = runs[runs.Count - 1];
+            sb.AppendLine("## Latest Run");
+            sb.AppendLine();
+            sb.AppendLine($"| Metric | Value |");
+            sb.AppendLine($"|--------|-------|");
+            sb.AppendLine($"| Spec file | {SafeGetString(latest, "spec_file")} |");
+            sb.AppendLine($"| Commit | `{SafeGetString(latest, "commit") ?? "unknown"}` |");
+            sb.AppendLine($"| Provider | {SafeGetString(latest, "provider") ?? "mock"} |");
+            sb.AppendLine($"| Model | {SafeGetString(latest, "model") ?? "—"} |");
+            sb.AppendLine($"| Tests | {SafeGetInt(latest, "tests_passed")}/{SafeGetInt(latest, "tests_total")} passed |");
+            sb.AppendLine($"| Steps | {SafeGetInt(latest, "steps_passed")}/{SafeGetInt(latest, "steps_total")} passed |");
+            sb.AppendLine($"| Pass rate | {SafeGetDouble(latest, "pass_rate"):P1} |");
+            var latestFailures = SafeGetStringArray(latest, "failure_keys");
+            sb.AppendLine($"| Failure keys | {(latestFailures.Length > 0 ? string.Join(", ", latestFailures.Select(k => $"`{k}`")) : "none")} |");
+            sb.AppendLine();
+
+            // Section 2: Trend (last N runs)
+            sb.AppendLine("## Run History (last 20)");
+            sb.AppendLine();
+            sb.AppendLine("| # | Timestamp | Commit | Provider | Spec | Steps | Pass rate | Failures |");
+            sb.AppendLine("|---|-----------|--------|----------|------|-------|-----------|----------|");
+            int startIdx = Math.Max(0, runs.Count - 20);
+            for (int i = runs.Count - 1; i >= startIdx; i--)
+            {
+                var r = runs[i];
+                string ts = SafeGetString(r, "timestamp") ?? "";
+                if (ts.Length > 16) ts = ts.Substring(0, 16); // trim to minute
+                var fk = SafeGetStringArray(r, "failure_keys");
+                sb.AppendLine($"| {i + 1} | {ts} | `{SafeGetString(r, "commit") ?? "?"}` | {SafeGetString(r, "provider") ?? "mock"} | {SafeGetString(r, "spec_file")} | {SafeGetInt(r, "steps_passed")}/{SafeGetInt(r, "steps_total")} | {SafeGetDouble(r, "pass_rate"):P1} | {(fk.Length > 0 ? string.Join(", ", fk.Take(3).Select(k => $"`{k}`")) : "—")} |");
+            }
+            sb.AppendLine();
+
+            // Section 3: Capability matrix (if map available and results available)
+            if (capMap.Count > 0)
+            {
+                sb.AppendLine("## Capability Matrix");
+                sb.AppendLine();
+                sb.AppendLine("| Capability | Tests | Covered | Passing | Status |");
+                sb.AppendLine("|-----------|-------|---------|---------|--------|");
+                foreach (var kv in capMap.OrderBy(x => x.Key))
+                {
+                    var ids = kv.Value.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+                    int covered = ids.Count;
+                    int passing = 0, failing = 0, unknown = 0;
+                    foreach (var id in ids)
+                    {
+                        if (testResults.TryGetValue(id, out var p)) { if (p) passing++; else failing++; }
+                        else unknown++;
+                    }
+                    string status = covered == 0 ? "no tests" : failing > 0 ? $"{failing} failing" : unknown > 0 ? $"{passing} pass, {unknown} no data" : $"{passing}/{covered} pass";
+                    string emoji = covered == 0 ? "—" : failing > 0 ? "FAIL" : unknown > 0 ? "PARTIAL" : "PASS";
+                    string name = kv.Key.Replace("_", " ");
+                    sb.AppendLine($"| {name} | {string.Join(", ", ids)} | {covered} | {passing} | {emoji}: {status} |");
+                }
+                sb.AppendLine();
+            }
+
+            // Section 4: Aggregated failure patterns across all runs
+            sb.AppendLine("## Failure Patterns (all runs)");
+            sb.AppendLine();
+            var allFailures = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in runs)
+            {
+                var fk = SafeGetStringArray(r, "failure_keys");
+                foreach (var k in fk) allFailures[k] = allFailures.TryGetValue(k, out var n) ? n + 1 : 1;
+            }
+            if (allFailures.Count == 0)
+            {
+                sb.AppendLine("No failures recorded across any run.");
+            }
+            else
+            {
+                sb.AppendLine("| Failure key | Occurrences | First seen | Last seen |");
+                sb.AppendLine("|------------|-------------|------------|-----------|");
+                foreach (var kv in allFailures.OrderByDescending(x => x.Value))
+                {
+                    string? first = null, last = null;
+                    foreach (var r in runs)
+                    {
+                        var fk = SafeGetStringArray(r, "failure_keys");
+                        if (fk.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                        {
+                            string ts = SafeGetString(r, "timestamp") ?? "";
+                            if (ts.Length > 10) ts = ts.Substring(0, 10);
+                            if (first == null) first = ts;
+                            last = ts;
+                        }
+                    }
+                    sb.AppendLine($"| `{kv.Key}` | {kv.Value} | {first} | {last} |");
+                }
+            }
+            sb.AppendLine();
+
+            // Section 5: Regressions / improvements (compare last two runs)
+            if (runs.Count >= 2)
+            {
+                var prev = runs[runs.Count - 2];
+                var curr = runs[runs.Count - 1];
+                double prevRate = SafeGetDouble(prev, "pass_rate");
+                double currRate = SafeGetDouble(curr, "pass_rate");
+                var prevFk = new HashSet<string>(SafeGetStringArray(prev, "failure_keys"), StringComparer.OrdinalIgnoreCase);
+                var currFk = new HashSet<string>(SafeGetStringArray(curr, "failure_keys"), StringComparer.OrdinalIgnoreCase);
+                var newFailures = currFk.Except(prevFk).ToList();
+                var fixedFailures = prevFk.Except(currFk).ToList();
+
+                sb.AppendLine("## Changes Since Previous Run");
+                sb.AppendLine();
+                if (currRate > prevRate) sb.AppendLine($"Pass rate: {prevRate:P1} -> {currRate:P1} (improved)");
+                else if (currRate < prevRate) sb.AppendLine($"Pass rate: {prevRate:P1} -> {currRate:P1} (REGRESSED)");
+                else sb.AppendLine($"Pass rate: {currRate:P1} (unchanged)");
+                sb.AppendLine();
+                if (fixedFailures.Count > 0) sb.AppendLine($"Fixed: {string.Join(", ", fixedFailures.Select(k => $"`{k}`"))}");
+                if (newFailures.Count > 0) sb.AppendLine($"New failures: {string.Join(", ", newFailures.Select(k => $"`{k}`"))}");
+                if (fixedFailures.Count == 0 && newFailures.Count == 0) sb.AppendLine("No change in failure patterns.");
+                sb.AppendLine();
+            }
+
+            // Section 6: What to work on next
+            sb.AppendLine("## Suggested Next Actions");
+            sb.AppendLine();
+            if (capMap.Count > 0)
+            {
+                var uncovered = capMap.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key.Replace("_", " ")).ToList();
+                if (uncovered.Count > 0) sb.AppendLine($"- **Add tests for:** {string.Join(", ", uncovered)}");
+                var failingCaps = capMap.Where(kv => kv.Value.Any(id => testResults.TryGetValue(id, out var p) && !p)).Select(kv => kv.Key.Replace("_", " ")).ToList();
+                if (failingCaps.Count > 0) sb.AppendLine($"- **Fix failing capabilities:** {string.Join(", ", failingCaps)}");
+            }
+            if (allFailures.Count > 0)
+            {
+                var top = allFailures.OrderByDescending(x => x.Value).Take(3).Select(kv => $"`{kv.Key}` ({kv.Value}x)");
+                sb.AppendLine($"- **Top recurring failures:** {string.Join(", ", top)}");
+            }
+            sb.AppendLine();
+
+            string dashPath = Path.Combine(outputDir, "DASHBOARD.md");
+            TryWriteAllText(dashPath, sb.ToString());
+
+            // Also emit a .workbook.json that can be opened in the app
+            try { GenerateDashboardWorkbook(outputDir, runs, capMap, testResults, allFailures); } catch { }
+        }
+
+        private static void GenerateDashboardWorkbook(
+            string outputDir,
+            List<Dictionary<string, JsonElement>> runs,
+            Dictionary<string, List<string>> capMap,
+            Dictionary<string, bool> testResults,
+            Dictionary<string, int> allFailures)
+        {
+            // Build workbook JSON directly (avoid dependency on SpreadsheetIO internals)
+            var sheets = new List<object>();
+
+            // --- Sheet 1: Overview ---
+            {
+                var cells = new Dictionary<string, string>();
+                var latest = runs[runs.Count - 1];
+                cells["A1"] = "Dashboard";
+                cells["A2"] = $"Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
+                cells["A4"] = "Metric"; cells["B4"] = "Value";
+                cells["A5"] = "Spec file"; cells["B5"] = SafeGetString(latest, "spec_file") ?? "";
+                cells["A6"] = "Commit"; cells["B6"] = SafeGetString(latest, "commit") ?? "unknown";
+                cells["A7"] = "Provider"; cells["B7"] = SafeGetString(latest, "provider") ?? "mock";
+                cells["A8"] = "Model"; cells["B8"] = SafeGetString(latest, "model") ?? "";
+                cells["A9"] = "Tests passed"; cells["B9"] = $"{SafeGetInt(latest, "tests_passed")}/{SafeGetInt(latest, "tests_total")}";
+                cells["A10"] = "Steps passed"; cells["B10"] = $"{SafeGetInt(latest, "steps_passed")}/{SafeGetInt(latest, "steps_total")}";
+                cells["A11"] = "Pass rate"; cells["B11"] = SafeGetDouble(latest, "pass_rate").ToString("P1");
+                var fk = SafeGetStringArray(latest, "failure_keys");
+                cells["A12"] = "Failure keys"; cells["B12"] = fk.Length > 0 ? string.Join(", ", fk) : "none";
+
+                // Delta vs previous run
+                if (runs.Count >= 2)
+                {
+                    var prev = runs[runs.Count - 2];
+                    double prevRate = SafeGetDouble(prev, "pass_rate");
+                    double currRate = SafeGetDouble(latest, "pass_rate");
+                    cells["A14"] = "Previous pass rate"; cells["B14"] = prevRate.ToString("P1");
+                    cells["A15"] = "Delta"; cells["B15"] = currRate > prevRate ? "IMPROVED" : currRate < prevRate ? "REGRESSED" : "unchanged";
+                    var prevFk = new HashSet<string>(SafeGetStringArray(prev, "failure_keys"), StringComparer.OrdinalIgnoreCase);
+                    var currFk = new HashSet<string>(SafeGetStringArray(latest, "failure_keys"), StringComparer.OrdinalIgnoreCase);
+                    var fixedF = prevFk.Except(currFk).ToList();
+                    var newF = currFk.Except(prevFk).ToList();
+                    cells["A16"] = "Fixed"; cells["B16"] = fixedF.Count > 0 ? string.Join(", ", fixedF) : "none";
+                    cells["A17"] = "New failures"; cells["B17"] = newF.Count > 0 ? string.Join(", ", newF) : "none";
+                }
+
+                sheets.Add(new { Name = "Overview", Rows = 100, Columns = 26, Cells = cells });
+            }
+
+            // --- Sheet 2: Run History ---
+            {
+                var cells = new Dictionary<string, string>();
+                cells["A1"] = "#"; cells["B1"] = "Timestamp"; cells["C1"] = "Commit"; cells["D1"] = "Provider";
+                cells["E1"] = "Model"; cells["F1"] = "Spec"; cells["G1"] = "Tests"; cells["H1"] = "Steps";
+                cells["I1"] = "Pass rate"; cells["J1"] = "Failures";
+                int startIdx = Math.Max(0, runs.Count - 50);
+                int row = 2;
+                for (int i = runs.Count - 1; i >= startIdx; i--)
+                {
+                    var r = runs[i];
+                    string ts = SafeGetString(r, "timestamp") ?? "";
+                    if (ts.Length > 19) ts = ts.Substring(0, 19);
+                    var fk = SafeGetStringArray(r, "failure_keys");
+                    cells[$"A{row}"] = (i + 1).ToString();
+                    cells[$"B{row}"] = ts;
+                    cells[$"C{row}"] = SafeGetString(r, "commit") ?? "";
+                    cells[$"D{row}"] = SafeGetString(r, "provider") ?? "mock";
+                    cells[$"E{row}"] = SafeGetString(r, "model") ?? "";
+                    cells[$"F{row}"] = SafeGetString(r, "spec_file") ?? "";
+                    cells[$"G{row}"] = $"{SafeGetInt(r, "tests_passed")}/{SafeGetInt(r, "tests_total")}";
+                    cells[$"H{row}"] = $"{SafeGetInt(r, "steps_passed")}/{SafeGetInt(r, "steps_total")}";
+                    cells[$"I{row}"] = SafeGetDouble(r, "pass_rate").ToString("P1");
+                    cells[$"J{row}"] = fk.Length > 0 ? string.Join(", ", fk.Take(5)) : "";
+                    row++;
+                }
+                sheets.Add(new { Name = "Run History", Rows = 100, Columns = 26, Cells = cells, FreezeTopRow = true });
+            }
+
+            // --- Sheet 3: Capabilities ---
+            if (capMap.Count > 0)
+            {
+                var cells = new Dictionary<string, string>();
+                cells["A1"] = "Capability"; cells["B1"] = "Tests"; cells["C1"] = "Covered"; cells["D1"] = "Passing"; cells["E1"] = "Failing"; cells["F1"] = "Status";
+                int row = 2;
+                foreach (var kv in capMap.OrderBy(x => x.Key))
+                {
+                    var ids = kv.Value.Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+                    int covered = ids.Count;
+                    int passing = 0, failing = 0;
+                    foreach (var id in ids)
+                    {
+                        if (testResults.TryGetValue(id, out var p)) { if (p) passing++; else failing++; }
+                    }
+                    string status = covered == 0 ? "NO TESTS" : failing > 0 ? "FAIL" : passing == covered ? "PASS" : "PARTIAL";
+                    cells[$"A{row}"] = kv.Key.Replace("_", " ");
+                    cells[$"B{row}"] = string.Join(", ", ids);
+                    cells[$"C{row}"] = covered.ToString();
+                    cells[$"D{row}"] = passing.ToString();
+                    cells[$"E{row}"] = failing.ToString();
+                    cells[$"F{row}"] = status;
+                    row++;
+                }
+                sheets.Add(new { Name = "Capabilities", Rows = 100, Columns = 26, Cells = cells, FreezeTopRow = true });
+            }
+
+            // --- Sheet 4: Failures ---
+            {
+                var cells = new Dictionary<string, string>();
+                cells["A1"] = "Failure key"; cells["B1"] = "Occurrences"; cells["C1"] = "First seen"; cells["D1"] = "Last seen";
+                if (allFailures.Count == 0)
+                {
+                    cells["A2"] = "(no failures recorded)";
+                }
+                else
+                {
+                    int row = 2;
+                    foreach (var kv in allFailures.OrderByDescending(x => x.Value))
+                    {
+                        string? first = null, last = null;
+                        foreach (var r in runs)
+                        {
+                            var fk = SafeGetStringArray(r, "failure_keys");
+                            if (fk.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                            {
+                                string ts = SafeGetString(r, "timestamp") ?? "";
+                                if (ts.Length > 10) ts = ts.Substring(0, 10);
+                                if (first == null) first = ts;
+                                last = ts;
+                            }
+                        }
+                        cells[$"A{row}"] = kv.Key;
+                        cells[$"B{row}"] = kv.Value.ToString();
+                        cells[$"C{row}"] = first ?? "";
+                        cells[$"D{row}"] = last ?? "";
+                        row++;
+                    }
+                }
+                sheets.Add(new { Name = "Failures", Rows = 100, Columns = 26, Cells = cells, FreezeTopRow = true });
+            }
+
+            // --- Sheet 5: Next Actions ---
+            {
+                var cells = new Dictionary<string, string>();
+                cells["A1"] = "Priority"; cells["B1"] = "Action"; cells["C1"] = "Details";
+                int row = 2;
+                if (capMap.Count > 0)
+                {
+                    var uncovered = capMap.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key.Replace("_", " ")).ToList();
+                    foreach (var cap in uncovered)
+                    {
+                        cells[$"A{row}"] = "Add tests";
+                        cells[$"B{row}"] = $"No tests for: {cap}";
+                        cells[$"C{row}"] = "Create test workbooks covering this capability";
+                        row++;
+                    }
+                    var failingCaps = capMap.Where(kv => kv.Value.Any(id => testResults.TryGetValue(id, out var p) && !p)).ToList();
+                    foreach (var cap in failingCaps)
+                    {
+                        var failIds = cap.Value.Where(id => testResults.TryGetValue(id, out var p) && !p).ToList();
+                        cells[$"A{row}"] = "Fix failing";
+                        cells[$"B{row}"] = $"{cap.Key.Replace("_", " ")}";
+                        cells[$"C{row}"] = $"Failing tests: {string.Join(", ", failIds)}";
+                        row++;
+                    }
+                }
+                if (allFailures.Count > 0)
+                {
+                    foreach (var kv in allFailures.OrderByDescending(x => x.Value).Take(5))
+                    {
+                        cells[$"A{row}"] = "Recurring failure";
+                        cells[$"B{row}"] = kv.Key;
+                        cells[$"C{row}"] = $"{kv.Value} occurrences across runs";
+                        row++;
+                    }
+                }
+                if (row == 2) { cells["A2"] = "—"; cells["B2"] = "All clear"; cells["C2"] = "No actions needed"; }
+                sheets.Add(new { Name = "Next Actions", Rows = 100, Columns = 26, Cells = cells, FreezeTopRow = true });
+            }
+
+            var wb = new { FormatVersion = 1, Sheets = sheets };
+            // Use default (PascalCase) naming to match SpreadsheetIO's WorkbookData loader
+            string wbJson = JsonSerializer.Serialize(wb, new JsonSerializerOptions { WriteIndented = true });
+            TryWriteAllText(Path.Combine(outputDir, "dashboard.workbook.json"), wbJson);
+        }
+
+        private static string? SafeGetString(Dictionary<string, JsonElement> d, string key)
+        {
+            if (d.TryGetValue(key, out var el))
+            {
+                if (el.ValueKind == JsonValueKind.String) return el.GetString();
+                if (el.ValueKind == JsonValueKind.Null) return null;
+                return el.GetRawText().Trim('"');
+            }
+            return null;
+        }
+
+        private static int SafeGetInt(Dictionary<string, JsonElement> d, string key)
+        {
+            if (d.TryGetValue(key, out var el) && el.ValueKind == JsonValueKind.Number) return el.GetInt32();
+            return 0;
+        }
+
+        private static double SafeGetDouble(Dictionary<string, JsonElement> d, string key)
+        {
+            if (d.TryGetValue(key, out var el) && el.ValueKind == JsonValueKind.Number) return el.GetDouble();
+            return 0.0;
+        }
+
+        private static string[] SafeGetStringArray(Dictionary<string, JsonElement> d, string key)
+        {
+            if (d.TryGetValue(key, out var el) && el.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<string>();
+                foreach (var item in el.EnumerateArray())
+                {
+                    var s = item.GetString(); if (!string.IsNullOrWhiteSpace(s)) list.Add(s!);
+                }
+                return list.ToArray();
+            }
+            return Array.Empty<string>();
         }
     }
 }

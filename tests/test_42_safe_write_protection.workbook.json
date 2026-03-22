@@ -1,0 +1,40 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Budget",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Category",
+        "B1": "Budgeted",
+        "C1": "Actual",
+        "D1": "Variance",
+        "A2": "Rent",
+        "B2": "2500",
+        "C2": "2500",
+        "D2": "=B2-C2",
+        "A3": "Utilities",
+        "B3": "300",
+        "C3": "340",
+        "D3": "=B3-C3",
+        "A4": "Groceries",
+        "B4": "600",
+        "C4": "580",
+        "D4": "=B4-C4",
+        "A5": "Transport",
+        "B5": "200",
+        "C5": "250",
+        "D5": "=B5-C5",
+        "A6": "Insurance",
+        "B6": "400",
+        "C6": "400",
+        "D6": "=B6-C6",
+        "A7": "Totals",
+        "B7": "=SUM(B2:B6)",
+        "C7": "=SUM(C2:C6)",
+        "D7": "=SUM(D2:D6)"
+      }
+    }
+  ]
+}

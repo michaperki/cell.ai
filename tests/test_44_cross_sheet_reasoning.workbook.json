@@ -1,0 +1,58 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Employees",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "EmpID",
+        "B1": "Name",
+        "C1": "Department",
+        "D1": "Salary",
+        "A2": "E001",
+        "B2": "Alice",
+        "C2": "Engineering",
+        "D2": "95000",
+        "A3": "E002",
+        "B3": "Bob",
+        "C3": "Marketing",
+        "D3": "72000",
+        "A4": "E003",
+        "B4": "Carol",
+        "C4": "Engineering",
+        "D4": "98000",
+        "A5": "E004",
+        "B5": "Dave",
+        "C5": "Sales",
+        "D5": "68000",
+        "A6": "E005",
+        "B6": "Eve",
+        "C6": "Engineering",
+        "D6": "102000",
+        "A7": "E006",
+        "B7": "Frank",
+        "C7": "Marketing",
+        "D7": "75000",
+        "A8": "E007",
+        "B8": "Grace",
+        "C8": "Sales",
+        "D8": "71000"
+      }
+    },
+    {
+      "Name": "Departments",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Department",
+        "B1": "Head Count",
+        "C1": "Avg Salary",
+        "D1": "Budget",
+        "A2": "Engineering",
+        "A3": "Marketing",
+        "A4": "Sales"
+      }
+    }
+  ]
+}

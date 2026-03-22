@@ -1,0 +1,44 @@
+{
+  "FormatVersion": 1,
+  "Sheets": [
+    {
+      "Name": "Contacts",
+      "Rows": 100,
+      "Columns": 26,
+      "Cells": {
+        "A1": "Name",
+        "B1": "Phone",
+        "C1": "Email",
+        "D1": "Date Joined",
+        "A2": "JOHN SMITH",
+        "B2": "5551234567",
+        "C2": "JOHN.SMITH@GMAIL.COM",
+        "D2": "01/15/2023",
+        "A3": "jane doe",
+        "B3": "(555) 987-6543",
+        "C3": "jane.doe@yahoo.com",
+        "D3": "2023-03-22",
+        "A4": "  Bob Johnson  ",
+        "B4": "555.111.2222",
+        "C4": "BOB_J@OUTLOOK.COM",
+        "D4": "March 5, 2023",
+        "A5": "ALICE   WILLIAMS",
+        "B5": "15557778888",
+        "C5": "alice.w@company.co",
+        "D5": "2023/07/10",
+        "A6": "charlie brown",
+        "B6": "555-333-4444",
+        "C6": "Charlie.Brown@Gmail.Com",
+        "D6": "12-01-2022",
+        "A7": "  Diana PRINCE",
+        "B7": "(555)2223333",
+        "C7": "diana.prince@work.org",
+        "D7": "Aug 15 2023",
+        "A8": "edward norton",
+        "B8": "5559990000",
+        "C8": "EDWARD@NORTON.NET",
+        "D8": "2023.09.01"
+      }
+    }
+  ]
+}
