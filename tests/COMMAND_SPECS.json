@@ -1,0 +1,72 @@
+{
+  "tests": [
+    { "file": "test_01_ai_set_values.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Create a list of 5 US states with capitals in columns A and B starting at row 3.", "location": "A3", "apply": true }
+    ]},
+    { "file": "test_02_ai_set_formula.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Add a SUM formula in B8 that totals B2:B7, and an AVERAGE in B9.", "location": "B8", "apply": true }
+    ]},
+    { "file": "test_03_ai_sort_range.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Sort the selected data by Amount descending. Keep the header row in place.", "location": "A2:B7", "apply": true }
+    ]},
+    { "file": "test_04_ai_create_rename_sheet.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Create a new sheet named Revenue.", "apply": true },
+      { "action": "ai_chat", "prompt": "Rename sheet Revenue to Q1 Revenue.", "apply": true }
+    ]},
+    { "file": "test_05_ai_clear_range.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Clear column C (the Notes column).", "location": "C2:C6", "apply": true }
+    ]},
+    { "file": "test_06_ai_multi_turn_chat.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.", "location": "A3:C6", "apply": true },
+      { "action": "ai_chat", "prompt": "Now add a Tax column in D with 10% of Amount.", "location": "D3:D6", "apply": true },
+      { "action": "ai_chat", "prompt": "Add a total row summing Amount and Tax columns.", "location": "A6:E6", "apply": true }
+    ]},
+    { "file": "test_07_ai_context_awareness.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Add a Bonus column that is 15% of Salary.", "location": "D2", "apply": true }
+    ]},
+    { "file": "test_14_ai_complex_plan.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Create a monthly budget strictly within A2:E7: headers in A2:E2 = Category, Jan, Feb, Mar, Total; 4 expense categories in A3:A6; sample dollar amounts in B3:D6; SUM formulas in E3:E6 and B7:E7 for totals. Do not write outside A2:E7. No titles or extra text. Use set_values for headers and numbers; use set_formula only for E3:E6 and B7:E7.", "location": "A2:E7", "apply": true }
+    ]},
+    { "file": "test_15_ai_workbook_context.workbook.json", "steps": [
+      { "action": "ai_chat", "sheet": "Summary", "prompt": "Fill A2 with the count of data rows (excluding the header) in the Sales sheet, and A3 with the count of data rows (excluding the header) in the Inventory sheet. Write plain numbers only (set_values), no formulas, no titles, and do not edit other cells.", "location": "A2:A3", "apply": true }
+    ]},
+    { "file": "test_16_ai_hebrew_roots.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Fill in the morphological forms for the 5 Hebrew roots in column A (rows 2-6). Row 1 contains the headers describing what each column needs. For each root, provide: B = transliteration of the root consonants, C = Qal perfect 3rd person masculine singular verb form, D = Qal imperfect 3rd person masculine singular verb form, E = common noun (singular masculine if applicable), F = noun (singular feminine if applicable, otherwise leave blank), G = adjective masculine form (if one exists from this root, otherwise leave blank), H = adjective feminine form (if applicable, otherwise leave blank), I = semantic domain (one or two words, e.g. 'writing', 'learning'). Write Hebrew text in Hebrew script for columns C-H. Use set_values only. Do not add titles, formulas, or extra rows.", "location": "B2:I6", "apply": true },
+      { "action": "ai_chat", "prompt": "Now add 3 more Hebrew roots and their forms. Add the roots פקד (paqad), שׁפט (shapat), and ברך (barakh) in A7:A9, then fill B7:I9 with their morphological forms following the same pattern as the existing rows. Use set_values only.", "location": "A7:I9", "apply": true }
+    ]},
+    { "file": "test_17_append_only_multi_turn.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Within A2:D4, create 3 sample rows with Item, Qty, Price, Total. Use set_values for Item/Qty/Price and set_formula for Total in each row as =B(row)*C(row). Do not write outside A2:D4. No titles.", "location": "A2:D4", "apply": true },
+      { "action": "ai_chat", "prompt": "Append 2 more rows in A5:D6 following the same pattern. Do not modify A2:D4. Use set_values for Item/Qty/Price and set_formula for Total in each new row.", "location": "A5:D6", "apply": true }
+    ]},
+    { "file": "test_18_no_write_input_column.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "For each existing input in A2:A4, fill outputs in B2:D4 aligned to the headers. Use set_values only. Do not write to A.", "location": "B2:D4", "apply": true },
+      { "action": "ai_chat", "prompt": "Add two new inputs delta and epsilon in A5:A6, then fill B5:D6 with outputs aligned to the headers. Use set_values only. Do not modify existing rows.", "location": "A5:D6", "apply": true }
+    ]},
+    { "file": "test_19_formula_autoroute.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Fill A2:B4 with three pairs of numbers (any small integers). Leave C empty.", "location": "A2:B4", "apply": true },
+      { "action": "ai_chat", "prompt": "In C2:C4 write =A2+B2, =A3+B3, =A4+B4 respectively. Use set_values only.", "location": "C2:C4", "apply": true }
+    ]},
+    { "file": "test_23_ai_insert_delete_cols.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Insert one new column at column B and set B1 to 'Inserted'. Do not alter other data.", "location": "B1:B4", "apply": true },
+      { "action": "ai_chat", "prompt": "Delete column C.", "location": "C1:C4", "apply": true }
+    ]},
+    { "file": "test_24_ai_delete_sheet.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Delete the sheet named Temp.", "sheet": "Keep", "apply": true }
+    ]},
+    { "file": "test_25_ai_copy_move_range.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Copy A1:B3 to D1:E3. Adjust formulas and references appropriately.", "location": "A1:B3", "apply": true },
+      { "action": "ai_chat", "prompt": "Move A1:B3 to F1:G3. Adjust formulas and references appropriately.", "location": "A1:B3", "apply": true }
+    ]},
+    { "file": "test_26_ai_set_format.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Set the header row A1:D1 to bold, center alignment, and a light gray background (#EEEEEE).", "location": "A1:D1", "apply": true },
+      { "action": "ai_chat", "prompt": "Format D2:D4 with number format 0.00.", "location": "D2:D4", "apply": true }
+    ]},
+    { "file": "test_27_ai_set_validation.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Set data validation on B2:B10 to a list with allowed values Low, Medium, High. Empty allowed.", "location": "B2:B10", "apply": true }
+    ]},
+    { "file": "test_28_ai_set_conditional_format.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Apply conditional formatting to A2:A5: highlight cells with values greater than 12 with bold text and a yellow background (#FFFF99).", "location": "A2:A5", "apply": true }
+    ]}
+  ]
+}
+

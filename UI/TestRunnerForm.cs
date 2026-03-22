@@ -16,6 +16,7 @@ namespace SpreadsheetApp.UI
         private readonly Action<string> _activateSheet;
         private readonly Action _clearChatHistory;
         private readonly Func<System.Collections.Generic.Dictionary<string, string>> _captureSheetMap;
+        private readonly Func<object> _captureChatThread;
         private readonly ListBox _lstTests = new();
         private readonly TextBox _txtSpec = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Info, Font = new Font("Segoe UI", 9.5f) };
         private readonly TextBox _txtLog = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window, Font = new Font("Consolas", 9f) };
@@ -39,7 +40,8 @@ namespace SpreadsheetApp.UI
                               Action<string> saveWorkbook,
                               Action<string> activateSheet,
                               Action clearChatHistory,
-                              Func<System.Collections.Generic.Dictionary<string, string>> captureSheetMap)
+                              Func<System.Collections.Generic.Dictionary<string, string>> captureSheetMap,
+                              Func<object> captureChatThread)
         {
             _loadWorkbook = loadWorkbook;
             _runChatStepAsync = runChatStepAsync;
@@ -48,6 +50,7 @@ namespace SpreadsheetApp.UI
             _activateSheet = activateSheet;
             _clearChatHistory = clearChatHistory;
             _captureSheetMap = captureSheetMap;
+            _captureChatThread = captureChatThread;
             Text = "Test Runner";
             StartPosition = FormStartPosition.CenterParent;
             Size = new Size(760, 600);
@@ -232,6 +235,16 @@ namespace SpreadsheetApp.UI
                     {
                         Log($"  - Step {stepNo}: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
                         var before = _captureSheetMap();
+                        // Save BEFORE snapshot for this step
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string beforeSnap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.before.workbook.json");
+                            _saveWorkbook(beforeSnap);
+                            Log($"    -> Before snapshot saved: {beforeSnap}\r\n");
+                        }
+                        catch { }
                         var plan = await _runChatStepAsync(step.Prompt ?? string.Empty, step.Location, step.Apply, System.Threading.CancellationToken.None).ConfigureAwait(true);
                         if (plan.Commands.Count == 0)
                         {
@@ -241,11 +254,30 @@ namespace SpreadsheetApp.UI
                         {
                             foreach (var cmd in plan.Commands) Log($"    -> {cmd.Summarize()}\r\n");
                         }
+                        // Save chat thread snapshot for chat UX parity
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string chatPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.chat.json");
+                            var chat = _captureChatThread();
+                            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            File.WriteAllText(chatPath, System.Text.Json.JsonSerializer.Serialize(chat, opts));
+                            Log($"    -> Chat thread saved: {chatPath}\r\n");
+                        }
+                        catch { }
                         // Diff (only when apply)
                         if (step.Apply)
                         {
                             var after = _captureSheetMap();
                             WriteDiffToLog(before, after);
+                            // Quick diff summary
+                            try
+                            {
+                                ComputeDiffSummary(before, after, step.Location, out int total, out int outside, out var sample);
+                                Log($"    -> Changes: total={total}, outside_selection={outside}\r\n");
+                            }
+                            catch { }
                             // Structural assertion: all changes must be within the requested selection (if provided)
                             try
                             {
@@ -310,8 +342,8 @@ namespace SpreadsheetApp.UI
                             Log($"    -> Failed to save user prompt: {ex.Message}\r\n");
                         }
                     }
-                    if (_chkDumpPlan.Checked)
-                    {
+                        if (_chkDumpPlan.Checked)
+                        {
                             try
                             {
                                 Directory.CreateDirectory(Path.Combine("tests", "output"));
@@ -326,6 +358,19 @@ namespace SpreadsheetApp.UI
                                 Log($"    -> Failed to save plan JSON: {ex.Message}\r\n");
                             }
                         }
+
+                        // Save chat thread snapshot for chat UX parity
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string chatPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.chat.json");
+                            var chat = _captureChatThread();
+                            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            File.WriteAllText(chatPath, System.Text.Json.JsonSerializer.Serialize(chat, opts));
+                            Log($"    -> Chat thread saved: {chatPath}\r\n");
+                        }
+                        catch { }
 
                         // Persist a concise step log for offline review
                         try
@@ -353,7 +398,7 @@ namespace SpreadsheetApp.UI
                                 Log($"    -> Failed to save system prompt: {ex.Message}\r\n");
                             }
                         }
-                        // Consolidated export (single JSON file containing system, user, plan, and workbook)
+                        // Consolidated export (single JSON file containing prompts, plan, before/after workbook snapshots, and quick diff)
                         try
                         {
                             Directory.CreateDirectory(Path.Combine("tests", "output"));
@@ -362,9 +407,13 @@ namespace SpreadsheetApp.UI
                             string userStr = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
                             string sysStr = plan.RawSystem ?? "(no system prompt)";
                             string planStr = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
-                            string snapPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
-                            string workbookStr = "";
-                            try { workbookStr = File.ReadAllText(snapPath); } catch { workbookStr = ""; }
+                            string afterPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            string beforePath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.before.workbook.json");
+                            string afterWb = "", beforeWb = "";
+                            try { afterWb = File.ReadAllText(afterPath); } catch { afterWb = ""; }
+                            try { beforeWb = File.ReadAllText(beforePath); } catch { beforeWb = ""; }
+                            ComputeDiffSummary(before, _captureSheetMap(), step.Location, out int total, out int outside, out var sample);
+                            string planSummary = string.Join("; ", (plan.Commands != null && plan.Commands.Count > 0 ? plan.Commands : System.Linq.Enumerable.Empty<SpreadsheetApp.Core.AI.IAICommand>()).Select(c => c.Summarize()));
                             var root = new System.Collections.Generic.Dictionary<string, object?>
                             {
                                 ["test_file"] = Path.GetFileName(path),
@@ -375,7 +424,13 @@ namespace SpreadsheetApp.UI
                                 ["user"] = userStr,
                                 ["system"] = sysStr,
                                 ["plan_json"] = planStr,
-                                ["workbook_json"] = workbookStr
+                                ["plan_summary"] = planSummary,
+                                ["chat_thread"] = _captureChatThread(),
+                                ["before_workbook_json"] = beforeWb,
+                                ["after_workbook_json"] = afterWb,
+                                ["changes_total"] = total,
+                                ["changes_outside_selection"] = outside,
+                                ["changes_sample"] = sample
                             };
                             var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
                             File.WriteAllText(exportPath, System.Text.Json.JsonSerializer.Serialize(root, opts));
@@ -390,6 +445,16 @@ namespace SpreadsheetApp.UI
                     {
                         Log($"  - Step {stepNo} [agent]: prompt=\"{step.Prompt}\" loc={(step.Location ?? "(none)")} apply={step.Apply}\r\n");
                         var before = _captureSheetMap();
+                        // Save BEFORE snapshot for this step
+                        try
+                        {
+                            Directory.CreateDirectory(Path.Combine("tests", "output"));
+                            string baseName = Path.GetFileNameWithoutExtension(path);
+                            string beforeSnap = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.before.workbook.json");
+                            _saveWorkbook(beforeSnap);
+                            Log($"    -> Before snapshot saved: {beforeSnap}\r\n");
+                        }
+                        catch { }
                         var res = await _runAgentStepAsync(step.Prompt ?? string.Empty, step.Location, step.Apply, System.Threading.CancellationToken.None).ConfigureAwait(true);
                         var plan = res.plan;
                         var transcript = res.transcript ?? Array.Empty<string>();
@@ -414,6 +479,13 @@ namespace SpreadsheetApp.UI
                         {
                             var after = _captureSheetMap();
                             WriteDiffToLog(before, after);
+                            // Quick diff summary
+                            try
+                            {
+                                ComputeDiffSummary(before, after, step.Location, out int total, out int outside, out var sample);
+                                Log($"    -> Changes: total={total}, outside_selection={outside}\r\n");
+                            }
+                            catch { }
                             try
                             {
                                 if (!string.IsNullOrWhiteSpace(step.Location) && step.Location!.Contains(":", StringComparison.Ordinal))
@@ -506,9 +578,13 @@ namespace SpreadsheetApp.UI
                             string userStr = plan.RawUser ?? $"(no RawUser from provider)\nstepPrompt: {step.Prompt}\nlocation: {step.Location}\n";
                             string sysStr = plan.RawSystem ?? "(no system prompt)";
                             string planStr = string.IsNullOrWhiteSpace(plan.RawJson) ? SerializePlan(plan) : plan.RawJson!;
-                            string snapPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
-                            string workbookStr = "";
-                            try { workbookStr = File.ReadAllText(snapPath); } catch { workbookStr = ""; }
+                            string afterPath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.workbook.json");
+                            string beforePath = Path.Combine("tests", "output", $"{baseName}_step{stepNo}.before.workbook.json");
+                            string afterWb = "", beforeWb = "";
+                            try { afterWb = File.ReadAllText(afterPath); } catch { afterWb = ""; }
+                            try { beforeWb = File.ReadAllText(beforePath); } catch { beforeWb = ""; }
+                            ComputeDiffSummary(before, _captureSheetMap(), step.Location, out int total, out int outside, out var sample);
+                            string planSummary = string.Join("; ", (plan.Commands != null && plan.Commands.Count > 0 ? plan.Commands : System.Linq.Enumerable.Empty<SpreadsheetApp.Core.AI.IAICommand>()).Select(c => c.Summarize()));
                             var root = new System.Collections.Generic.Dictionary<string, object?>
                             {
                                 ["test_file"] = Path.GetFileName(path),
@@ -519,8 +595,14 @@ namespace SpreadsheetApp.UI
                                 ["user"] = userStr,
                                 ["system"] = sysStr,
                                 ["plan_json"] = planStr,
+                                ["plan_summary"] = planSummary,
                                 ["agent_transcript"] = transcript,
-                                ["workbook_json"] = workbookStr
+                                ["chat_thread"] = _captureChatThread(),
+                                ["before_workbook_json"] = beforeWb,
+                                ["after_workbook_json"] = afterWb,
+                                ["changes_total"] = total,
+                                ["changes_outside_selection"] = outside,
+                                ["changes_sample"] = sample
                             };
                             var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
                             File.WriteAllText(exportPath, System.Text.Json.JsonSerializer.Serialize(root, opts));
@@ -543,6 +625,55 @@ namespace SpreadsheetApp.UI
                 finally { stepNo++; }
             }
             Log("> Done.\r\n");
+        }
+
+        private void ComputeDiffSummary(System.Collections.Generic.Dictionary<string, string> before,
+                                        System.Collections.Generic.Dictionary<string, string> after,
+                                        string? location,
+                                        out int totalChanged,
+                                        out int outsideSelection,
+                                        out System.Collections.Generic.List<string> sampleChanges)
+        {
+            totalChanged = 0; outsideSelection = 0; sampleChanges = new System.Collections.Generic.List<string>();
+            int rStart = int.MinValue, rEnd = int.MaxValue, cStart = int.MinValue, cEnd = int.MaxValue;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(location) && location.Contains(":", StringComparison.Ordinal))
+                {
+                    var parts = location.Split(':');
+                    if (parts.Length == 2 && SpreadsheetApp.Core.CellAddress.TryParse(parts[0].Trim(), out int rr1, out int cc1) && SpreadsheetApp.Core.CellAddress.TryParse(parts[1].Trim(), out int rr2, out int cc2))
+                    {
+                        rStart = Math.Min(rr1, rr2); rEnd = Math.Max(rr1, rr2);
+                        cStart = Math.Min(cc1, cc2); cEnd = Math.Max(cc1, cc2);
+                    }
+                }
+            }
+            catch { }
+            var keys = new System.Collections.Generic.HashSet<string>(before.Keys, System.StringComparer.OrdinalIgnoreCase);
+            foreach (var k in after.Keys) keys.Add(k);
+            foreach (var k in keys)
+            {
+                before.TryGetValue(k, out var b);
+                after.TryGetValue(k, out var a);
+                if (string.Equals(b ?? string.Empty, a ?? string.Empty, StringComparison.Ordinal)) continue;
+                totalChanged++;
+                try
+                {
+                    if (SpreadsheetApp.Core.CellAddress.TryParse(k, out int rr, out int cc))
+                    {
+                        if (rr < rStart || rr > rEnd || cc < cStart || cc > cEnd) outsideSelection++;
+                    }
+                }
+                catch { }
+                if (sampleChanges.Count < 50)
+                {
+                    string s;
+                    if (b == null) s = $"+ {k} = {a}";
+                    else if (a == null) s = $"- {k} (cleared from '{b}')";
+                    else s = $"~ {k}: '{b}' -> '{a}'";
+                    sampleChanges.Add(s);
+                }
+            }
         }
 
         private void RefreshVisibleList()
@@ -645,6 +776,17 @@ namespace SpreadsheetApp.UI
                             sort_col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(sr.SortCol),
                             order = sr.Order,
                             has_header = sr.HasHeader
+                        });
+                    }
+                    else if (cmd is SpreadsheetApp.Core.AI.TransformRangeCommand tr)
+                    {
+                        list.Add(new
+                        {
+                            type = "transform_range",
+                            start = new { row = tr.StartRow + 1, col = SpreadsheetApp.Core.CellAddress.ColumnIndexToName(tr.StartCol) },
+                            rows = tr.Rows,
+                            cols = tr.Cols,
+                            op = tr.Op
                         });
                     }
                 }

@@ -1,0 +1,12 @@
+{
+  "tests": [
+    { "file": "test_35_ui_unified_thread_engineers.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Write a list of 5 of your favorite AI engineers in column A starting at A2.", "location": "A2:A6", "apply": true, "AllowedCommands": ["set_values"], "MinChangesTotal": 5, "MaxChangesOutside": 0 },
+      { "action": "ai_chat", "prompt": "Add a column with their special ability next to their names. Include a header 'Special Ability'.", "location": "A1:B6", "apply": true, "AllowedCommands": ["insert_cols", "set_values"], "MaxChangesOutside": 0 }
+    ]},
+    { "file": "test_36_ui_unified_thread_answer_only.workbook.json", "steps": [
+      { "action": "ai_chat", "prompt": "Explain what this sheet contains in 1-2 sentences. Answer only; do not propose any spreadsheet changes.", "location": "A1", "apply": false, "ExpectNoWrites": true, "AllowedCommands": [] }
+    ]}
+  ]
+}
+

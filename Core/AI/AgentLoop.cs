@@ -25,6 +25,8 @@ namespace SpreadsheetApp.Core.AI
             var transcript = new List<string>();
 
             // Phase 1: ask the planner for query intents
+            var lowPrompt = (userPrompt ?? string.Empty).ToLowerInvariant();
+            bool observeOnly = lowPrompt.Contains("observe only") || lowPrompt.Contains("observations only") || lowPrompt.Contains("do not make any changes") || lowPrompt.Contains("do not propose");
             var qctx = new AIContext
             {
                 SheetName = baseContext.SheetName,
@@ -158,6 +160,11 @@ namespace SpreadsheetApp.Core.AI
             }
 
             // Phase 2: build augmented prompt and ask for writes
+            if (observeOnly)
+            {
+                // Skip proposing any write commands in observe-only scenarios
+                return new Result { Plan = new AIPlan(), Transcript = transcript.ToArray() };
+            }
             var augUser = new StringBuilder();
             augUser.AppendLine(userPrompt.Trim());
             augUser.AppendLine();

@@ -1,6 +1,14 @@
 # E2E Test Suite Index
 
-Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate with Next/Prev) or **File > Open Workbook**. Automated steps and prompts are defined in `tests/TEST_SPECS.json` and can be executed from the Test Runner.
+Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate with Next/Prev) or **File > Open Workbook**. Automated steps and prompts are defined in manifests under `tests/` and can be executed from the Test Runner or the headless runner.
+
+Suites (refactored taxonomy)
+- Engine: deterministic product tests (future) — `tests/ENGINE_SPECS.json`
+- Command: AI command/planner tests — `tests/COMMAND_SPECS.json`
+- Agent: agent-loop observe→plan tests — `tests/AGENT_SPECS.json`
+- Scenario: UI/AI unified thread flows — `tests/SCENARIO_SPECS.json`
+
+Legacy full suite manifest remains available as `tests/TEST_SPECS.json`.
 
 | # | File | Category | What it tests |
 |---|------|----------|---------------|
@@ -42,13 +50,18 @@ Each test is a `.workbook.json` file. Open via **Test > Test Runner** (navigate 
 
 ## How to use
 
-1. **Test Runner (recommended):** Test menu > Test Runner. Use Next/Prev to navigate. Click "Load Test" to load the workbook. Click "Run Steps" to execute prompts/selections from `TEST_SPECS.json`.
+1. **Test Runner (recommended):** Test menu > Test Runner. Use Next/Prev to navigate. Click "Load Test" to load the workbook. Click "Run Steps" to execute prompts/selections from a manifest (e.g., `COMMAND_SPECS.json`, `AGENT_SPECS.json`, or `TEST_SPECS.json`).
    - Optional: enable "Save snapshots" to write workbook snapshots.
    - Optional: enable "Dump plan JSON" to save the raw provider plan to `tests/output/` after each step.
    - Optional: enable "Dump user prompt" to save the constructed user prompt (context + instruction) that was sent to the provider.
    - Optional: enable "Dump system prompt" to save the system schema/rules used for planning.
 2. **Manual:** File > Open Workbook, navigate to `tests/`, pick a file. You can still perform actions manually; A1 no longer contains instructions.
 3. **AI tests** require an API key configured (OpenAI or Anthropic). Without one, the MockChatPlanner will respond with heuristic-based plans (limited coverage).
+
+### Suite manifests
+- `tests/COMMAND_SPECS.json` — planner/command coverage (set_values, set_formula, sort_range, insert/delete cols, copy/move, format, validation, conditional formatting, etc.)
+- `tests/AGENT_SPECS.json` — agent loop: observe transcripts, selection fencing, values-only gating, deterministic transforms
+- `tests/SCENARIO_SPECS.json` — unified UI thread flows (answer-only, multi-step with structural changes)
 
 ### TEST_SPECS.json format
 - `tests/TEST_SPECS.json` defines automated steps per test file.

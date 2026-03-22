@@ -16,6 +16,65 @@ namespace SpreadsheetApp
             try
             {
                 var args = Environment.GetCommandLineArgs();
+                // Headless test runner: run full suite or a single test without launching UI
+                // Usage:
+                //   --run-tests [tests/TEST_SPECS.json] [--output-dir tests/output]
+                //   --run-one <tests/test_XX_....workbook.json> [--output-dir tests/output]
+                if (args.Any(a => string.Equals(a, "--run-tests", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string specs = "tests/TEST_SPECS.json";
+                    string outputDir = System.IO.Path.Combine("tests", "output");
+                    bool reflection = false;
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        if (string.Equals(args[i], "--run-tests", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                                specs = args[i + 1];
+                        }
+                        else if (string.Equals(args[i], "--output-dir", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 < args.Length) outputDir = args[i + 1];
+                        }
+                        else if (string.Equals(args[i], "--reflection", StringComparison.OrdinalIgnoreCase))
+                        {
+                            reflection = true;
+                        }
+                    }
+                    int code = SpreadsheetApp.Core.HeadlessTestRunner.RunAll(specs, outputDir, reflection);
+                    try { Console.WriteLine($"Headless test run completed with exit code {code}."); } catch { }
+                    Environment.ExitCode = code; return;
+                }
+                if (args.Any(a => string.Equals(a, "--run-one", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string file = string.Empty;
+                    string outputDir = System.IO.Path.Combine("tests", "output");
+                    bool reflection = false;
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        if (string.Equals(args[i], "--run-one", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                                file = args[i + 1];
+                        }
+                        else if (string.Equals(args[i], "--output-dir", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 < args.Length) outputDir = args[i + 1];
+                        }
+                        else if (string.Equals(args[i], "--reflection", StringComparison.OrdinalIgnoreCase))
+                        {
+                            reflection = true;
+                        }
+                    }
+                    if (string.IsNullOrWhiteSpace(file))
+                    {
+                        try { Console.Error.WriteLine("--run-one requires a .workbook.json file path"); } catch { }
+                        Environment.ExitCode = 2; return;
+                    }
+                    int code = SpreadsheetApp.Core.HeadlessTestRunner.RunSingle(file, outputDir, reflection);
+                    try { Console.WriteLine($"Headless single test completed with exit code {code}."); } catch { }
+                    Environment.ExitCode = code; return;
+                }
                 if (args.Any(a => string.Equals(a, "--export-docs", StringComparison.OrdinalIgnoreCase)))
                 {
                     var idx = DocsIndexer.Build(null);

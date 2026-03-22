@@ -1,6 +1,79 @@
 # Dev Journal
 
+## Headless Test Runner and Autonomy (2026‑03‑22)
+
+What changed
+- Added a headless test runner to the WinForms host (no separate project required). New CLI flags:
+  - `--run-tests [tests/TEST_SPECS.json] [--output-dir tests/output] [--reflection]`
+  - `--run-one <tests/test_XX_....workbook.json> [--output-dir tests/output] [--reflection]`
+- The runner mirrors the UI Test Runner: selection setup, planning (chat or two‑phase agent), optional apply, diffs, and consolidated exports.
+- It writes per-step artifacts (`*.before.workbook.json`, `*.workbook.json`, `*.plan.json`, `*.export.json`, and for agent steps `*.agent.txt` + `*.observations.json`).
+- It also writes `tests/output/results_summary.json` with per-test step summaries and totals.
+- Optional `--reflection` emits `*.feedback.json` per step with heuristic “missing tools/commands, comms feedback, next capabilities”.
+
+How we run it
+- From WSL, we invoke the Windows EXE via PowerShell; execution occurs on Windows, artifacts land under `tests/output/` and are visible to WSL.
+- If the Debug UI is open, the Debug EXE can be file-locked. Use Release for headless: `bin/Release/net8.0-windows/SpreadsheetApp.exe ...`.
+
+Provider vs Mock
+- Provider selection remains env‑first (Auto). `.env` must be placed next to the running EXE (Debug or Release folder) or env vars set globally.
+- If `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is present, headless runs use the real provider; otherwise they fall back to the MockChatPlanner (good for deterministic coverage but limited vs real models).
+- Note: A `.env` at repo root is not automatically read; the loader looks in the EXE’s folder.
+
+Validation on first pass
+- We ran single and full-suite headless commands. With Release builds, the full suite reported “27 passed, 0 failed” and produced `results_summary.json` plus all per‑step exports and feedback files.
+- The run likely used the Mock planner unless a `.env` was present in the Release folder; for real-provider runs, ensure `.env` is copied to `bin/Release/net8.0-windows/.env` (or set env vars) before invoking.
+
+Gotchas fixed during bring‑up
+- Build error (`AIContext.SheetSummary` type reference) during runner wiring — corrected to `SheetSummary`.
+- Initial results summary write used a direct File.WriteAllText; switched to the same safe writer used elsewhere to avoid path issues.
+- Avoided Debug EXE file lock by running the Release EXE for headless.
+
+Follow‑ups we can do
+- Provider‑driven reflection (strict JSON) as an optional extra call; keep heuristic fallback.
+- Include provider/model + token usage/latency in `results_summary.json`.
+- Add a small diff utility to compare two `results_summary.json` runs for regressions.
+
 This journal captures decisions, hurdles, and fixes made while implementing the enhancement plan for Rustsheet.
+
+## Autonomy Stage 2–3: Asserts, Scoring, Reflection (2026‑03‑22)
+
+What changed
+- Extended the headless runner with step‑level assertions and scoring.
+  - New optional fields on each step in the specs: `AllowedCommands`, `ExpectNoWrites`, `ExpectTranscript`, `ExpectedCells`, `MaxChangesOutside`, `MinChangesTotal`, `Strict`.
+  - Runner now evaluates assertions, records `assert_failures` per step in `*.export.json`, and marks each step `passed` in the aggregated summary.
+  - Added schema mapping for command allowlists (enum → schema): `CommandTypeToSchema` in `Core/HeadlessTestRunner.cs`.
+- Added outputs:
+  - `tests/output/scorecard.json` — totals, passed steps, pass rate.
+  - `tests/output/improvement_suggestions.json` — aggregated keys from assertion failures across all steps.
+
+Specs updated
+- New subset spec file `tests/TEST_SPECS_30_36.json` with assertions for tests 30–36:
+  - 30, 33: `ExpectNoWrites`, `ExpectTranscript`, `MaxChangesOutside=0` (observe‑only).
+  - 32: `AllowedCommands=["transform_range"]`, `MinChangesTotal=5`, `MaxChangesOutside=0`.
+  - 34: `AllowedCommands=["set_values","transform_range"]`, `MaxChangesOutside=0`.
+  - 35: Step 1 `AllowedCommands=["set_values"]` (guard against stray titles), Step 2 `AllowedCommands=["insert_cols","set_values"]`; both fence to selection.
+  - 36: `ExpectNoWrites=true`, `AllowedCommands=[]` (answer‑only).
+
+Run results (provider‑backed)
+- Invoked Release EXE with `.env` next to the binary (`bin/Release/net8.0-windows/.env`).
+- Ran `--run-tests tests/TEST_SPECS_30_36.json`.
+- Outcome: 6/7 tests passed; 8/9 steps passed; pass rate ≈ 0.889.
+  - Failure: `test_35_ui_unified_thread_engineers` step 1 due to `assert_failures=["unexpected_command:set_title"]` (intentional strict allowlist to disallow title writes for a values‑only step).
+  - `test_32_ai_agent_transform_range` applied 5 in‑bounds changes via `transform_range=normalize_city`.
+- Artifacts:
+  - `tests/output/results_summary.json` — now includes `steps_total`/`steps_passed` per test.
+  - `tests/output/scorecard.json` — total tests/steps, pass rate.
+  - `tests/output/improvement_suggestions.json` — top failure key: `unexpected_command:set_title` (count=1).
+
+Notes / rationale
+- Asserts formalize objectives and boundaries per step (selection fencing, allowed command set, expected deltas). This elevates from capability to evaluation.
+- The suggestions aggregator provides a concise “what to fix next” list for Stage 4 proposals.
+
+Next steps
+- Propagate default asserts (e.g., `MaxChangesOutside=0`) across the full suite and add targeted `AllowedCommands` where needed.
+- Decide policy for titles in small writes: either allow `set_title` in 35 step 1 or adjust planner/heuristics to avoid it under values‑only prompts in strict mode.
+- Enrich `results_summary.json` with provider/model and token/latency when available.
 
 ## What We Shipped
 - Core
@@ -30,6 +103,12 @@ This journal captures decisions, hurdles, and fixes made while implementing the 
 
 - UI — Docked Chat Pane
   - Added a right-side docked Chat assistant panel (Plan/Revise/Apply, rolling history). Toggle via AI > Toggle Chat or Ctrl+Shift+C. This is now the single chat surface; the former pop-out window was removed.
+
+### UI — Right Sidebar Pass (2026‑03‑21)
+- Composer moved to bottom: multiline input + Send sit in a bottom bar; conversation scrolls above it. New messages render directly above the composer.
+- Bubble tightening: reduced vertical padding/margins and role label height for denser, more information‑efficient bubbles.
+- Controls cleanup: moved power‑user toggles (Analyze selection first, Auto‑apply small safe writes, Strict to selection, Input policy) into Advanced; Advanced stays collapsed by default. Kept minimal status/session labels visible.
+- Auto‑scroll: after each render, the thread scrolls to the latest entry so it remains visible above the composer.
 
 ## AI Command Set Extensions (2026‑03‑20)
 
@@ -1229,3 +1308,7 @@ How to validate
 Notes
 - The Advanced inspector contains the detailed log, policy preview, and history tools; it’s intentionally collapsed by default to reduce visual clutter.
 - The status line continues to show provider/model/tokens/latency when available.
+- Test Runner integration with unified chat and non‑blocking UI (2026‑03‑21)
+  - Made Test Runner modeless so the main spreadsheet stays interactive while tests run (OpenTestRunner uses Show instead of ShowDialog).
+  - While automated steps run, user prompts, agent observations, proposals, and applied summaries are posted into the unified chat thread, so the conversation reflects automation.
+  - Test exports now include before/after workbook snapshots, plan summary, and a quick diff summary (total changes and outside‑selection count). Logs include a brief changes summary.

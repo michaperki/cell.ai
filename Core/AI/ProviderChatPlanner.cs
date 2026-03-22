@@ -194,12 +194,44 @@ namespace SpreadsheetApp.Core.AI
             sbUsr.Append($" Instruction={(prompt ?? string.Empty)}.{guidance}");
             string usr = sbUsr.ToString();
 
-            var call = provider switch
+            ChatCallResult call;
+            try
             {
-                "OpenAI" => await CallOpenAIWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
-                "Anthropic" => await CallAnthropicWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
-                _ => new ChatCallResult { Content = string.Empty, Provider = provider }
-            };
+                call = provider switch
+                {
+                    "OpenAI" => await CallOpenAIWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
+                    "Anthropic" => await CallAnthropicWithUsageAsync(sys, usr, cancellationToken).ConfigureAwait(false),
+                    _ => new ChatCallResult { Content = string.Empty, Provider = provider }
+                };
+            }
+            catch
+            {
+                // Network/provider failed — gracefully fall back to mock planner
+                try
+                {
+                    var mockPlan = new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
+                    mockPlan.RawJson = string.Empty; mockPlan.RawUser = usr; mockPlan.RawSystem = sys;
+                    // Apply the same filtering/guards as provider-backed plans
+                    if (allowedCmds != null && allowedCmds.Length > 0)
+                    {
+                        mockPlan.Commands.RemoveAll(c => !IsCommandAllowedByList(c, allowedCmds));
+                    }
+                    else if (inferredValuesOnly)
+                    {
+                        mockPlan.Commands.RemoveAll(c => c is not SetValuesCommand);
+                    }
+                    else if (inferredNoTitles)
+                    {
+                        mockPlan.Commands.RemoveAll(c => c is SetTitleCommand);
+                    }
+                    if (context.SelectionHardMode)
+                    {
+                        ApplySelectionHardMode(context, mockPlan);
+                    }
+                    return mockPlan;
+                }
+                catch { return new AIPlan(); }
+            }
             string json = call.Content ?? string.Empty;
             if (string.IsNullOrWhiteSpace(json)) return new AIPlan();
             try
@@ -249,12 +281,43 @@ namespace SpreadsheetApp.Core.AI
                 {
                     // Build a concise revision user message including constraints and first few violations
                     var rev = BuildRevisionUserMessage(context, usr, allowedCmds, expectedWidth, violations, plan.RawJson ?? string.Empty);
-                    var call2 = provider switch
+                    ChatCallResult call2;
+                    try
                     {
-                        "OpenAI" => await CallOpenAIWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
-                        "Anthropic" => await CallAnthropicWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
-                        _ => new ChatCallResult { Content = string.Empty, Provider = provider }
-                    };
+                        call2 = provider switch
+                        {
+                            "OpenAI" => await CallOpenAIWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                            "Anthropic" => await CallAnthropicWithUsageAsync(sys, rev, cancellationToken).ConfigureAwait(false),
+                            _ => new ChatCallResult { Content = string.Empty, Provider = provider }
+                        };
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            var fallback = new MockChatPlanner().PlanAsync(context, prompt, cancellationToken).Result;
+                            fallback.RawJson = string.Empty; fallback.RawUser = usr; fallback.RawSystem = sys;
+                            // Apply allowed-commands filtering and selection fencing on fallback
+                            if (allowedCmds != null && allowedCmds.Length > 0)
+                            {
+                                fallback.Commands.RemoveAll(c => !IsCommandAllowedByList(c, allowedCmds));
+                            }
+                            else if (inferredValuesOnly)
+                            {
+                                fallback.Commands.RemoveAll(c => c is not SetValuesCommand);
+                            }
+                            else if (inferredNoTitles)
+                            {
+                                fallback.Commands.RemoveAll(c => c is SetTitleCommand);
+                            }
+                            if (context.SelectionHardMode)
+                            {
+                                ApplySelectionHardMode(context, fallback);
+                            }
+                            return fallback;
+                        }
+                        catch { return new AIPlan(); }
+                    }
                     string json2 = call2.Content ?? string.Empty;
                     if (!string.IsNullOrWhiteSpace(json2))
                     {

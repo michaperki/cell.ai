@@ -4303,8 +4303,8 @@ namespace SpreadsheetApp.UI
 
         private void OpenTestRunner()
         {
-            using var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, RunAgentStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory, CaptureActiveSheetMap);
-            runner.ShowDialog(this);
+            var runner = new TestRunnerForm(LoadWorkbookFromPath, RunChatStepAsync, RunAgentStepAsync, SaveWorkbookSnapshotTo, ActivateSheetByName, ClearAutomationChatHistory, CaptureActiveSheetMap, CaptureChatThreadSnapshot);
+            runner.Show(this);
         }
 
         // --- Programmatic AI helpers for Test Runner ---
@@ -4313,6 +4313,7 @@ namespace SpreadsheetApp.UI
         public void ClearAutomationChatHistory()
         {
             _automationHistory.Clear();
+            try { _chatSession.Clear(); _chatPane?.RefreshThread(); } catch { }
         }
 
         public void SaveWorkbookSnapshotTo(string path)
@@ -4345,6 +4346,36 @@ namespace SpreadsheetApp.UI
             }
             catch { }
             return map;
+        }
+
+        private object CaptureChatThreadSnapshot()
+        {
+            try
+            {
+                var list = new System.Collections.Generic.List<object?>();
+                foreach (var e in _chatSession.Thread)
+                {
+                    string? proposalSummary = null;
+                    try
+                    {
+                        if (e.Proposal != null && e.Proposal.Commands != null && e.Proposal.Commands.Count > 0)
+                        {
+                            proposalSummary = string.Join("; ", e.Proposal.Commands.Select(c => c.Summarize()));
+                        }
+                    }
+                    catch { proposalSummary = null; }
+                    list.Add(new
+                    {
+                        type = e.Type.ToString(),
+                        content = e.Content,
+                        version = e.ProposalVersion,
+                        meta = e.Meta,
+                        proposal_summary = proposalSummary
+                    });
+                }
+                return list.ToArray();
+            }
+            catch { return Array.Empty<object>(); }
         }
 
         public void ActivateSheetByName(string name)
@@ -4572,6 +4603,24 @@ namespace SpreadsheetApp.UI
                 return new SpreadsheetApp.Core.AI.AIPlan();
             }
 
+            // Reflect this step into the unified chat thread (user + plan/answer)
+            try
+            {
+                _chatSession.AddUser(prompt ?? string.Empty);
+                if (plan.Commands != null && plan.Commands.Count > 0)
+                {
+                    _chatSession.AddProposal(plan, 1);
+                }
+                else
+                {
+                    var ans = plan.Answer ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(ans)) ans = "(no changes proposed)";
+                    _chatSession.AddAnswer(ans);
+                }
+                _chatPane?.RefreshThread();
+            }
+            catch { }
+
             // Update automation conversation history (mirror ChatAssistantForm)
             try
             {
@@ -4621,6 +4670,7 @@ namespace SpreadsheetApp.UI
                 }
                 catch { }
                 ApplyPlan(plan);
+                try { _chatSession.AddAppliedSummary(plan); _chatPane?.RefreshThread(); } catch { }
             }
             return plan;
         }
@@ -4753,6 +4803,17 @@ namespace SpreadsheetApp.UI
             }
             catch { }
 
+            // Log minimal diagnostics into chat thread for artifact clarity
+            try
+            {
+                if (ctx.AllowedCommands != null && ctx.AllowedCommands.Length > 0)
+                {
+                    _chatSession.AddObservation($"AllowedCommands: {string.Join(", ", ctx.AllowedCommands)}");
+                }
+                _chatSession.AddObservation($"Selection {SpreadsheetApp.Core.CellAddress.ToAddress(ctx.StartRow, ctx.StartCol)} · {Math.Max(1, ctx.Rows)}x{Math.Max(1, ctx.Cols)}; hard_mode={ctx.SelectionHardMode}");
+            }
+            catch { }
+
             SpreadsheetApp.Core.AI.AgentLoop.Result res;
             try
             {
@@ -4765,6 +4826,28 @@ namespace SpreadsheetApp.UI
             }
 
             var plan = res.Plan ?? new SpreadsheetApp.Core.AI.AIPlan();
+
+            // Reflect transcript and plan into unified chat thread
+            try
+            {
+                _chatSession.AddUser(prompt ?? string.Empty);
+                if (res.Transcript != null && res.Transcript.Length > 0)
+                {
+                    foreach (var line in res.Transcript) _chatSession.AddObservation(line);
+                }
+                if (plan.Commands != null && plan.Commands.Count > 0)
+                {
+                    _chatSession.AddProposal(plan, 1);
+                }
+                else
+                {
+                    var ans = plan.Answer ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(ans)) ans = "(no changes proposed)";
+                    _chatSession.AddAnswer(ans);
+                }
+                _chatPane?.RefreshThread();
+            }
+            catch { }
 
             // Enforce values-only or no-titles constraints when explicitly requested in prompt
             try
@@ -4814,6 +4897,7 @@ namespace SpreadsheetApp.UI
                 }
                 catch { }
                 ApplyPlan(plan);
+                try { _chatSession.AddAppliedSummary(plan); _chatPane?.RefreshThread(); } catch { }
             }
 
             return (plan, res.Transcript ?? Array.Empty<string>());

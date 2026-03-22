@@ -1,0 +1,48 @@
+{
+  "tests": [
+    {
+      "file": "test_30_ai_agent_observe.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Look at the selection and produce observations only (uniques, column profile, sample rows). Do not make any changes.", "location": "A1:C6", "apply": false, "ExpectNoWrites": true, "ExpectTranscript": true, "MaxChangesOutside": 0 }
+      ]
+    },
+    {
+      "file": "test_31_ai_agent_values_only_gating.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Normalize the City names in the selection: trim whitespace and convert to Title Case. Use set_values only. Do not add titles.", "location": "A2:A6", "apply": false },
+        { "action": "ai_agent", "prompt": "Normalize the City names in the selection: trim whitespace and convert to Title Case. Use set_values only. Do not add titles.", "location": "A2:A6", "apply": true }
+      ]
+    },
+    {
+      "file": "test_32_ai_agent_transform_range.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Normalize the City names in the selection: trim whitespace and convert to Title Case. You may use transform_range with op=normalize_city. Make changes only within the selection.", "location": "A2:A6", "apply": true, "AllowedCommands": ["transform_range"], "MinChangesTotal": 5, "MaxChangesOutside": 0 }
+      ]
+    },
+    {
+      "file": "test_33_ai_agent_observe_only_strict.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Observe only: return uniques, profile, and a few sample rows. Do not propose or apply any write commands.", "location": "A1:C5", "apply": false, "ExpectNoWrites": true, "ExpectTranscript": true, "MaxChangesOutside": 0 }
+      ]
+    },
+    {
+      "file": "test_34_ai_agent_selection_fencing.workbook.json",
+      "steps": [
+        { "action": "ai_agent", "prompt": "Within the selection only, normalize values by trimming whitespace and converting to Title Case. Use set_values only. Do not touch cells outside the selection.", "location": "B2:B4", "apply": true, "AllowedCommands": ["set_values", "transform_range"], "MaxChangesOutside": 0 }
+      ]
+    },
+    {
+      "file": "test_35_ui_unified_thread_engineers.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Write a list of 5 of your favorite AI engineers in column A starting at A2.", "location": "A2:A6", "apply": true, "AllowedCommands": ["set_values"], "MinChangesTotal": 5, "MaxChangesOutside": 0 },
+        { "action": "ai_chat", "prompt": "Add a column with their special ability next to their names. Include a header 'Special Ability'.", "location": "A1:B6", "apply": true, "AllowedCommands": ["insert_cols", "set_values"], "MaxChangesOutside": 0 }
+      ]
+    },
+    {
+      "file": "test_36_ui_unified_thread_answer_only.workbook.json",
+      "steps": [
+        { "action": "ai_chat", "prompt": "Explain what this sheet contains in 1-2 sentences. Answer only; do not propose any spreadsheet changes.", "location": "A1", "apply": false, "ExpectNoWrites": true, "AllowedCommands": [] }
+      ]
+    }
+  ]
+}

@@ -20,8 +20,8 @@ namespace SpreadsheetApp.UI.AI
         private readonly Action? _clearPreview;
         private readonly SpreadsheetApp.Core.AI.ChatSession _session;
 
-        private readonly TextBox _input = new() { Dock = DockStyle.Top, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
-        private readonly Button _btnPlan = new() { Text = "Send", Dock = DockStyle.Top, Height = 32 };
+        private readonly TextBox _input = new() { Dock = DockStyle.Fill, Multiline = true, Height = 60, BorderStyle = BorderStyle.FixedSingle };
+        private readonly Button _btnPlan = new() { Text = "Send", Dock = DockStyle.Fill, Height = 32 };
         private readonly CheckBox _chkAgent = new() { Text = "Analyze selection first", Dock = DockStyle.Top, Height = 20 };
         // Revise is now per-card; remove global Revise button
         private readonly Button _btnCopyObs = new() { Text = "Copy Observations", Dock = DockStyle.Top, Height = 24 };
@@ -41,6 +41,7 @@ namespace SpreadsheetApp.UI.AI
         private FlowLayoutPanel _threadFlow = null!;
 
         private Panel _inputWrapper = null!;
+        private Panel _composerPanel = null!;
         // Current plan per-card; no global current plan
         private readonly Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? _runAgentLoop;
         private string[] _lastTranscript = Array.Empty<string>();
@@ -87,7 +88,7 @@ namespace SpreadsheetApp.UI.AI
             _input.BorderStyle = BorderStyle.None;
             _inputWrapper = new Panel
             {
-                Dock = DockStyle.Top,
+                Dock = DockStyle.Fill,
                 Height = _input.Height + 2,
                 Padding = new Padding(1),
                 BackColor = Theme.PanelBorder
@@ -117,15 +118,22 @@ namespace SpreadsheetApp.UI.AI
             var policySep = new Label { Dock = DockStyle.Top, Height = 1, BackColor = Theme.PanelBorder };
 
             // ── Layout ────────────────────────────────────────────
-            // Added last-to-first for Top dock (last added = topmost)
+            // Container holds: [Top] session/status + advanced toggle/section, [Fill] thread, [Bottom] composer
             var container = new Panel { Dock = DockStyle.Fill };
-            // Unified thread area
+            // Unified thread area (scrollable)
             BuildThreadHost();
-            container.Controls.Add(_threadHost);
-            container.Controls.Add(_btnPlan);        // Top
-            container.Controls.Add(spacer1);         // Top — gap before Send
-            // Advanced controls are added inside _advancedPanel (hidden by default)
-            _advancedPanel = new Panel { Dock = DockStyle.Top, Visible = false };
+            // Bottom composer: input + Send button
+            _composerPanel = new Panel { Dock = DockStyle.Bottom, Padding = new Padding(6, 6, 6, 6) };
+            var composerBorder = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.PanelBorder };
+            var sendHost = new Panel { Dock = DockStyle.Right, Width = 88, Padding = new Padding(6, 0, 0, 0) };
+            sendHost.Controls.Add(_btnPlan); // _btnPlan.Dock = Fill
+            var inputHost = new Panel { Dock = DockStyle.Fill };
+            inputHost.Controls.Add(_inputWrapper);  // _inputWrapper.Dock = Fill
+            _composerPanel.Controls.Add(inputHost);
+            _composerPanel.Controls.Add(sendHost);
+            _composerPanel.Controls.Add(composerBorder);
+            // Advanced controls (collapsed by default) — move power-user toggles here
+            _advancedPanel = new Panel { Dock = DockStyle.Top, Visible = false, Padding = new Padding(6, 6, 6, 6) };
             var advButtons = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.LeftToRight, Height = 28 };
             advButtons.Controls.Add(_btnCopyObs);
             advButtons.Controls.Add(_btnHistory);
@@ -133,16 +141,17 @@ namespace SpreadsheetApp.UI.AI
             _advancedPanel.Controls.Add(advButtons);
             _advancedPanel.Controls.Add(policySep);       // separator
             _advancedPanel.Controls.Add(_policy);         // policy text
-            container.Controls.Add(_advancedPanel);
-            container.Controls.Add(_chkAgent);       // Top
-            container.Controls.Add(_chkAutoApply);   // Top
-            container.Controls.Add(_lblStatus);      // Top (provider/model)
-            container.Controls.Add(_lblSession);     // Top (session status)
-            container.Controls.Add(spacer2);         // Top — gap before action buttons
-            container.Controls.Add(_policyToggle);   // Top — advanced toggle
-            container.Controls.Add(_chkHardMode);    // Top
-            container.Controls.Add(_inputPolicy);    // Top
-            container.Controls.Add(_inputWrapper);    // Top — topmost (wraps _input with focus border)
+            _advancedPanel.Controls.Add(_chkAgent);
+            _advancedPanel.Controls.Add(_chkAutoApply);
+            _advancedPanel.Controls.Add(_chkHardMode);
+            _advancedPanel.Controls.Add(_inputPolicy);
+            // Assemble container (order matters with DockStyle)
+            container.Controls.Add(_threadHost);          // Fill
+            container.Controls.Add(_composerPanel);       // Bottom
+            container.Controls.Add(_advancedPanel);       // Top (hidden by default)
+            container.Controls.Add(_policyToggle);        // Top — advanced toggle
+            container.Controls.Add(_lblStatus);           // Top (provider/model)
+            container.Controls.Add(_lblSession);          // Top (session status)
             Controls.Add(container);
             _btnPlan.Click += async (_, __) => await DoSendAsync();
             _btnCopyObs.Click += (_, __) =>
@@ -596,23 +605,23 @@ namespace SpreadsheetApp.UI.AI
                     {
                         case SpreadsheetApp.Core.AI.ChatEntryType.User:
                         {
-                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(240, 247, 255), Padding = new Padding(8), Margin = new Padding(0, 0, 0, 8) };
-                            var who = new Label { Dock = DockStyle.Top, Height = 16, Text = "You", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
-                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 16, 0) };
+                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(240, 247, 255), Padding = new Padding(6), Margin = new Padding(0, 0, 0, 6) };
+                            var who = new Label { Dock = DockStyle.Top, Height = 14, Text = "You", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
+                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 12, 0) };
                             bubble.Controls.Add(lbl); bubble.Controls.Add(who); _threadFlow.Controls.Add(bubble);
                             break;
                         }
                         case SpreadsheetApp.Core.AI.ChatEntryType.Answer:
                         {
-                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(245, 245, 245), Padding = new Padding(8), Margin = new Padding(0, 0, 0, 8) };
-                            var who = new Label { Dock = DockStyle.Top, Height = 16, Text = "AI", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
-                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 16, 0) };
+                            var bubble = new Panel { Width = width, BackColor = Color.FromArgb(245, 245, 245), Padding = new Padding(6), Margin = new Padding(0, 0, 0, 6) };
+                            var who = new Label { Dock = DockStyle.Top, Height = 14, Text = "AI", Font = Theme.MonoSmall, ForeColor = Theme.TextMuted };
+                            var lbl = new Label { AutoSize = true, Dock = DockStyle.Top, Text = e.Content ?? string.Empty, Font = Theme.UI, ForeColor = Theme.TextPrimary, MaximumSize = new Size(width - 12, 0) };
                             bubble.Controls.Add(lbl); bubble.Controls.Add(who); _threadFlow.Controls.Add(bubble);
                             break;
                         }
                         case SpreadsheetApp.Core.AI.ChatEntryType.Observation:
                         {
-                            var lbl = new Label { Width = width, AutoSize = true, Text = e.Content ?? string.Empty, Font = Theme.MonoSmall, ForeColor = Theme.LogObservation, Margin = new Padding(0, 0, 0, 4) };
+                            var lbl = new Label { Width = width, AutoSize = true, Text = e.Content ?? string.Empty, Font = Theme.MonoSmall, ForeColor = Theme.LogObservation, Margin = new Padding(0, 0, 0, 2) };
                             _threadFlow.Controls.Add(lbl);
                             break;
                         }
@@ -636,6 +645,16 @@ namespace SpreadsheetApp.UI.AI
                 }
                 _threadFlow.ResumeLayout();
                 _threadFlow.PerformLayout();
+                // Auto-scroll to the most recent entry so it appears above the composer
+                try
+                {
+                    if (_threadFlow.Controls.Count > 0)
+                    {
+                        var last = _threadFlow.Controls[_threadFlow.Controls.Count - 1];
+                        _threadFlow.ScrollControlIntoView(last);
+                    }
+                }
+                catch { }
             }
             catch { }
         }
