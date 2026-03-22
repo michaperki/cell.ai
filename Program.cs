@@ -45,6 +45,36 @@ namespace SpreadsheetApp
                     try { Console.WriteLine($"Headless test run completed with exit code {code}."); } catch { }
                     Environment.ExitCode = code; return;
                 }
+                if (args.Any(a => string.Equals(a, "--bless-baseline", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string outputDir = System.IO.Path.Combine("tests", "output");
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        if (string.Equals(args[i], "--output-dir", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (i + 1 < args.Length) outputDir = args[i + 1];
+                        }
+                    }
+                    try
+                    {
+                        string src = System.IO.Path.Combine(outputDir, "results_summary.json");
+                        string dst = System.IO.Path.Combine(outputDir, "baseline.json");
+                        if (!System.IO.File.Exists(src))
+                        {
+                            try { Console.Error.WriteLine($"results_summary.json not found in {outputDir}. Run tests first, then bless."); } catch { }
+                            Environment.ExitCode = 2; return;
+                        }
+                        System.IO.Directory.CreateDirectory(outputDir);
+                        System.IO.File.Copy(src, dst, overwrite: true);
+                        try { Console.WriteLine($"Blessed baseline: {dst}"); } catch { }
+                        Environment.ExitCode = 0; return;
+                    }
+                    catch (Exception ex)
+                    {
+                        try { Console.Error.WriteLine($"Failed to bless baseline: {ex.Message}"); } catch { }
+                        Environment.ExitCode = 1; return;
+                    }
+                }
                 if (args.Any(a => string.Equals(a, "--run-one", StringComparison.OrdinalIgnoreCase)))
                 {
                     string file = string.Empty;

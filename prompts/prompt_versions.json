@@ -1,0 +1,20 @@
+[
+  {
+    "version": 1,
+    "file": "system_planner_v1.md",
+    "created": "2026-03-22",
+    "description": "Baseline: original system prompt from ProviderChatPlanner.cs",
+    "author": "human"
+  },
+  {
+    "version": 2,
+    "file": "system_planner_v2.md",
+    "created": "2026-03-22",
+    "description": "Add categorical label spellcheck: fix obvious single-character typos (e.g., 'actve'→'active') using majority/canonical forms.",
+    "author": "agent",
+    "changes": "Appended one normalization rule for categorical labels at end of prompt.",
+    "hypothesis": "Explicit instruction to correct single-character status typos will convert 'actve' to 'active' in test_39 without affecting other tests.",
+    "target_tests": ["test_39_ambiguity_vague_prompt"],
+    "baseline_expectation": { "failures": ["cell_mismatch:C9 expected='active' got='actve'", "min_changes_total_not_met:2<3"] }
+  }
+]

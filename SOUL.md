@@ -79,6 +79,14 @@ The long-term goal is not just task execution but a bounded improvement loop. Bu
 - Do **not** implicitly treat the whole codebase as freely self-modifiable.
 - Be explicit about what may be changed automatically, what requires Mike's review, and what is read-only.
 
+### Stage 4 Prerequisites
+Before an agent operates in self-improvement mode, these must be in place:
+1. Regression gate: Every run compares against a blessed baseline. Zero regressions required to keep changes.
+2. Failure taxonomy: A living doc mapping failure patterns to writable surfaces. The agent reads this before proposing fixes.
+3. Prompt versioning: System prompts live in versioned files, not code literals. Every run records which version was used.
+4. Experiment log: Structured append-only log of hypothesis → change → result → verdict. The agent checks prior experiments before repeating attempts.
+5. Human-in-the-loop gate: Only a human can bless a new baseline (`--bless-baseline`). The agent experiments freely but cannot promote its own changes as the new standard without approval.
+
 ### Reflection quality bar
 Reflection should identify: what failed or succeeded, why, what change is proposed, and how the change would be tested. Avoid generic reflections that do not cash out into a concrete next experiment.
 

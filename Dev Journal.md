@@ -6,6 +6,8 @@
 
 | Date | Entry | Key decision |
 |------|-------|-------------|
+| 03-22 | Stage 4 infra + first experiment | Kept v2 prompt; gate PASS |
+| 03-22 | Restored live memory doc | Reintroduced `memory/MEMORY.md`; kept SOUL references |
 | 03-22 | Provider-backed full suite + 8 new hard tests | SanitizePlanToBounds metadata bug fix; tests 37-44 covering all 15 capabilities; 2 real LLM failures found |
 | 03-22 | Persistent memory restructure + dashboard workbook | SOUL.md, journal rotation, capability matrix, run history, dashboard.workbook.json |
 | 03-22 | Provider-backed pass 30-36: strict gating OK | 7/7 tests, 9/9 steps, no stray commands |
@@ -24,6 +26,21 @@
 | 03-19 | UI Modernization | Flat styling, modern selection colors, double buffering |
 
 > Entries before 03-21 are in `Dev Journal Archive.md`.
+
+---
+
+## Restore Live Memory Doc (2026-03-22)
+
+What changed
+- Created `memory/MEMORY.md` as the live project-state doc (architecture snapshot, Current Focus, pointers, maintenance notes).
+- Seeded Current Focus from recent findings: Test 41 layout stacking issue; Test 44 unit scaling ("95k" as 95000); global policy for title writes in strict mode.
+
+Rationale
+- `SOUL.md` explicitly references `memory/MEMORY.md` and the session protocol expects reading/updating it each session.
+- The previous memory document was intentionally archived during the restructure; `SOUL.md` now holds durable truths while `memory/MEMORY.md` tracks session-level state.
+
+Files
+- Added: `memory/MEMORY.md`
 
 ---
 
@@ -189,3 +206,22 @@ What changed
 - Dialogs: FindReplace, Settings, GenerateFill all themed.
 - Plan preview diff overlay (green=add, yellow=modify, red=clear).
 - Collapsible policy panel, focus indicators, animated "Thinking..." indicator.
+## Stage 4 infra + first experiment (2026-03-22)
+
+What changed
+- Built the Stage 4 regression gate into the headless runner: generates `regression_report.json` + `REGRESSION.md` and contributes to exit code.
+- Added `tests/FAILURE_TAXONOMY.md` aligned to real assertion keys, including distinct modes: `no_effect` vs `under_generation`, and `flaky_nondeterministic` (from test_44).
+- Extracted system prompt to versioned files (`prompts/system_planner_v1.md`), added file-loading with fallback, and recorded `prompt_version` in run history.
+- Created `prompts/system_planner_v2.md` with a minimal categorical label normalization rule (fix obvious single-character typos like "actve"→"active").
+
+Experiment
+- Target: test_39 (`cell_mismatch:C9 expected='active' got='actve'`; also `min_changes_total_not_met:2<3`).
+- Hypothesis: Explicit categorical typo-correction guidance would fix C9.
+- Result: test_39 remained failing. However overall suite improved from 31/35 to 32/35 with zero regressions (gate PASS). test_42 improved (no_effect addressed). test_44 remains numerics issue and flaky.
+
+Decisions
+- Kept v2 as active (strict net improvement); blessed baseline at 32/35.
+- v1 was briefly restored then reverted back to v2; final state uses v2 by default.
+
+Next
+- Consider v3 with a few-shot example to enforce categorical correction, or accept as a model limit if no gain without regressions.

@@ -6,12 +6,15 @@ using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using SpreadsheetApp.Core;
+using System.IO;
 
 namespace SpreadsheetApp.Core.AI
 {
     public sealed class ProviderChatPlanner : IChatPlanner
     {
         private readonly string _provider; // OpenAI, Anthropic, Auto
+        public static int? ActivePromptVersion { get; private set; }
+        public static string? ActivePromptPath { get; private set; }
 
         public ProviderChatPlanner(string provider)
         {
@@ -49,7 +52,14 @@ namespace SpreadsheetApp.Core.AI
             }
             else
             {
-                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array. Each command MAY include an optional \"rationale\" string explaining why; this is for preview only and has no effect on execution.";
+                sys = "You are a spreadsheet planning assistant. Respond ONLY with strict JSON matching this schema: {\"commands\":[{\"type\":\"set_values\",\"start\":{\"row\":<1-based int>,\"col\":<column letter>},\"values\":[[\"text\"],...]},{\"type\":\"set_formula\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"formulas\":[[\"=A1+B1\"],...]},{\"type\":\"set_title\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":1,\"cols\":1,\"text\":\"...\"},{\"type\":\"create_sheet\",\"name\":\"...\"},{\"type\":\"clear_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>},{\"type\":\"rename_sheet\",\"index\":<1-based optional>,\"old_name\":\"... optional\",\"new_name\":\"...\"},{\"type\":\"sort_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"sort_col\":\"<letter or 1-based index>\",\"order\":\"asc|desc\",\"has_header\":<bool> },{\"type\":\"insert_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"delete_rows\",\"at\":<1-based row>,\"count\":<int>},{\"type\":\"insert_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_cols\",\"at\":\"<letter or 1-based index>\",\"count\":<int>},{\"type\":\"delete_sheet\",\"index\":<1-based optional>,\"name\":\"... optional\"},{\"type\":\"copy_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"move_range\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"dest\":{\"row\":<1-based>,\"col\":<letter>}},{\"type\":\"set_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"},{\"type\":\"set_validation\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"mode\":\"list|number_between\",\"allow_empty\":<bool>,\"min\":<number optional>,\"max\":<number optional>,\"allowed\":[\"a\",\"b\"]},{\"type\":\"set_conditional_format\",\"start\":{\"row\":<1-based>,\"col\":<letter>},\"rows\":<int>,\"cols\":<int>,\"op\":\">|>=|<|<=|==|!=\",\"threshold\":<number>,\"bold\":<bool optional>,\"number_format\":\"... optional\",\"h_align\":\"left|center|right optional\",\"fore_color\":\"#RRGGBB optional\",\"back_color\":\"#RRGGBB optional\"}]} with no extra keys, no prose. Only perform the requested change(s). Do NOT add titles, totals, or extra columns unless explicitly asked. When creating tables, place headers at the start cell's row and write data rows immediately below. If a selection/range shape is indicated (Rows/Cols), align your writes to that shape and avoid writing outside it. For two-column summary/label patterns, each set_values row MUST be exactly two columns [label, \"\"], and formulas belong in the second column via set_formula. When filling a table from a list of inputs, combine all rows into a single set_values command with a 2D values array. Normalize shorthand like '95k' to plain integers (e.g., 95000) when computing numeric values from text; always write plain numbers with no suffixes. Each command MAY include an optional \"rationale\" string explaining why; this is for preview only and has no effect on execution.";
+                // Override with file-based system prompt if provided
+                try
+                {
+                    var sysFromFile = TryLoadSystemPromptFromFile();
+                    if (!string.IsNullOrWhiteSpace(sysFromFile)) sys = sysFromFile!;
+                }
+                catch { }
             }
 
             // Allowed commands and strengthened constraints
@@ -381,6 +391,44 @@ namespace SpreadsheetApp.Core.AI
                 // If parsing fails, return empty plan
                 return new AIPlan();
             }
+        }
+
+        private static string? TryLoadSystemPromptFromFile()
+        {
+            try
+            {
+                string? path = Environment.GetEnvironmentVariable("SYSTEM_PROMPT_PATH");
+                if (string.IsNullOrWhiteSpace(path)) path = Path.Combine("prompts", "system_planner_v2.md");
+                if (!Path.IsPathRooted(path))
+                {
+                    try
+                    {
+                        string cwd = Environment.CurrentDirectory;
+                        string candidate = Path.Combine(cwd, path);
+                        if (File.Exists(candidate)) path = candidate;
+                        else
+                        {
+                            string baseDir = AppContext.BaseDirectory ?? cwd;
+                            candidate = Path.Combine(baseDir, path);
+                            if (File.Exists(candidate)) path = candidate;
+                        }
+                    }
+                    catch { }
+                }
+                if (!File.Exists(path)) return null;
+                string text = File.ReadAllText(path);
+                ActivePromptPath = path;
+                ActivePromptVersion = null;
+                try
+                {
+                    string name = Path.GetFileName(path);
+                    var m = System.Text.RegularExpressions.Regex.Match(name, @"system_planner_v(\d+)\.md", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success && int.TryParse(m.Groups[1].Value, out int v)) ActivePromptVersion = v;
+                }
+                catch { }
+                return string.IsNullOrWhiteSpace(text) ? null : text;
+            }
+            catch { return null; }
         }
 
         private static void ApplySelectionHardMode(AIContext ctx, AIPlan plan)

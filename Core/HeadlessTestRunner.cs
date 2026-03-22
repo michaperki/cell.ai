@@ -146,6 +146,7 @@ namespace SpreadsheetApp.Core
                 {
                     // Collect failure keys from this run
                     var failureKeys = new List<string>();
+                    long tokensIn = 0, tokensOut = 0, tokensTotal = 0;
                     foreach (var t in testSummaries)
                     {
                         try
@@ -156,6 +157,10 @@ namespace SpreadsheetApp.Core
                                 if (stepObj is not Dictionary<string, object?> st) continue;
                                 if (st.TryGetValue("assert_failures", out var af) && af is IEnumerable<object> arr)
                                     foreach (var x in arr) { var k = Convert.ToString(x); if (!string.IsNullOrWhiteSpace(k)) failureKeys.Add(k!); }
+                                // Accumulate token usage if present
+                                try { if (st.TryGetValue("input_tokens", out var it) && it is not null) tokensIn += Convert.ToInt64(it); } catch { }
+                                try { if (st.TryGetValue("output_tokens", out var ot) && ot is not null) tokensOut += Convert.ToInt64(ot); } catch { }
+                                try { if (st.TryGetValue("total_tokens", out var tt) && tt is not null) tokensTotal += Convert.ToInt64(tt); } catch { }
                             }
                         }
                         catch { }
@@ -190,7 +195,11 @@ namespace SpreadsheetApp.Core
                         ["steps_total"] = totalSteps,
                         ["steps_passed"] = passedSteps,
                         ["pass_rate"] = totalSteps > 0 ? Math.Round((double)passedSteps / totalSteps, 3) : 0.0,
-                        ["failure_keys"] = failureKeys.Distinct().ToArray()
+                        ["failure_keys"] = failureKeys.Distinct().ToArray(),
+                        ["prompt_version"] = SpreadsheetApp.Core.AI.ProviderChatPlanner.ActivePromptVersion,
+                        ["tokens_in"] = tokensIn,
+                        ["tokens_out"] = tokensOut,
+                        ["tokens_total"] = tokensTotal
                     };
                     string historyPath = Path.Combine(outputDir, "run_history.jsonl");
                     string line = JsonSerializer.Serialize(historyEntry);
@@ -201,7 +210,11 @@ namespace SpreadsheetApp.Core
                 // Generate dashboard
                 try { GenerateDashboard(outputDir, specsPath); } catch { }
 
-                return failed > 0 ? 1 : 0;
+                // Regression gate: if baseline exists, generate report and include regressions in exit code
+                int regressionCount = 0;
+                try { regressionCount = GenerateRegressionReport(outputDir); } catch { }
+
+                return (failed > 0 || regressionCount > 0) ? 1 : 0;
             }
             catch (Exception ex)
             {
@@ -246,7 +259,12 @@ namespace SpreadsheetApp.Core
                 var summary = RunTestDetailed(filePath, steps, outputDir, reflection);
                 // Also emit a summary file for single runs
                 try { Directory.CreateDirectory(outputDir); File.WriteAllText(Path.Combine(outputDir, "results_summary.json"), JsonSerializer.Serialize(new { total_tests = 1, failed_tests = (int)summary["exit_code"] == 0 ? 0 : 1, tests = new[] { summary } }, new JsonSerializerOptions { WriteIndented = true })); } catch { }
-                return (int)(summary["exit_code"] ?? 1);
+                // Optional regression gate for single test runs
+                int regressionCount = 0;
+                try { regressionCount = GenerateRegressionReport(outputDir); } catch { }
+                int exitCode = (int)(summary["exit_code"] ?? 1);
+                if (regressionCount > 0) exitCode = 1;
+                return exitCode;
             }
             catch (Exception ex)
             {
@@ -1436,6 +1454,37 @@ namespace SpreadsheetApp.Core
 
             // Section 1: Latest run summary
             var latest = runs[runs.Count - 1];
+            // Aggregate token usage from the latest results if available
+            long tokenIn = 0, tokenOut = 0, tokenTotal = 0;
+            try
+            {
+                string rsPath = Path.Combine(outputDir, "results_summary.json");
+                if (File.Exists(rsPath))
+                {
+                    using var rsDoc = JsonDocument.Parse(File.ReadAllText(rsPath));
+                    if (rsDoc.RootElement.TryGetProperty("tests", out var testsEl) && testsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var t in testsEl.EnumerateArray())
+                        {
+                            if (!t.TryGetProperty("steps", out var stepsEl) || stepsEl.ValueKind != JsonValueKind.Array) continue;
+                            foreach (var st in stepsEl.EnumerateArray())
+                            {
+                                try { if (st.TryGetProperty("input_tokens", out var it) && it.ValueKind == JsonValueKind.Number) tokenIn += it.GetInt64(); } catch { }
+                                try { if (st.TryGetProperty("output_tokens", out var ot) && ot.ValueKind == JsonValueKind.Number) tokenOut += ot.GetInt64(); } catch { }
+                                try { if (st.TryGetProperty("total_tokens", out var tt) && tt.ValueKind == JsonValueKind.Number) tokenTotal += tt.GetInt64(); } catch { }
+                            }
+                        }
+                    }
+                }
+                if (tokenTotal == 0)
+                {
+                    // Fallback to run history fields if present
+                    try { tokenIn = SafeGetInt(latest, "tokens_in"); } catch { }
+                    try { tokenOut = SafeGetInt(latest, "tokens_out"); } catch { }
+                    try { tokenTotal = SafeGetInt(latest, "tokens_total"); } catch { }
+                }
+            }
+            catch { }
             sb.AppendLine("## Latest Run");
             sb.AppendLine();
             sb.AppendLine($"| Metric | Value |");
@@ -1447,6 +1496,10 @@ namespace SpreadsheetApp.Core
             sb.AppendLine($"| Tests | {SafeGetInt(latest, "tests_passed")}/{SafeGetInt(latest, "tests_total")} passed |");
             sb.AppendLine($"| Steps | {SafeGetInt(latest, "steps_passed")}/{SafeGetInt(latest, "steps_total")} passed |");
             sb.AppendLine($"| Pass rate | {SafeGetDouble(latest, "pass_rate"):P1} |");
+            if (tokenTotal > 0)
+            {
+                sb.AppendLine($"| Tokens (in/out/total) | {tokenIn} / {tokenOut} / {tokenTotal} |");
+            }
             var latestFailures = SafeGetStringArray(latest, "failure_keys");
             sb.AppendLine($"| Failure keys | {(latestFailures.Length > 0 ? string.Join(", ", latestFailures.Select(k => $"`{k}`")) : "none")} |");
             sb.AppendLine();
@@ -1602,6 +1655,18 @@ namespace SpreadsheetApp.Core
                 cells["A11"] = "Pass rate"; cells["B11"] = SafeGetDouble(latest, "pass_rate").ToString("P1");
                 var fk = SafeGetStringArray(latest, "failure_keys");
                 cells["A12"] = "Failure keys"; cells["B12"] = fk.Length > 0 ? string.Join(", ", fk) : "none";
+                // Token usage (aggregate for latest run if available in run history JSONL)
+                try
+                {
+                    long tIn = SafeGetInt(latest, "tokens_in");
+                    long tOut = SafeGetInt(latest, "tokens_out");
+                    long tTot = SafeGetInt(latest, "tokens_total");
+                    if (tTot > 0)
+                    {
+                        cells["A13"] = "Tokens (in/out/total)"; cells["B13"] = $"{tIn} / {tOut} / {tTot}";
+                    }
+                }
+                catch { }
 
                 // Delta vs previous run
                 if (runs.Count >= 2)
@@ -1627,7 +1692,7 @@ namespace SpreadsheetApp.Core
                 var cells = new Dictionary<string, string>();
                 cells["A1"] = "#"; cells["B1"] = "Timestamp"; cells["C1"] = "Commit"; cells["D1"] = "Provider";
                 cells["E1"] = "Model"; cells["F1"] = "Spec"; cells["G1"] = "Tests"; cells["H1"] = "Steps";
-                cells["I1"] = "Pass rate"; cells["J1"] = "Failures";
+                cells["I1"] = "Pass rate"; cells["J1"] = "Failures"; cells["K1"] = "Tokens in"; cells["L1"] = "Tokens out"; cells["M1"] = "Tokens total";
                 int startIdx = Math.Max(0, runs.Count - 50);
                 int row = 2;
                 for (int i = runs.Count - 1; i >= startIdx; i--)
@@ -1646,6 +1711,9 @@ namespace SpreadsheetApp.Core
                     cells[$"H{row}"] = $"{SafeGetInt(r, "steps_passed")}/{SafeGetInt(r, "steps_total")}";
                     cells[$"I{row}"] = SafeGetDouble(r, "pass_rate").ToString("P1");
                     cells[$"J{row}"] = fk.Length > 0 ? string.Join(", ", fk.Take(5)) : "";
+                    try { var tin = SafeGetInt(r, "tokens_in"); if (tin > 0) cells[$"K{row}"] = tin.ToString(); } catch { }
+                    try { var tout = SafeGetInt(r, "tokens_out"); if (tout > 0) cells[$"L{row}"] = tout.ToString(); } catch { }
+                    try { var tt = SafeGetInt(r, "tokens_total"); if (tt > 0) cells[$"M{row}"] = tt.ToString(); } catch { }
                     row++;
                 }
                 sheets.Add(new { Name = "Run History", Rows = 100, Columns = 26, Cells = cells, FreezeTopRow = true });
@@ -1793,6 +1861,177 @@ namespace SpreadsheetApp.Core
                 return list.ToArray();
             }
             return Array.Empty<string>();
+        }
+
+        // --- Regression Gate Implementation ---
+        private sealed class ParsedTest
+        {
+            public string File { get; set; } = string.Empty;
+            public bool Passed { get; set; }
+            public List<string> FailureKeys { get; set; } = new();
+            public int Steps { get; set; }
+            public int StepsPassed { get; set; }
+        }
+
+        private static (Dictionary<string, ParsedTest> tests, int stepsTotal, int stepsPassed, int testsTotal, int testsPassed) ParseResultsSummary(string path)
+        {
+            var map = new Dictionary<string, ParsedTest>(StringComparer.OrdinalIgnoreCase);
+            int stepsTotal = 0, stepsPassed = 0, testsTotal = 0, testsPassed = 0;
+            try
+            {
+                if (!File.Exists(path)) return (map, 0, 0, 0, 0);
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("tests", out var testsEl) && testsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var t in testsEl.EnumerateArray())
+                    {
+                        string file = t.TryGetProperty("file", out var fEl) ? (fEl.GetString() ?? string.Empty) : string.Empty;
+                        bool passed = t.TryGetProperty("passed", out var pEl) && pEl.ValueKind == JsonValueKind.True;
+                        int sTot = t.TryGetProperty("steps_total", out var stEl) && stEl.ValueKind == JsonValueKind.Number ? stEl.GetInt32() : 0;
+                        int sPass = t.TryGetProperty("steps_passed", out var spEl) && spEl.ValueKind == JsonValueKind.Number ? spEl.GetInt32() : 0;
+                        var failures = new List<string>();
+                        if (t.TryGetProperty("steps", out var stepsEl2) && stepsEl2.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var st in stepsEl2.EnumerateArray())
+                            {
+                                if (st.TryGetProperty("assert_failures", out var afEl) && afEl.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var af in afEl.EnumerateArray())
+                                    {
+                                        var s = af.GetString(); if (!string.IsNullOrWhiteSpace(s)) failures.Add(s!);
+                                    }
+                                }
+                            }
+                        }
+                        var pt = new ParsedTest { File = file, Passed = passed, FailureKeys = failures, Steps = sTot, StepsPassed = sPass };
+                        if (!string.IsNullOrWhiteSpace(file)) map[file] = pt;
+                        testsTotal++;
+                        if (passed) testsPassed++;
+                        stepsTotal += sTot; stepsPassed += sPass;
+                    }
+                }
+            }
+            catch { }
+            return (map, stepsTotal, stepsPassed, testsTotal, testsPassed);
+        }
+
+        private static int GenerateRegressionReport(string outputDir)
+        {
+            string baselinePath = Path.Combine(outputDir, "baseline.json");
+            string currentPath = Path.Combine(outputDir, "results_summary.json");
+            if (!File.Exists(baselinePath) || !File.Exists(currentPath)) return 0;
+
+            var (baseTests, baseStepsTotal, baseStepsPassed, baseTestsTotal, baseTestsPassed) = ParseResultsSummary(baselinePath);
+            var (currTests, currStepsTotal, currStepsPassed, currTestsTotal, currTestsPassed) = ParseResultsSummary(currentPath);
+
+            double baseRate = baseStepsTotal > 0 ? (double)baseStepsPassed / baseStepsTotal : (baseTestsTotal > 0 ? (double)baseTestsPassed / baseTestsTotal : 0.0);
+            double currRate = currStepsTotal > 0 ? (double)currStepsPassed / currStepsTotal : (currTestsTotal > 0 ? (double)currTestsPassed / currTestsTotal : 0.0);
+
+            var allFiles = new HashSet<string>(baseTests.Keys, StringComparer.OrdinalIgnoreCase);
+            foreach (var k in currTests.Keys) allFiles.Add(k);
+
+            int regressions = 0, improvements = 0, stablePass = 0, stableFail = 0, newCount = 0, removedCount = 0;
+            var testsArr = new List<Dictionary<string, object?>>();
+
+            foreach (var file in allFiles.OrderBy(s => s))
+            {
+                baseTests.TryGetValue(file, out var b);
+                currTests.TryGetValue(file, out var c);
+                string bStatus = b == null ? "missing" : (b.Passed ? "pass" : "fail");
+                string cStatus = c == null ? "missing" : (c.Passed ? "pass" : "fail");
+                string change;
+                if (b == null && c != null) { change = "new"; newCount++; }
+                else if (b != null && c == null) { change = "removed"; removedCount++; }
+                else if (b!.Passed && !c!.Passed) { change = "regression"; regressions++; }
+                else if (!b!.Passed && c!.Passed) { change = "improvement"; improvements++; }
+                else if (b!.Passed && c!.Passed) { change = "stable_pass"; stablePass++; }
+                else { change = "stable_fail"; stableFail++; }
+
+                var obj = new Dictionary<string, object?>
+                {
+                    ["file"] = file,
+                    ["baseline_status"] = bStatus,
+                    ["current_status"] = cStatus,
+                    ["change"] = change
+                };
+                if (b != null && b.FailureKeys.Count > 0) obj["baseline_failures"] = b.FailureKeys.Distinct().ToArray();
+                if (c != null && c.FailureKeys.Count > 0) obj["current_failures"] = c.FailureKeys.Distinct().ToArray();
+                testsArr.Add(obj);
+            }
+
+            var summary = new Dictionary<string, object?>
+            {
+                ["baseline_tests_passed"] = baseTestsPassed,
+                ["baseline_tests_total"] = baseTestsTotal,
+                ["current_tests_passed"] = currTestsPassed,
+                ["current_tests_total"] = currTestsTotal,
+                ["baseline_pass_rate"] = Math.Round(baseRate, 3),
+                ["current_pass_rate"] = Math.Round(currRate, 3),
+                ["delta"] = Math.Round(currRate - baseRate, 3),
+                ["regressions"] = regressions,
+                ["improvements"] = improvements,
+                ["stable_pass"] = stablePass,
+                ["stable_fail"] = stableFail,
+                ["new_tests"] = newCount,
+                ["removed_tests"] = removedCount
+            };
+
+            var root = new Dictionary<string, object?>
+            {
+                ["baseline_run"] = File.GetLastWriteTimeUtc(baselinePath).ToString("o"),
+                ["current_run"] = DateTime.UtcNow.ToString("o"),
+                ["summary"] = summary,
+                ["tests"] = testsArr,
+                ["gate_result"] = regressions > 0 ? "FAIL" : "PASS"
+            };
+
+            try
+            {
+                string jsonPath = Path.Combine(outputDir, "regression_report.json");
+                TryWriteAllText(jsonPath, JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+
+            try
+            {
+                var md = new StringBuilder();
+                md.AppendLine("## Regression Report");
+                md.AppendLine($"Baseline: {baseTestsPassed}/{baseTestsTotal} tests, {baseRate.ToString("P1")}");
+                md.AppendLine($"Current:  {currTestsPassed}/{currTestsTotal} tests, {currRate.ToString("P1")}");
+                md.AppendLine($"Gate: {(regressions > 0 ? "FAIL" : "PASS")}\n");
+
+                IEnumerable<Dictionary<string, object?>> Filter(string change) => testsArr.Where(t => string.Equals(t["change"] as string, change, StringComparison.OrdinalIgnoreCase));
+
+                void Section(string title, IEnumerable<Dictionary<string, object?>> items)
+                {
+                    var list = items.ToList();
+                    md.AppendLine($"### {title} ({list.Count})");
+                    if (list.Count == 0) { md.AppendLine("(none)\n"); return; }
+                    foreach (var it in list)
+                    {
+                        string file = it.TryGetValue("file", out var fx) ? (fx as string ?? "") : "";
+                        if (it.TryGetValue("current_failures", out var cf) && cf is string[] cfa && cfa.Length > 0)
+                            md.AppendLine($"- {file}: {string.Join(", ", cfa)}");
+                        else if (it.TryGetValue("baseline_failures", out var bf) && bf is string[] bfa && bfa.Length > 0)
+                            md.AppendLine($"- {file}: {string.Join(", ", bfa)}");
+                        else
+                            md.AppendLine($"- {file}");
+                    }
+                    md.AppendLine();
+                }
+
+                Section("Regressions", Filter("regression"));
+                Section("Improvements", Filter("improvement"));
+                Section("Stable Failures", Filter("stable_fail"));
+                Section("New Tests", Filter("new"));
+                Section("Removed Tests", Filter("removed"));
+
+                TryWriteAllText(Path.Combine(outputDir, "REGRESSION.md"), md.ToString());
+            }
+            catch { }
+
+            return regressions;
         }
     }
 }

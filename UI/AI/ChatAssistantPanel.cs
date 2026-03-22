@@ -49,6 +49,10 @@ namespace SpreadsheetApp.UI.AI
         private int _thinkingDots;
         private readonly CheckBox _chkAutoApply = new() { Text = "Auto-apply small safe writes", Dock = DockStyle.Top, Height = 18, Checked = true };
         private int _lastProposalVersion = 0;
+        // Session token counters (rough usage across this panel's session)
+        private long _sessionTokensIn = 0;
+        private long _sessionTokensOut = 0;
+        private long _sessionTokensTotal = 0;
 
         public ChatAssistantPanel(IChatPlanner planner, SpreadsheetApp.Core.AI.ChatSession session, Func<AIContext> getContext, Action<AIPlan> applyPlan, Func<string, CancellationToken, Task<(AIPlan plan, string[] transcript)>>? runAgentLoop = null, string? initialPrompt = null, bool autoPlan = false, Action<AIPlan>? previewPlan = null, Action? clearPreview = null, string? initialMode = null, Action<string>? onModeChanged = null)
         {
@@ -166,7 +170,7 @@ namespace SpreadsheetApp.UI.AI
                 catch { }
             };
             _btnHistory.Click += (_, __) => ShowHistoryDialog();
-            _btnReset.Click += (_, __) => { _session.Clear(); RenderThread(); try { _clearPreview?.Invoke(); } catch { } };
+            _btnReset.Click += (_, __) => { _session.Clear(); _sessionTokensIn = _sessionTokensOut = _sessionTokensTotal = 0; RenderThread(); try { _clearPreview?.Invoke(); } catch { } };
 
             if (!string.IsNullOrWhiteSpace(initialPrompt)) _input.Text = initialPrompt;
             // Initialize input policy options
@@ -377,6 +381,10 @@ namespace SpreadsheetApp.UI.AI
                     if (plan.Usage != null)
                     {
                         var u = plan.Usage; string tok = $"tokens {u.InputTokens?.ToString() ?? "-"}/{u.OutputTokens?.ToString() ?? "-"}/{u.TotalTokens?.ToString() ?? "-"}";
+                        // Accumulate into session totals
+                        try { if (u.InputTokens.HasValue) _sessionTokensIn += u.InputTokens.Value; } catch { }
+                        try { if (u.OutputTokens.HasValue) _sessionTokensOut += u.OutputTokens.Value; } catch { }
+                        try { if (u.TotalTokens.HasValue) _sessionTokensTotal += u.TotalTokens.Value; } catch { }
                         parts.Add(tok);
                         if (u.RemainingContext.HasValue) parts.Add($"remaining {u.RemainingContext.Value}");
                     }
@@ -562,6 +570,10 @@ namespace SpreadsheetApp.UI.AI
                 if (_session.History.Count == 0) parts.Add("Fresh request");
                 else parts.Add($"Using prior AI context ({_session.History.Count})");
                 parts.Add("Using current selection + headers");
+                if (_sessionTokensTotal > 0)
+                {
+                    parts.Add($"Session tokens {_sessionTokensIn}/{_sessionTokensOut}/{_sessionTokensTotal}");
+                }
                 _lblSession.Text = string.Join(" · ", parts);
                 _lblSession.Visible = true;
             }

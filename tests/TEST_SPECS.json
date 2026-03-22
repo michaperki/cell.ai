@@ -3,46 +3,46 @@
     {
       "file": "test_01_ai_set_values.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Create a list of 5 US states with capitals in columns A and B starting at row 3.", "location": "A3", "apply": true }
+        { "action": "ai_chat", "prompt": "Create a list of 5 US states with capitals in columns A and B starting at row 3.", "location": "A3", "apply": true, "AllowedCommands": ["set_values"], "MinChangesTotal": 6 }
       ]
     },
     {
       "file": "test_02_ai_set_formula.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Add a SUM formula in B8 that totals B2:B7, and an AVERAGE in B9.", "location": "B8", "apply": true }
+        { "action": "ai_chat", "prompt": "Add a SUM formula in B8 that totals B2:B7, and an AVERAGE in B9.", "location": "B8", "apply": true, "AllowedCommands": ["set_formula"], "ExpectedCells": { "B8": "=SUM(B2:B7)", "B9": "=AVERAGE(B2:B7)" } }
       ]
     },
     {
       "file": "test_03_ai_sort_range.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Sort the selected data by Amount descending. Keep the header row in place.", "location": "A2:B7", "apply": true }
+        { "action": "ai_chat", "prompt": "Sort the selected data by Amount descending. Keep the header row in place.", "location": "A2:B7", "apply": true, "AllowedCommands": ["sort_range"], "MinChangesTotal": 1 }
       ]
     },
     {
       "file": "test_04_ai_create_rename_sheet.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Create a new sheet named Revenue.", "apply": true },
-        { "action": "ai_chat", "prompt": "Rename sheet Revenue to Q1 Revenue.", "apply": true }
+        { "action": "ai_chat", "prompt": "Create a new sheet named Revenue.", "apply": true, "AllowedCommands": ["create_sheet"] },
+        { "action": "ai_chat", "prompt": "Rename sheet Revenue to Q1 Revenue.", "apply": true, "AllowedCommands": ["rename_sheet"] }
       ]
     },
     {
       "file": "test_05_ai_clear_range.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Clear column C (the Notes column).", "location": "C2:C6", "apply": true }
+        { "action": "ai_chat", "prompt": "Clear column C (the Notes column).", "location": "C2:C6", "apply": true, "AllowedCommands": ["clear_range"], "MaxChangesOutside": 0, "MinChangesTotal": 5 }
       ]
     },
     {
       "file": "test_06_ai_multi_turn_chat.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.", "location": "A3:C6", "apply": true },
-        { "action": "ai_chat", "prompt": "Now add a Tax column in D with 10% of Amount.", "location": "D3:D6", "apply": true },
-        { "action": "ai_chat", "prompt": "Add a total row summing Amount and Tax columns.", "location": "A6:E6", "apply": true }
+        { "action": "ai_chat", "prompt": "Create an expense table with columns: Date, Description, Amount in A3:C3 with 3 sample rows.", "location": "A3:C6", "apply": true, "AllowedCommands": ["set_values"], "MaxChangesOutside": 0, "MinChangesTotal": 9 },
+        { "action": "ai_chat", "prompt": "Now add a Tax column in D with 10% of Amount.", "location": "D3:D6", "apply": true, "AllowedCommands": ["set_values"], "MaxChangesOutside": 0, "MinChangesTotal": 3 },
+        { "action": "ai_chat", "prompt": "Add a total row summing Amount and Tax columns.", "location": "A6:E6", "apply": true, "AllowedCommands": ["set_values", "set_formula"], "MaxChangesOutside": 0, "MinChangesTotal": 2 }
       ]
     },
     {
       "file": "test_07_ai_context_awareness.workbook.json",
       "steps": [
-        { "action": "ai_chat", "prompt": "Add a Bonus column that is 15% of Salary.", "location": "D2", "apply": true }
+        { "action": "ai_chat", "prompt": "Add a Bonus column that is 15% of Salary.", "location": "D2", "apply": true, "AllowedCommands": ["set_values"] }
       ]
     },
     {

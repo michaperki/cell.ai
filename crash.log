@@ -1,0 +1,19 @@
+[2026-03-21T17:38:49.6992552+02:00] AgentLoop failed: System.Net.Http.HttpRequestException: No such host is known. (api.openai.com:443)
+ ---> System.Net.Sockets.SocketException (11001): No such host is known.
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource.GetResult(Int16 token)
+   at System.Net.Sockets.Socket.<ConnectAsync>g__WaitForConnectWithCancellation|285_0(AwaitableSocketAsyncEventArgs saea, ValueTask connectTask, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.ConnectToTcpHostAsync(String host, Int32 port, HttpRequestMessage initialRequest, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at System.Net.Http.HttpConnectionPool.ConnectToTcpHostAsync(String host, Int32 port, HttpRequestMessage initialRequest, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.ConnectAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.CreateHttp11ConnectionAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.AddHttp11ConnectionAsync(QueueItem queueItem)
+   at System.Threading.Tasks.TaskCompletionSourceWithCancellation`1.WaitWithCancellationAsync(CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   at SpreadsheetApp.Core.AI.ProviderChatPlanner.CallOpenAIWithUsageAsync(String system, String user, CancellationToken ct) in C:\Users\PerkD\Documents\dev\rustsheet\Core\AI\ProviderChatPlanner.cs:line 596
+   at SpreadsheetApp.Core.AI.ProviderChatPlanner.PlanAsync(AIContext context, String prompt, CancellationToken cancellationToken) in C:\Users\PerkD\Documents\dev\rustsheet\Core\AI\ProviderChatPlanner.cs:line 197
+   at SpreadsheetApp.Core.AI.AgentLoop.RunAsync(IChatPlanner planner, Spreadsheet sheet, AIContext baseContext, String userPrompt, CancellationToken ct) in C:\Users\PerkD\Documents\dev\rustsheet\Core\AI\AgentLoop.cs:line 45
+   at SpreadsheetApp.UI.MainForm.RunAgentStepAsync(String prompt, String location, Boolean apply, CancellationToken ct) in C:\Users\PerkD\Documents\dev\rustsheet\UI\MainForm.cs:line 4778
